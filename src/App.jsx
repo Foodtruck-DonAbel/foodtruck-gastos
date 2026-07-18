@@ -162,7 +162,7 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <span style={{ fontSize: 20 }}>🌭</span>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 15 }}>Don Abel · Gastos</div>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>FoodTruck · Gastos</div>
               <div style={{ color: C.muted, fontSize: 11 }}>
                 {loading ? "Cargando..." : `${gastos.length} registros · ${fmt(totalGeneral)} total`}
               </div>
