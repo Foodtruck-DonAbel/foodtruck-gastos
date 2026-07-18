@@ -8,7 +8,7 @@ const C = {
 };
 
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
-const FONDOS = ["Caja común", "Raul", "Pepe", "Alejandro", "Gustavo"];
+const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck","Tarjeta Don Abel"];
 const INSUMOS_BASE = [
   "Palta","Tomate","Pan para completo","Mayonesa","Salchichas",
   "Papas fritas","Tocino","Chucrut","Mostaza","Ketchup",
