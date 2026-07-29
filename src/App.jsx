@@ -8,19 +8,13 @@ const C = {
 };
 
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
-const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck","Tarjeta Don Abel"];
+const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
   "Palta","Tomate","Pan para completo","Mayonesa","Salchichas",
   "Papas fritas","Tocino","Chucrut","Mostaza","Ketchup",
   "Salsas / aderezos","Aceite","Envases papas fritas",
   "Envases completos","Servilletas / bolsas","Gas / combustible","Limpieza","Otro",
 ];
-
-const fmt = (n) => "$" + Number(n || 0).toLocaleString("es-CL");
-const today = () => new Date().toISOString().slice(0, 10);
-const personColor = (name) => ({
-  Raul: "#6B9FD4", Pepe: "#E8B84B", Alejandro: "#5BAD7F", Gustavo: "#C97DDB"
-}[name] || C.muted);
 
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4",
@@ -29,19 +23,31 @@ const fondoColors = {
   "Tarjeta Don Abel": "#E8B84B",
 };
 
+const fmt = (n) => "$" + Number(n || 0).toLocaleString("es-CL");
+const today = () => new Date().toISOString().slice(0, 10);
+const personColor = (name) => ({
+  Raul: "#6B9FD4", Pepe: "#E8B84B", Alejandro: "#5BAD7F", Gustavo: "#C97DDB"
+}[name] || C.muted);
+
+const normalizarProveedor = (s) =>
+  (s || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
 export default function App() {
   const [gastos, setGastos] = useState([]);
   const [insumos, setInsumos] = useState(INSUMOS_BASE);
+  const [proveedores, setProveedores] = useState([]);
   const [view, setView] = useState("nuevo");
   const [persona, setPersona] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     fecha: today(), insumo: INSUMOS_BASE[0], insumoCustom: "",
-    cantidad: "", unidad: "unidad", fondo: FONDOS[0], proveedor: "", monto: "", nota: "",
+    cantidad: "", unidad: "unidad", fondo: FONDOS[0],
+    proveedor: "", proveedorCustom: "", monto: "", nota: "",
   });
   const [nuevoInsumo, setNuevoInsumo] = useState("");
   const [filtro, setFiltro] = useState({ mes: "", insumo: "", persona: "" });
+  const [filtroResumen, setFiltroResumen] = useState("");
   const [toast, setToast] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
 
@@ -53,7 +59,16 @@ export default function App() {
       .from("gastos")
       .select("*")
       .order("created_at", { ascending: false });
-    if (!error && data) setGastos(data);
+    if (!error && data) {
+      setGastos(data);
+      // Extraer proveedores únicos normalizados
+      const provs = [...new Set(
+        data
+          .map((g) => normalizarProveedor(g.proveedor))
+          .filter(Boolean)
+      )].sort();
+      setProveedores(provs);
+    }
     setLoading(false);
   };
 
@@ -62,6 +77,9 @@ export default function App() {
   const agregarGasto = async () => {
     if (!persona) { showToast("Selecciona quién registra"); return; }
     const insumofinal = form.insumo === "Otro" ? (form.insumoCustom || "Otro") : form.insumo;
+    const proveedorFinal = form.proveedor === "__nuevo__"
+      ? normalizarProveedor(form.proveedorCustom)
+      : form.proveedor;
     if (!insumofinal || !form.monto || isNaN(Number(form.monto))) {
       showToast("Completa monto e insumo"); return;
     }
@@ -69,14 +87,14 @@ export default function App() {
     const nuevo = {
       fecha: form.fecha, insumo: insumofinal,
       cantidad: form.cantidad || null, unidad: form.unidad,
-      fondo: form.fondo, proveedor: form.proveedor || null,
+      fondo: form.fondo, proveedor: proveedorFinal || null,
       monto: Number(form.monto), persona, nota: form.nota || null,
     };
     const { error } = await supabase.from("gastos").insert([nuevo]);
     if (error) { showToast("Error al guardar"); }
     else {
       showToast("✓ Gasto guardado");
-      setForm({ ...form, cantidad: "", proveedor: "", monto: "", nota: "", insumoCustom: "" });
+      setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", nota: "", insumoCustom: "" });
       cargarGastos();
     }
     setSaving(false);
@@ -104,36 +122,60 @@ export default function App() {
     return true;
   });
 
+  // Gastos filtrados por mes para el resumen
+  const gastosResumen = filtroResumen
+    ? gastos.filter((g) => g.fecha.startsWith(filtroResumen))
+    : gastos;
+
   const totalFiltrado = gastosFiltrados.reduce((s, g) => s + g.monto, 0);
   const totalGeneral = gastos.reduce((s, g) => s + g.monto, 0);
   const mesActual = today().slice(0, 7);
   const totalMes = gastos.filter((g) => g.fecha.startsWith(mesActual)).reduce((s, g) => s + g.monto, 0);
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
 
+  // --- Cálculos del resumen usando gastosResumen ---
   const porInsumo = Object.entries(
-    gastos.reduce((acc, g) => { acc[g.insumo] = (acc[g.insumo] || 0) + g.monto; return acc; }, {})
+    gastosResumen.reduce((acc, g) => { acc[g.insumo] = (acc[g.insumo] || 0) + g.monto; return acc; }, {})
   ).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 10);
 
   const porPersona = PERSONAS.map((p) => ({
-    p, t: gastos.filter((g) => g.persona === p).reduce((s, g) => s + g.monto, 0),
-    c: gastos.filter((g) => g.persona === p).length
+    p,
+    t: gastosResumen.filter((g) => g.persona === p).reduce((s, g) => s + g.monto, 0),
+    c: gastosResumen.filter((g) => g.persona === p).length,
   })).filter((x) => x.t > 0);
 
+  // Bug fix: normalizar proveedor antes de agrupar
   const porProveedor = Object.entries(
-    gastos.filter((g) => g.proveedor).reduce((acc, g) => {
-      acc[g.proveedor] = (acc[g.proveedor] || 0) + g.monto; return acc;
-    }, {})
+    gastosResumen
+      .filter((g) => g.proveedor)
+      .reduce((acc, g) => {
+        const key = normalizarProveedor(g.proveedor);
+        acc[key] = (acc[key] || 0) + g.monto;
+        return acc;
+      }, {})
   ).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 6);
 
   const porFondo = FONDOS.map((f) => ({
     f,
-    t: gastos.filter((g) => g.fondo === f).reduce((s, g) => s + g.monto, 0),
-    c: gastos.filter((g) => g.fondo === f).length,
+    t: gastosResumen.filter((g) => g.fondo === f).reduce((s, g) => s + g.monto, 0),
+    c: gastosResumen.filter((g) => g.fondo === f).length,
   })).filter((x) => x.t > 0);
+
+  // Tabla mes a mes
+  const porMes = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))]
+    .sort()
+    .reverse()
+    .map((m) => {
+      const gs = gastos.filter((g) => g.fecha.startsWith(m));
+      return { m, t: gs.reduce((s, g) => s + g.monto, 0), c: gs.length };
+    });
 
   const maxInsumo = porInsumo[0]?.t || 1;
   const maxProv = porProveedor[0]?.t || 1;
   const maxFondo = porFondo.length > 0 ? Math.max(...porFondo.map((x) => x.t)) : 1;
+  const maxMes = porMes.length > 0 ? Math.max(...porMes.map((x) => x.t)) : 1;
+
+  const totalResumen = gastosResumen.reduce((s, g) => s + g.monto, 0);
 
   const S = {
     card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px" },
@@ -201,7 +243,9 @@ export default function App() {
           </div>
         </div>
       </div>
+
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "16px 12px 60px" }}>
+        {/* ── NUEVO ── */}
         {view === "nuevo" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={S.card}>
@@ -209,13 +253,42 @@ export default function App() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <Fld label="Fecha"><input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} style={S.inp} /></Fld>
                 <Fld label="Monto ($)"><input type="number" placeholder="0" value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} style={S.inp} /></Fld>
-                <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => setForm({ ...form, insumo: e.target.value })} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
-                {form.insumo === "Otro" && (<Fld label="¿Cuál insumo?" full><input placeholder="Escribe el nombre" value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value })} style={S.inp} /></Fld>)}
+                <Fld label="Insumo" full>
+                  <select value={form.insumo} onChange={(e) => setForm({ ...form, insumo: e.target.value })} style={S.inp}>
+                    {insumos.map((i) => <option key={i}>{i}</option>)}
+                  </select>
+                </Fld>
+                {form.insumo === "Otro" && (
+                  <Fld label="¿Cuál insumo?" full>
+                    <input placeholder="Escribe el nombre" value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value })} style={S.inp} />
+                  </Fld>
+                )}
                 <Fld label="Cantidad"><input type="number" placeholder="ej: 2" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} style={S.inp} /></Fld>
-                <Fld label="Unidad"><select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>{["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}</select></Fld>
-                <Fld label="Fondo usado"><select value={form.fondo} onChange={(e) => setForm({ ...form, fondo: e.target.value })} style={S.inp}>{FONDOS.map((f) => <option key={f}>{f}</option>)}</select></Fld>
-                <Fld label="Proveedor"><input placeholder="ej: Jumbo, Mayorista" value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value })} style={S.inp} /></Fld>
-                <Fld label="Nota (opcional)" full><input placeholder="ej: precio subió, oferta…" value={form.nota} onChange={(e) => setForm({ ...form, nota: e.target.value })} style={S.inp} /></Fld>
+                <Fld label="Unidad">
+                  <select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>
+                    {["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}
+                  </select>
+                </Fld>
+                <Fld label="Fondo usado">
+                  <select value={form.fondo} onChange={(e) => setForm({ ...form, fondo: e.target.value })} style={S.inp}>
+                    {FONDOS.map((f) => <option key={f}>{f}</option>)}
+                  </select>
+                </Fld>
+                <Fld label="Proveedor">
+                  <select value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value, proveedorCustom: "" })} style={S.inp}>
+                    <option value="">Sin proveedor</option>
+                    {proveedores.map((p) => <option key={p} value={p}>{p}</option>)}
+                    <option value="__nuevo__">+ Nuevo proveedor…</option>
+                  </select>
+                </Fld>
+                {form.proveedor === "__nuevo__" && (
+                  <Fld label="Nombre del proveedor" full>
+                    <input placeholder="ej: Jumbo, Mayorista 10" value={form.proveedorCustom} onChange={(e) => setForm({ ...form, proveedorCustom: e.target.value })} style={S.inp} />
+                  </Fld>
+                )}
+                <Fld label="Nota (opcional)" full>
+                  <input placeholder="ej: precio subió, oferta…" value={form.nota} onChange={(e) => setForm({ ...form, nota: e.target.value })} style={S.inp} />
+                </Fld>
               </div>
               <button onClick={agregarGasto} disabled={saving} style={{ marginTop: 14, background: persona ? C.mustard : C.border, color: persona ? C.bg : C.muted, border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, fontSize: 14, cursor: persona ? "pointer" : "default", width: "100%" }}>
                 {saving ? "Guardando..." : persona ? `Guardar — ${persona}` : "Selecciona quién registra arriba"}
@@ -230,12 +303,23 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* ── HISTORIAL ── */}
         {view === "historial" && (
           <div>
             <div style={{ ...S.card, marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <select value={filtro.mes} onChange={(e) => setFiltro({ ...filtro, mes: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 110 }}><option value="">Todos los meses</option>{meses.map((m) => <option key={m} value={m}>{m}</option>)}</select>
-              <select value={filtro.insumo} onChange={(e) => setFiltro({ ...filtro, insumo: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 120 }}><option value="">Todos los insumos</option>{insumos.map((i) => <option key={i}>{i}</option>)}</select>
-              <select value={filtro.persona} onChange={(e) => setFiltro({ ...filtro, persona: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 100 }}><option value="">Todos</option>{PERSONAS.map((p) => <option key={p}>{p}</option>)}</select>
+              <select value={filtro.mes} onChange={(e) => setFiltro({ ...filtro, mes: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 110 }}>
+                <option value="">Todos los meses</option>
+                {meses.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <select value={filtro.insumo} onChange={(e) => setFiltro({ ...filtro, insumo: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 120 }}>
+                <option value="">Todos los insumos</option>
+                {insumos.map((i) => <option key={i}>{i}</option>)}
+              </select>
+              <select value={filtro.persona} onChange={(e) => setFiltro({ ...filtro, persona: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 100 }}>
+                <option value="">Todos</option>
+                {PERSONAS.map((p) => <option key={p}>{p}</option>)}
+              </select>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, color: C.muted, fontSize: 12 }}>
               <span>{gastosFiltrados.length} registros</span>
@@ -253,7 +337,7 @@ export default function App() {
                     <span>{g.fecha}</span>
                     <Tag color={personColor(g.persona) + "33"} text={g.persona} textColor={personColor(g.persona)} />
                     <Tag text={g.fondo} />
-                    {g.proveedor && <Tag text={g.proveedor} color="#2A3530" textColor={C.green} />}
+                    {g.proveedor && <Tag text={normalizarProveedor(g.proveedor)} color="#2A3530" textColor={C.green} />}
                   </div>
                   {g.nota && <div style={{ color: C.muted, fontSize: 11, marginTop: 4, fontStyle: "italic" }}>{g.nota}</div>}
                 </div>
@@ -266,12 +350,31 @@ export default function App() {
             <button onClick={exportCSV} style={{ marginTop: 8, background: C.surface, border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "9px 0", cursor: "pointer", fontSize: 13, width: "100%" }}>Exportar CSV</button>
           </div>
         )}
+
+        {/* ── RESUMEN ── */}
         {view === "resumen" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Filtro de mes */}
+            <div style={S.card}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ color: C.muted, fontSize: 12, whiteSpace: "nowrap" }}>Filtrar por mes:</div>
+                <select value={filtroResumen} onChange={(e) => setFiltroResumen(e.target.value)} style={{ ...S.inp }}>
+                  <option value="">Todo el historial</option>
+                  {meses.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              {filtroResumen && (
+                <div style={{ marginTop: 8, color: C.muted, fontSize: 12 }}>
+                  Mostrando <span style={{ color: C.mustard, fontWeight: 700 }}>{filtroResumen}</span> — {gastosResumen.length} registros · <span style={{ color: C.mustard, fontWeight: 700 }}>{fmt(totalResumen)}</span>
+                </div>
+              )}
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <StatCard label="Total acumulado" value={fmt(totalGeneral)} color={C.mustard} />
+              <StatCard label={filtroResumen ? "Total del mes" : "Total acumulado"} value={fmt(filtroResumen ? totalResumen : totalGeneral)} color={C.mustard} />
               <StatCard label="Este mes" value={fmt(totalMes)} color={C.green} />
             </div>
+
             <div style={S.card}>
               <STitle>Por persona</STitle>
               {porPersona.length === 0 && <Empty />}
@@ -284,10 +387,11 @@ export default function App() {
                     </span>
                     <span style={{ fontWeight: 700, color: personColor(x.p) }}>{fmt(x.t)}</span>
                   </div>
-                  <Bar value={x.t} max={Math.max(...porPersona.map(p => p.t))} color={personColor(x.p)} />
+                  <Bar value={x.t} max={Math.max(...porPersona.map((p) => p.t))} color={personColor(x.p)} />
                 </div>
               ))}
             </div>
+
             <div style={S.card}>
               <STitle>Por origen del dinero</STitle>
               {porFondo.length === 0 && <Empty />}
@@ -304,6 +408,7 @@ export default function App() {
                 </div>
               ))}
             </div>
+
             <div style={S.card}>
               <STitle>Por insumo</STitle>
               {porInsumo.length === 0 && <Empty />}
@@ -316,18 +421,54 @@ export default function App() {
                 </div>
               ))}
             </div>
+
             <div style={S.card}>
               <STitle>Top proveedores</STitle>
               {porProveedor.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Agrega proveedores al registrar gastos</div>}
               {porProveedor.map((x, i) => (
                 <div key={x.n} style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                    <span style={{ display: "flex", gap: 8 }}><span style={{ color: C.muted, width: 14, textAlign: "right" }}>{i + 1}</span>{x.n}</span>
+                    <span style={{ display: "flex", gap: 8 }}>
+                      <span style={{ color: C.muted, width: 14, textAlign: "right" }}>{i + 1}</span>{x.n}
+                    </span>
                     <span style={{ fontWeight: 700, color: C.green }}>{fmt(x.t)}</span>
                   </div>
                   <Bar value={x.t} max={maxProv} color={C.green} />
                 </div>
               ))}
+            </div>
+
+            <div style={S.card}>
+              <STitle>Tendencia mensual</STitle>
+              {porMes.length === 0 && <Empty />}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <th style={{ textAlign: "left", padding: "6px 8px", color: C.muted, fontWeight: 600 }}>Mes</th>
+                      <th style={{ textAlign: "right", padding: "6px 8px", color: C.muted, fontWeight: 600 }}>Compras</th>
+                      <th style={{ textAlign: "right", padding: "6px 8px", color: C.muted, fontWeight: 600 }}>Total</th>
+                      <th style={{ padding: "6px 8px", width: "35%" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {porMes.map((x) => (
+                      <tr key={x.m} style={{ borderBottom: `1px solid ${C.border}22` }}>
+                        <td style={{ padding: "8px 8px", fontWeight: x.m === mesActual ? 700 : 400, color: x.m === mesActual ? C.mustard : C.text }}>
+                          {x.m}{x.m === mesActual && <span style={{ color: C.muted, fontSize: 10, marginLeft: 4 }}>actual</span>}
+                        </td>
+                        <td style={{ textAlign: "right", padding: "8px 8px", color: C.muted }}>{x.c}</td>
+                        <td style={{ textAlign: "right", padding: "8px 8px", fontWeight: 700, color: C.mustard }}>{fmt(x.t)}</td>
+                        <td style={{ padding: "8px 8px" }}>
+                          <div style={{ background: C.border, borderRadius: 3, height: 6 }}>
+                            <div style={{ background: x.m === mesActual ? C.mustard : C.mustardDim, width: `${Math.round((x.t / maxMes) * 100)}%`, height: "100%", borderRadius: 3 }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
