@@ -22,6 +22,13 @@ const personColor = (name) => ({
   Raul: "#6B9FD4", Pepe: "#E8B84B", Alejandro: "#5BAD7F", Gustavo: "#C97DDB"
 }[name] || C.muted);
 
+const fondoColors = {
+  "Efectivo foodtruck": "#6B9FD4",
+  "Efectivo Don Abel": "#5BAD7F",
+  "Tarjeta foodtruck": "#C97DDB",
+  "Tarjeta Don Abel": "#E8B84B",
+};
+
 export default function App() {
   const [gastos, setGastos] = useState([]);
   const [insumos, setInsumos] = useState(INSUMOS_BASE);
@@ -118,8 +125,15 @@ export default function App() {
     }, {})
   ).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 6);
 
+  const porFondo = FONDOS.map((f) => ({
+    f,
+    t: gastos.filter((g) => g.fondo === f).reduce((s, g) => s + g.monto, 0),
+    c: gastos.filter((g) => g.fondo === f).length,
+  })).filter((x) => x.t > 0);
+
   const maxInsumo = porInsumo[0]?.t || 1;
   const maxProv = porProveedor[0]?.t || 1;
+  const maxFondo = porFondo.length > 0 ? Math.max(...porFondo.map((x) => x.t)) : 1;
 
   const S = {
     card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px" },
@@ -275,6 +289,22 @@ export default function App() {
               ))}
             </div>
             <div style={S.card}>
+              <STitle>Por origen del dinero</STitle>
+              {porFondo.length === 0 && <Empty />}
+              {porFondo.map((x) => (
+                <div key={x.f} style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: fondoColors[x.f] || C.muted, display: "inline-block" }} />
+                      {x.f} <span style={{ color: C.muted, fontSize: 11 }}>({x.c} compras)</span>
+                    </span>
+                    <span style={{ fontWeight: 700, color: fondoColors[x.f] || C.muted }}>{fmt(x.t)}</span>
+                  </div>
+                  <Bar value={x.t} max={maxFondo} color={fondoColors[x.f] || C.muted} />
+                </div>
+              ))}
+            </div>
+            <div style={S.card}>
               <STitle>Por insumo</STitle>
               {porInsumo.length === 0 && <Empty />}
               {porInsumo.map((x) => (
@@ -282,7 +312,7 @@ export default function App() {
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
                     <span>{x.n}</span><span style={{ fontWeight: 700 }}>{fmt(x.t)}</span>
                   </div>
-                  <Bar value={x.n} max={maxInsumo} color={C.mustard} />
+                  <Bar value={x.t} max={maxInsumo} color={C.mustard} />
                 </div>
               ))}
             </div>
