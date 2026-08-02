@@ -23,6 +23,70 @@ const fondoColors = {
   "Tarjeta Don Abel": "#E8B84B",
 };
 
+// Insumos de ejemplo para recetas
+const INSUMOS_EJEMPLO = [
+  { nombre: "Palta", precio_por_kg: 4500, unidad: "kg" },
+  { nombre: "Tomate", precio_por_kg: 1200, unidad: "kg" },
+  { nombre: "Pan para completo", precio_por_kg: 2800, unidad: "kg" },
+  { nombre: "Mayonesa", precio_por_kg: 3200, unidad: "kg" },
+  { nombre: "Salchichas", precio_por_kg: 5500, unidad: "kg" },
+  { nombre: "Chucrut", precio_por_kg: 1800, unidad: "kg" },
+  { nombre: "Mostaza", precio_por_kg: 2100, unidad: "kg" },
+  { nombre: "Ketchup", precio_por_kg: 2000, unidad: "kg" },
+  { nombre: "Tocino", precio_por_kg: 7200, unidad: "kg" },
+  { nombre: "Papas fritas", precio_por_kg: 1500, unidad: "kg" },
+];
+
+// Recetas de ejemplo
+const RECETAS_EJEMPLO = [
+  {
+    nombre_producto: "Completo Italiano",
+    precio_venta: 2500,
+    ingredientes: [
+      { insumo: "Pan para completo", gramos: 80 },
+      { insumo: "Salchichas", gramos: 60 },
+      { insumo: "Palta", gramos: 40 },
+      { insumo: "Tomate", gramos: 30 },
+      { insumo: "Mayonesa", gramos: 20 },
+    ],
+  },
+  {
+    nombre_producto: "Completo As",
+    precio_venta: 2200,
+    ingredientes: [
+      { insumo: "Pan para completo", gramos: 80 },
+      { insumo: "Salchichas", gramos: 60 },
+      { insumo: "Mayonesa", gramos: 25 },
+      { insumo: "Mostaza", gramos: 10 },
+      { insumo: "Chucrut", gramos: 30 },
+    ],
+  },
+  {
+    nombre_producto: "Completo Dinámico",
+    precio_venta: 3000,
+    ingredientes: [
+      { insumo: "Pan para completo", gramos: 80 },
+      { insumo: "Salchichas", gramos: 60 },
+      { insumo: "Palta", gramos: 40 },
+      { insumo: "Tomate", gramos: 30 },
+      { insumo: "Mayonesa", gramos: 20 },
+      { insumo: "Chucrut", gramos: 20 },
+      { insumo: "Mostaza", gramos: 10 },
+    ],
+  },
+  {
+    nombre_producto: "Sandwich Lomito",
+    precio_venta: 3500,
+    ingredientes: [
+      { insumo: "Pan para completo", gramos: 100 },
+      { insumo: "Tocino", gramos: 80 },
+      { insumo: "Palta", gramos: 50 },
+      { insumo: "Tomate", gramos: 30 },
+      { insumo: "Mayonesa", gramos: 25 },
+    ],
+  },
+];
+
 const fmt = (n) => "$" + Number(n || 0).toLocaleString("es-CL");
 const today = () => new Date().toISOString().slice(0, 10);
 const personColor = (name) => ({
@@ -51,7 +115,24 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null);
 
+  // --- Estado Recetas ---
+  const [insumosPrecio, setInsumosPrecio] = useState([]);
+  const [recetas, setRecetas] = useState([]);
+  const [loadingRecetas, setLoadingRecetas] = useState(true);
+  const [recetaView, setRecetaView] = useState("calcular"); // "calcular" | "insumos" | "recetas"
+  const [preciosVenta, setPreciosVenta] = useState({});
+
+  // Form nuevo insumo precio
+  const [formInsumo, setFormInsumo] = useState({ nombre: "", precio_por_kg: "", unidad: "kg" });
+  const [editInsumoId, setEditInsumoId] = useState(null);
+
+  // Form nueva receta
+  const [formReceta, setFormReceta] = useState({ nombre_producto: "", precio_venta: "", ingredientes: [] });
+  const [editRecetaId, setEditRecetaId] = useState(null);
+  const [nuevoIngrediente, setNuevoIngrediente] = useState({ insumo: "", gramos: "" });
+
   useEffect(() => { cargarGastos(); }, []);
+  useEffect(() => { if (view === "recetas") cargarRecetas(); }, [view]);
 
   const cargarGastos = async () => {
     setLoading(true);
@@ -61,19 +142,124 @@ export default function App() {
       .order("created_at", { ascending: false });
     if (!error && data) {
       setGastos(data);
-      // Extraer proveedores únicos normalizados
       const provs = [...new Set(
-        data
-          .map((g) => normalizarProveedor(g.proveedor))
-          .filter(Boolean)
+        data.map((g) => normalizarProveedor(g.proveedor)).filter(Boolean)
       )].sort();
       setProveedores(provs);
     }
     setLoading(false);
   };
 
+  const cargarRecetas = async () => {
+    setLoadingRecetas(true);
+    const [{ data: ins }, { data: rec }] = await Promise.all([
+      supabase.from("insumos_precio").select("*").order("nombre"),
+      supabase.from("recetas").select("*").order("nombre_producto"),
+    ]);
+
+    // Si no hay datos, cargar ejemplos
+    if (ins && ins.length === 0) {
+      await supabase.from("insumos_precio").insert(INSUMOS_EJEMPLO);
+      const { data: ins2 } = await supabase.from("insumos_precio").select("*").order("nombre");
+      setInsumosPrecio(ins2 || []);
+    } else {
+      setInsumosPrecio(ins || []);
+    }
+
+    if (rec && rec.length === 0) {
+      await supabase.from("recetas").insert(RECETAS_EJEMPLO);
+      const { data: rec2 } = await supabase.from("recetas").select("*").order("nombre_producto");
+      setRecetas(rec2 || []);
+    } else {
+      setRecetas(rec || []);
+    }
+
+    setLoadingRecetas(false);
+  };
+
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
 
+  // ── Calcular costo de una receta ──
+  const calcularCosto = (ingredientes, insumosLista) => {
+    return ingredientes.reduce((total, ing) => {
+      const insumo = insumosLista.find((i) => i.nombre === ing.insumo);
+      if (!insumo) return total;
+      const precioPorGramo = insumo.precio_por_kg / 1000;
+      return total + precioPorGramo * ing.gramos;
+    }, 0);
+  };
+
+  // ── Guardar/editar insumo precio ──
+  const guardarInsumo = async () => {
+    if (!formInsumo.nombre || !formInsumo.precio_por_kg) { showToast("Completa nombre y precio"); return; }
+    const data = { nombre: formInsumo.nombre.trim(), precio_por_kg: Number(formInsumo.precio_por_kg), unidad: formInsumo.unidad };
+    if (editInsumoId) {
+      await supabase.from("insumos_precio").update(data).eq("id", editInsumoId);
+      showToast("✓ Insumo actualizado");
+      setEditInsumoId(null);
+    } else {
+      await supabase.from("insumos_precio").insert([data]);
+      showToast("✓ Insumo agregado");
+    }
+    setFormInsumo({ nombre: "", precio_por_kg: "", unidad: "kg" });
+    cargarRecetas();
+  };
+
+  const editarInsumo = (ins) => {
+    setFormInsumo({ nombre: ins.nombre, precio_por_kg: ins.precio_por_kg, unidad: ins.unidad });
+    setEditInsumoId(ins.id);
+  };
+
+  const eliminarInsumo = async (id) => {
+    await supabase.from("insumos_precio").delete().eq("id", id);
+    showToast("Insumo eliminado");
+    cargarRecetas();
+  };
+
+  // ── Guardar/editar receta ──
+  const agregarIngrediente = () => {
+    if (!nuevoIngrediente.insumo || !nuevoIngrediente.gramos) return;
+    setFormReceta({ ...formReceta, ingredientes: [...formReceta.ingredientes, { insumo: nuevoIngrediente.insumo, gramos: Number(nuevoIngrediente.gramos) }] });
+    setNuevoIngrediente({ insumo: "", gramos: "" });
+  };
+
+  const quitarIngrediente = (idx) => {
+    setFormReceta({ ...formReceta, ingredientes: formReceta.ingredientes.filter((_, i) => i !== idx) });
+  };
+
+  const guardarReceta = async () => {
+    if (!formReceta.nombre_producto || formReceta.ingredientes.length === 0) { showToast("Agrega nombre e ingredientes"); return; }
+    const data = { nombre_producto: formReceta.nombre_producto.trim(), precio_venta: Number(formReceta.precio_venta) || 0, ingredientes: formReceta.ingredientes };
+    if (editRecetaId) {
+      await supabase.from("recetas").update(data).eq("id", editRecetaId);
+      showToast("✓ Receta actualizada");
+      setEditRecetaId(null);
+    } else {
+      await supabase.from("recetas").insert([data]);
+      showToast("✓ Receta guardada");
+    }
+    setFormReceta({ nombre_producto: "", precio_venta: "", ingredientes: [] });
+    cargarRecetas();
+  };
+
+  const editarReceta = (rec) => {
+    setFormReceta({ nombre_producto: rec.nombre_producto, precio_venta: rec.precio_venta, ingredientes: rec.ingredientes });
+    setEditRecetaId(rec.id);
+    setRecetaView("recetas");
+  };
+
+  const eliminarReceta = async (id) => {
+    await supabase.from("recetas").delete().eq("id", id);
+    showToast("Receta eliminada");
+    cargarRecetas();
+  };
+
+  const actualizarPrecioVenta = async (receta, precio) => {
+    await supabase.from("recetas").update({ precio_venta: Number(precio) }).eq("id", receta.id);
+    cargarRecetas();
+  };
+
+  // ── Gastos ──
   const agregarGasto = async () => {
     if (!persona) { showToast("Selecciona quién registra"); return; }
     const insumofinal = form.insumo === "Otro" ? (form.insumoCustom || "Otro") : form.insumo;
@@ -122,7 +308,6 @@ export default function App() {
     return true;
   });
 
-  // Gastos filtrados por mes para el resumen
   const gastosResumen = filtroResumen
     ? gastos.filter((g) => g.fecha.startsWith(filtroResumen))
     : gastos;
@@ -133,7 +318,6 @@ export default function App() {
   const totalMes = gastos.filter((g) => g.fecha.startsWith(mesActual)).reduce((s, g) => s + g.monto, 0);
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
 
-  // --- Cálculos del resumen usando gastosResumen ---
   const porInsumo = Object.entries(
     gastosResumen.reduce((acc, g) => { acc[g.insumo] = (acc[g.insumo] || 0) + g.monto; return acc; }, {})
   ).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 10);
@@ -144,7 +328,6 @@ export default function App() {
     c: gastosResumen.filter((g) => g.persona === p).length,
   })).filter((x) => x.t > 0);
 
-  // Bug fix: normalizar proveedor antes de agrupar
   const porProveedor = Object.entries(
     gastosResumen
       .filter((g) => g.proveedor)
@@ -161,10 +344,8 @@ export default function App() {
     c: gastosResumen.filter((g) => g.fondo === f).length,
   })).filter((x) => x.t > 0);
 
-  // Tabla mes a mes
   const porMes = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))]
-    .sort()
-    .reverse()
+    .sort().reverse()
     .map((m) => {
       const gs = gastos.filter((g) => g.fecha.startsWith(m));
       return { m, t: gs.reduce((s, g) => s + g.monto, 0), c: gs.length };
@@ -174,7 +355,6 @@ export default function App() {
   const maxProv = porProveedor[0]?.t || 1;
   const maxFondo = porFondo.length > 0 ? Math.max(...porFondo.map((x) => x.t)) : 1;
   const maxMes = porMes.length > 0 ? Math.max(...porMes.map((x) => x.t)) : 1;
-
   const totalResumen = gastosResumen.reduce((s, g) => s + g.monto, 0);
 
   const S = {
@@ -192,6 +372,13 @@ export default function App() {
     a.href = URL.createObjectURL(blob);
     a.download = "foodtruck_gastos.csv";
     a.click();
+  };
+
+  // Color para margen
+  const margenColor = (pct) => {
+    if (pct >= 60) return C.green;
+    if (pct >= 40) return C.mustard;
+    return C.red;
   };
 
   return (
@@ -213,6 +400,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ── HEADER ── */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "12px 16px", position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: 680, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -234,8 +423,13 @@ export default function App() {
               {persona ? `Hola, ${persona}` : "← ¿Quién eres?"}
             </span>
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {[{ id: "nuevo", label: "+ Nuevo" }, { id: "historial", label: "Historial" }, { id: "resumen", label: "Resumen" }].map((t) => (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {[
+              { id: "nuevo", label: "+ Nuevo" },
+              { id: "historial", label: "Historial" },
+              { id: "resumen", label: "Resumen" },
+              { id: "recetas", label: "🍽️ Recetas" },
+            ].map((t) => (
               <button key={t.id} onClick={() => setView(t.id)} style={{ background: view === t.id ? C.mustard : "transparent", color: view === t.id ? C.bg : C.muted, border: `1px solid ${view === t.id ? C.mustard : C.border}`, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontWeight: view === t.id ? 700 : 400, fontSize: 13 }}>
                 {t.label}
               </button>
@@ -245,6 +439,7 @@ export default function App() {
       </div>
 
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "16px 12px 60px" }}>
+
         {/* ── NUEVO ── */}
         {view === "nuevo" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -354,7 +549,6 @@ export default function App() {
         {/* ── RESUMEN ── */}
         {view === "resumen" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Filtro de mes */}
             <div style={S.card}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ color: C.muted, fontSize: 12, whiteSpace: "nowrap" }}>Filtrar por mes:</div>
@@ -470,6 +664,221 @@ export default function App() {
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── RECETAS ── */}
+        {view === "recetas" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Sub-navegación */}
+            <div style={{ display: "flex", gap: 6 }}>
+              {[
+                { id: "calcular", label: "📊 Márgenes" },
+                { id: "insumos", label: "🛒 Insumos" },
+                { id: "recetas", label: "📝 Recetas" },
+              ].map((t) => (
+                <button key={t.id} onClick={() => setRecetaView(t.id)} style={{ background: recetaView === t.id ? C.mustard : C.tag, color: recetaView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontWeight: recetaView === t.id ? 700 : 400, fontSize: 12 }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {loadingRecetas && <div style={{ textAlign: "center", color: C.muted, padding: 40 }}>Cargando recetas...</div>}
+
+            {/* ── MÁRGENES ── */}
+            {!loadingRecetas && recetaView === "calcular" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ color: C.muted, fontSize: 12, padding: "4px 0" }}>
+                  Costo calculado en base a los gramos de cada receta × precio/kg. Edita el precio de venta aquí directamente.
+                </div>
+                {recetas.length === 0 && (
+                  <div style={{ ...S.card, color: C.muted, textAlign: "center" }}>No hay recetas aún. Agrega una en la pestaña Recetas.</div>
+                )}
+                {recetas.map((rec) => {
+                  const costo = calcularCosto(rec.ingredientes, insumosPrecio);
+                  const venta = preciosVenta[rec.id] !== undefined ? preciosVenta[rec.id] : rec.precio_venta;
+                  const margen = venta - costo;
+                  const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
+                  return (
+                    <div key={rec.id} style={S.card}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15 }}>{rec.nombre_producto}</div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 11, color: C.muted }}>Costo</div>
+                          <div style={{ fontWeight: 700, color: C.red, fontSize: 16 }}>{fmt(Math.round(costo))}</div>
+                        </div>
+                      </div>
+
+                      {/* Ingredientes mini */}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
+                        {rec.ingredientes.map((ing, i) => (
+                          <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 8px", fontSize: 11, color: C.muted }}>
+                            {ing.insumo} <span style={{ color: C.text }}>{ing.gramos}g</span>
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Precio venta editable */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, alignItems: "center" }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>Precio venta ($)</div>
+                          <input
+                            type="number"
+                            value={preciosVenta[rec.id] !== undefined ? preciosVenta[rec.id] : rec.precio_venta}
+                            onChange={(e) => setPreciosVenta({ ...preciosVenta, [rec.id]: e.target.value })}
+                            onBlur={(e) => {
+                              actualizarPrecioVenta(rec, e.target.value);
+                              setPreciosVenta({ ...preciosVenta, [rec.id]: undefined });
+                            }}
+                            style={{ ...S.inp, fontWeight: 700, fontSize: 15 }}
+                          />
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>Ganancia</div>
+                          <div style={{ fontWeight: 700, fontSize: 16, color: margen >= 0 ? C.green : C.red }}>{fmt(Math.round(margen))}</div>
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>Margen</div>
+                          <div style={{ fontWeight: 800, fontSize: 20, color: margenColor(margenPct) }}>{Math.round(margenPct)}%</div>
+                        </div>
+                      </div>
+
+                      {/* Barra margen */}
+                      <div style={{ marginTop: 10, background: C.border, borderRadius: 4, height: 8, overflow: "hidden" }}>
+                        <div style={{ background: margenColor(margenPct), width: `${Math.min(100, Math.max(0, margenPct))}%`, height: "100%", borderRadius: 4, transition: "width .3s ease" }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginTop: 3 }}>
+                        <span>0%</span><span style={{ color: C.mustard }}>40%</span><span style={{ color: C.green }}>60%+</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ── INSUMOS PRECIO ── */}
+            {!loadingRecetas && recetaView === "insumos" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={S.card}>
+                  <STitle>{editInsumoId ? "Editar insumo" : "Agregar insumo"}</STitle>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+                    <Fld label="Nombre">
+                      <input placeholder="ej: Palta" value={formInsumo.nombre} onChange={(e) => setFormInsumo({ ...formInsumo, nombre: e.target.value })} style={S.inp} />
+                    </Fld>
+                    <Fld label="Precio / kg ($)">
+                      <input type="number" placeholder="0" value={formInsumo.precio_por_kg} onChange={(e) => setFormInsumo({ ...formInsumo, precio_por_kg: e.target.value })} style={S.inp} />
+                    </Fld>
+                    <Fld label="Unidad">
+                      <select value={formInsumo.unidad} onChange={(e) => setFormInsumo({ ...formInsumo, unidad: e.target.value })} style={S.inp}>
+                        {["kg","litro","unidad"].map((u) => <option key={u}>{u}</option>)}
+                      </select>
+                    </Fld>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={guardarInsumo} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "9px 0", fontWeight: 700, cursor: "pointer" }}>
+                      {editInsumoId ? "Actualizar" : "Agregar"}
+                    </button>
+                    {editInsumoId && (
+                      <button onClick={() => { setEditInsumoId(null); setFormInsumo({ nombre: "", precio_por_kg: "", unidad: "kg" }); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "9px 16px", cursor: "pointer" }}>
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {insumosPrecio.map((ins) => (
+                  <div key={ins.id} style={{ ...S.card, display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600 }}>{ins.nombre}</div>
+                      <div style={{ color: C.muted, fontSize: 12 }}>{fmt(ins.precio_por_kg)} / {ins.unidad}</div>
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>{fmt(Math.round(ins.precio_por_kg / 1000))} / g</div>
+                    <button onClick={() => editarInsumo(ins)} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Editar</button>
+                    <button onClick={() => eliminarInsumo(ins.id)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ── RECETAS EDITOR ── */}
+            {!loadingRecetas && recetaView === "recetas" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={S.card}>
+                  <STitle>{editRecetaId ? "Editar receta" : "Nueva receta"}</STitle>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 10 }}>
+                    <Fld label="Nombre del producto">
+                      <input placeholder="ej: Completo Italiano" value={formReceta.nombre_producto} onChange={(e) => setFormReceta({ ...formReceta, nombre_producto: e.target.value })} style={S.inp} />
+                    </Fld>
+                    <Fld label="Precio venta ($)">
+                      <input type="number" placeholder="0" value={formReceta.precio_venta} onChange={(e) => setFormReceta({ ...formReceta, precio_venta: e.target.value })} style={S.inp} />
+                    </Fld>
+                  </div>
+
+                  {/* Ingredientes actuales */}
+                  {formReceta.ingredientes.length > 0 && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ color: C.muted, fontSize: 11, marginBottom: 6 }}>Ingredientes:</div>
+                      {formReceta.ingredientes.map((ing, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 6, padding: "5px 10px", marginBottom: 5 }}>
+                          <span style={{ fontSize: 13 }}>{ing.insumo}</span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ color: C.mustard, fontWeight: 600 }}>{ing.gramos}g</span>
+                            <button onClick={() => quitarIngrediente(i)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Agregar ingrediente */}
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8, marginBottom: 10 }}>
+                    <select value={nuevoIngrediente.insumo} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, insumo: e.target.value })} style={S.inp}>
+                      <option value="">Selecciona insumo…</option>
+                      {insumosPrecio.map((i) => <option key={i.id} value={i.nombre}>{i.nombre}</option>)}
+                    </select>
+                    <input type="number" placeholder="gramos" value={nuevoIngrediente.gramos} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, gramos: e.target.value })} style={S.inp} />
+                    <button onClick={agregarIngrediente} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.mustard, borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16, whiteSpace: "nowrap" }}>+</button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={guardarReceta} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "9px 0", fontWeight: 700, cursor: "pointer" }}>
+                      {editRecetaId ? "Actualizar receta" : "Guardar receta"}
+                    </button>
+                    {editRecetaId && (
+                      <button onClick={() => { setEditRecetaId(null); setFormReceta({ nombre_producto: "", precio_venta: "", ingredientes: [] }); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "9px 16px", cursor: "pointer" }}>
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {recetas.map((rec) => {
+                  const costo = calcularCosto(rec.ingredientes, insumosPrecio);
+                  return (
+                    <div key={rec.id} style={S.card}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                        <div style={{ fontWeight: 700 }}>{rec.nombre_producto}</div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button onClick={() => editarReceta(rec)} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
+                          <button onClick={() => eliminarReceta(rec.id)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+                        {rec.ingredientes.map((ing, i) => (
+                          <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 8px", fontSize: 11, color: C.muted }}>
+                            {ing.insumo} <span style={{ color: C.text }}>{ing.gramos}g</span>
+                          </span>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
+                        <span style={{ color: C.muted }}>Costo: <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costo))}</span></span>
+                        <span style={{ color: C.muted }}>Venta: <span style={{ color: C.mustard, fontWeight: 700 }}>{fmt(rec.precio_venta)}</span></span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
