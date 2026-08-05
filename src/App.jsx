@@ -32,12 +32,26 @@ const metodoPagoColors = {
 
 // Productos y precios base
 const PRODUCTOS_DEFAULT = [
-  { nombre: "Completo Italiano", precio: 4100, precio_py: Math.round(4100 * 1.3) },
-  { nombre: "Pollo Crispy",      precio: 1000, precio_py: Math.round(1000 * 1.3) },
-  { nombre: "Churrasco",         precio: 1000, precio_py: Math.round(1000 * 1.3) },
-  { nombre: "Papas 300g",        precio: 2900, precio_py: Math.round(2900 * 1.3) },
-  { nombre: "SalchiPapas",       precio: 3600, precio_py: Math.round(3600 * 1.3) },
-  { nombre: "Bebidas 250ml",     precio: 1000, precio_py: Math.round(1000 * 1.3) },
+  // Completos
+  { nombre: "Italiano",                          precio: 4100, precio_py: Math.round(4100 * 1.3) },
+  { nombre: "Highway to Hell",                   precio: 4600, precio_py: Math.round(4600 * 1.3) },
+  { nombre: "Torn and Frayed",                   precio: 4600, precio_py: Math.round(4600 * 1.3) },
+  { nombre: "Purple Haze",                       precio: 4600, precio_py: Math.round(4600 * 1.3) },
+  { nombre: "Dinámico",                          precio: 4900, precio_py: Math.round(4900 * 1.3) },
+  { nombre: "Paradise City",                     precio: 4900, precio_py: Math.round(4900 * 1.3) },
+  { nombre: "Sweet Child O' Mine",               precio: 4900, precio_py: Math.round(4900 * 1.3) },
+  // Papas
+  { nombre: "Papas fritas",                      precio: 2900, precio_py: Math.round(2900 * 1.3) },
+  { nombre: "Salchipapas",                       precio: 3600, precio_py: Math.round(3600 * 1.3) },
+  { nombre: "Salchipapas con tocino",            precio: 4500, precio_py: Math.round(4500 * 1.3) },
+  { nombre: "Papas tocino y cebolla",            precio: 4000, precio_py: Math.round(4000 * 1.3) },
+  { nombre: "Papas queso fundido y tocino",      precio: 4000, precio_py: Math.round(4000 * 1.3) },
+  { nombre: "Papas con nuggets",                 precio: 4500, precio_py: Math.round(4500 * 1.3) },
+  { nombre: "Papas con nuggets (12 und)",        precio: 5300, precio_py: Math.round(5300 * 1.3) },
+  // Bebidas y agregados
+  { nombre: "Lata 250ml",                        precio: 1000, precio_py: Math.round(1000 * 1.3) },
+  { nombre: "Queso fundido",                     precio: 1000, precio_py: Math.round(1000 * 1.3) },
+  { nombre: "Agregado extra",                    precio:  600, precio_py: Math.round( 600 * 1.3) },
 ];
 
 // Insumos de ejemplo para recetas
@@ -156,6 +170,12 @@ export default function App() {
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
   const [editProducto, setEditProducto] = useState(null);
 
+  // --- Admin ---
+  const ADMIN_CLAVE = "1232026";
+  const [adminModal, setAdminModal] = useState(null);
+  const [adminClave, setAdminClave] = useState("");
+  const [adminError, setAdminError] = useState(false);
+
   useEffect(() => { cargarGastos(); }, []);
   useEffect(() => { if (view === "recetas") cargarRecetas(); }, [view]);
   useEffect(() => { if (view === "ventas") cargarVentas(); }, [view]);
@@ -202,6 +222,34 @@ export default function App() {
   };
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
+
+  // ── Admin: verificar clave y eliminar con log ──
+  const solicitarEliminacion = (tipo, registro) => {
+    setAdminModal({ tipo, registro });
+    setAdminClave("");
+    setAdminError(false);
+  };
+
+  const confirmarEliminacion = async () => {
+    if (adminClave !== ADMIN_CLAVE) {
+      setAdminError(true);
+      return;
+    }
+    const { tipo, registro } = adminModal;
+    const tabla = tipo === "venta" ? "ventas" : "gastos";
+    await supabase.from(tabla).delete().eq("id", registro.id);
+    await supabase.from("log_eliminaciones").insert([{
+      tipo,
+      registro_id: registro.id,
+      detalle: registro,
+      eliminado_por: persona || "desconocido",
+    }]);
+    setAdminModal(null);
+    setAdminClave("");
+    showToast("Registro eliminado y guardado en log");
+    if (tipo === "venta") cargarVentas();
+    else { setConfirmDelete(null); cargarGastos(); }
+  };
 
   // ── Calcular costo de una receta ──
   const calcularCosto = (ingredientes, insumosLista) => {
@@ -301,11 +349,8 @@ export default function App() {
     setSaving(false);
   };
 
-  const eliminar = async (id) => {
-    await supabase.from("gastos").delete().eq("id", id);
-    setConfirmDelete(null);
-    showToast("Registro eliminado");
-    cargarGastos();
+  const eliminar = (registro) => {
+    solicitarEliminacion("gasto", registro);
   };
 
   const agregarInsumo = () => {
@@ -485,11 +530,33 @@ export default function App() {
       {confirmDelete && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, maxWidth: 300, width: "90%" }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>¿Eliminar registro?</div>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>¿Eliminar gasto?</div>
             <div style={{ color: C.muted, fontSize: 13, marginBottom: 16 }}>{confirmDelete.insumo} — {fmt(confirmDelete.monto)}</div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => setConfirmDelete(null)} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "8px 0", cursor: "pointer" }}>Cancelar</button>
-              <button onClick={() => eliminar(confirmDelete.id)} style={{ flex: 1, background: C.red, border: "none", color: "#fff", borderRadius: 7, padding: "8px 0", cursor: "pointer", fontWeight: 700 }}>Eliminar</button>
+              <button onClick={() => eliminar(confirmDelete)} style={{ flex: 1, background: C.red, border: "none", color: "#fff", borderRadius: 7, padding: "8px 0", cursor: "pointer", fontWeight: 700 }}>Continuar</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {adminModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 24, maxWidth: 320, width: "90%" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>🔐 Clave de administrador</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Se guardará un log de esta eliminación.</div>
+            <input
+              type="password"
+              placeholder="Ingresa la clave"
+              value={adminClave}
+              onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }}
+              onKeyDown={(e) => e.key === "Enter" && confirmarEliminacion()}
+              style={{ ...S.inp, marginBottom: 8, fontSize: 16, letterSpacing: 4 }}
+              autoFocus
+            />
+            {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setAdminModal(null); setAdminClave(""); setAdminError(false); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "9px 0", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={confirmarEliminacion} style={{ flex: 1, background: C.red, border: "none", color: "#fff", borderRadius: 7, padding: "9px 0", cursor: "pointer", fontWeight: 700 }}>Eliminar</button>
             </div>
           </div>
         </div>
@@ -961,6 +1028,7 @@ export default function App() {
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, color: C.green, fontSize: 15 }}>{fmt(v.total)}</div>
+                      <button onClick={() => solicitarEliminacion("venta", v)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4 }}>eliminar</button>
                     </div>
                   </div>
                 ))}
