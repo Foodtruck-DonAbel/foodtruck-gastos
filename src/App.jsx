@@ -184,6 +184,11 @@ export default function App() {
     return ingredientes.reduce((total, ing) => {
       const insumo = insumosLista.find((i) => i.nombre === ing.insumo);
       if (!insumo) return total;
+      if (insumo.unidad === "unidad") {
+        // precio × cantidad de unidades
+        return total + insumo.precio_por_kg * (ing.gramos || 0);
+      }
+      // precio × gramos / 1000
       const precioPorGramo = insumo.precio_por_kg / 1000;
       return total + precioPorGramo * ing.gramos;
     }, 0);
@@ -711,11 +716,17 @@ export default function App() {
 
                       {/* Ingredientes mini */}
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 12 }}>
-                        {rec.ingredientes.map((ing, i) => (
-                          <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 8px", fontSize: 11, color: C.muted }}>
-                            {ing.insumo} <span style={{ color: C.text }}>{ing.gramos}g</span>
-                          </span>
-                        ))}
+                        {rec.ingredientes.map((ing, i) => {
+                          const insumoData = insumosPrecio.find((x) => x.nombre === ing.insumo);
+                          const label = insumoData?.unidad === "unidad"
+                            ? `${ing.gramos} und`
+                            : `${ing.gramos}g`;
+                          return (
+                            <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 8px", fontSize: 11, color: C.muted }}>
+                              {ing.insumo} <span style={{ color: C.text }}>{label}</span>
+                            </span>
+                          );
+                        })}
                       </div>
 
                       {/* Precio venta editable */}
@@ -818,27 +829,45 @@ export default function App() {
                   {formReceta.ingredientes.length > 0 && (
                     <div style={{ marginBottom: 10 }}>
                       <div style={{ color: C.muted, fontSize: 11, marginBottom: 6 }}>Ingredientes:</div>
-                      {formReceta.ingredientes.map((ing, i) => (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 6, padding: "5px 10px", marginBottom: 5 }}>
-                          <span style={{ fontSize: 13 }}>{ing.insumo}</span>
-                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ color: C.mustard, fontWeight: 600 }}>{ing.gramos}g</span>
-                            <button onClick={() => quitarIngrediente(i)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
-                          </span>
-                        </div>
-                      ))}
+                      {formReceta.ingredientes.map((ing, i) => {
+                        const insumoData = insumosPrecio.find((x) => x.nombre === ing.insumo);
+                        const label = insumoData?.unidad === "unidad"
+                          ? `${ing.gramos} und`
+                          : `${ing.gramos}g`;
+                        return (
+                          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 6, padding: "5px 10px", marginBottom: 5 }}>
+                            <span style={{ fontSize: 13 }}>{ing.insumo}</span>
+                            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ color: C.mustard, fontWeight: 600 }}>{label}</span>
+                              <button onClick={() => quitarIngrediente(i)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
                   {/* Agregar ingrediente */}
-                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8, marginBottom: 10 }}>
-                    <select value={nuevoIngrediente.insumo} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, insumo: e.target.value })} style={S.inp}>
-                      <option value="">Selecciona insumo…</option>
-                      {insumosPrecio.map((i) => <option key={i.id} value={i.nombre}>{i.nombre}</option>)}
-                    </select>
-                    <input type="number" placeholder="gramos" value={nuevoIngrediente.gramos} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, gramos: e.target.value })} style={S.inp} />
-                    <button onClick={agregarIngrediente} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.mustard, borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16, whiteSpace: "nowrap" }}>+</button>
-                  </div>
+                  {(() => {
+                    const insumoSel = insumosPrecio.find((i) => i.nombre === nuevoIngrediente.insumo);
+                    const esPorUnidad = insumoSel?.unidad === "unidad";
+                    return (
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8, marginBottom: 10 }}>
+                        <select value={nuevoIngrediente.insumo} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, insumo: e.target.value, gramos: "" })} style={S.inp}>
+                          <option value="">Selecciona insumo…</option>
+                          {insumosPrecio.map((i) => <option key={i.id} value={i.nombre}>{i.nombre}</option>)}
+                        </select>
+                        <input
+                          type="number"
+                          placeholder={esPorUnidad ? "unidades" : "gramos"}
+                          value={nuevoIngrediente.gramos}
+                          onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, gramos: e.target.value })}
+                          style={S.inp}
+                        />
+                        <button onClick={agregarIngrediente} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.mustard, borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16, whiteSpace: "nowrap" }}>+</button>
+                      </div>
+                    );
+                  })()}
 
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={guardarReceta} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "9px 0", fontWeight: 700, cursor: "pointer" }}>
@@ -864,11 +893,17 @@ export default function App() {
                         </div>
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
-                        {rec.ingredientes.map((ing, i) => (
-                          <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 8px", fontSize: 11, color: C.muted }}>
-                            {ing.insumo} <span style={{ color: C.text }}>{ing.gramos}g</span>
-                          </span>
-                        ))}
+                        {rec.ingredientes.map((ing, i) => {
+                          const insumoData = insumosPrecio.find((x) => x.nombre === ing.insumo);
+                          const label = insumoData?.unidad === "unidad"
+                            ? `${ing.gramos} und`
+                            : `${ing.gramos}g`;
+                          return (
+                            <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 8px", fontSize: 11, color: C.muted }}>
+                              {ing.insumo} <span style={{ color: C.text }}>{label}</span>
+                            </span>
+                          );
+                        })}
                       </div>
                       <div style={{ display: "flex", gap: 16, fontSize: 13 }}>
                         <span style={{ color: C.muted }}>Costo: <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costo))}</span></span>
