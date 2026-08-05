@@ -146,6 +146,7 @@ export default function App() {
   const [formReceta, setFormReceta] = useState({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", ingredientes: [] });
   const [editRecetaId, setEditRecetaId] = useState(null);
   const [nuevoIngrediente, setNuevoIngrediente] = useState({ insumo: "", gramos: "" });
+  const [editGramos, setEditGramos] = useState({}); // { recetaId_idx: valor }
 
   // Resumen
   const [filtroResumen, setFiltroResumen] = useState("");
@@ -203,12 +204,16 @@ export default function App() {
   const confirmarEliminacion = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     const { tipo, registro } = adminModal;
-    const tabla = tipo === "venta" ? "ventas" : "gastos";
+    const tabla = tipo === "venta" ? "ventas" : tipo === "receta" ? "recetas" : tipo === "insumo" ? "insumos_precio" : "gastos";
     await supabase.from(tabla).delete().eq("id", registro.id);
-    await supabase.from("log_eliminaciones").insert([{ tipo, registro_id: registro.id, detalle: registro, eliminado_por: persona || "desconocido" }]);
+    if (tipo !== "receta" && tipo !== "insumo") {
+      await supabase.from("log_eliminaciones").insert([{ tipo, registro_id: registro.id, detalle: registro, eliminado_por: persona || "desconocido" }]);
+    }
     setAdminModal(null); setAdminClave("");
-    showToast("Eliminado — log guardado");
-    if (tipo === "venta") cargarVentas(); else cargarGastos();
+    showToast("Eliminado");
+    if (tipo === "venta") cargarVentas();
+    else if (tipo === "receta" || tipo === "insumo") cargarRecetas();
+    else cargarGastos();
   };
 
   // Gastos
@@ -341,6 +346,12 @@ export default function App() {
 
   const actualizarPrecioReceta = async (rec, campo, valor) => {
     await supabase.from("recetas").update({ [campo]: Number(valor) }).eq("id", rec.id); cargarRecetas();
+
+  const actualizarGramosIngrediente = async (rec, idx, nuevosGramos) => {
+    const nuevosIngredientes = rec.ingredientes.map((ing, i) => i === idx ? { ...ing, gramos: Number(nuevosGramos) } : ing);
+    await supabase.from("recetas").update({ ingredientes: nuevosIngredientes }).eq("id", rec.id);
+    cargarRecetas();
+  };
   };
 
   const margenColor = (pct) => pct >= 60 ? C.green : pct >= 40 ? C.mustard : C.red;
@@ -936,8 +947,25 @@ export default function App() {
                             <button onClick={() => solicitarEliminacion("receta", rec)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
                           </div>
                         </div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                          {rec.ingredientes.map((ing, i) => <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: C.muted }}>{ing.insumo} <span style={{ color: C.text }}>{ing.gramos}g</span></span>)}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                          {rec.ingredientes.map((ing, i) => {
+                            const ins = insumosPrecio.find((x) => x.nombre === ing.insumo);
+                            const key = rec.id + "_" + i;
+                            const esUnidad = ins?.unidad === "unidad";
+                            return (
+                              <div key={i} style={{ background: C.tag, borderRadius: 6, padding: "4px 8px", fontSize: 11, display: "flex", alignItems: "center", gap: 5 }}>
+                                <span style={{ color: C.muted }}>{ing.insumo}</span>
+                                <input
+                                  type="number"
+                                  value={editGramos[key] !== undefined ? editGramos[key] : ing.gramos}
+                                  onChange={(e) => setEditGramos({ ...editGramos, [key]: e.target.value })}
+                                  onBlur={(e) => { if (e.target.value !== String(ing.gramos)) actualizarGramosIngrediente(rec, i, e.target.value); setEditGramos({ ...editGramos, [key]: undefined }); }}
+                                  style={{ background: C.bg, border: "none", borderBottom: `1px solid ${C.border}`, color: C.mustard, fontWeight: 700, fontSize: 11, width: 40, outline: "none", textAlign: "center" }}
+                                />
+                                <span style={{ color: C.muted, fontSize: 10 }}>{esUnidad ? "und" : "g"}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                         <div style={{ display: "flex", gap: 14, fontSize: 12 }}>
                           <span style={{ color: C.muted }}>Costo: <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costo))}</span></span>
