@@ -297,7 +297,6 @@ export default function App() {
       nuevoPrecio = 0;
       descInfo = { tipo: "cortesia", autorizado_por: cortesiaDueno };
     } else {
-    } else {
       const pct = Number(descuentoPct);
       if (!pct || pct <= 0 || pct >= 100) { showToast("Porcentaje inválido"); return; }
       const costo = costoProducto(descuentoModal.receta_nombre || descuentoModal.nombre);
