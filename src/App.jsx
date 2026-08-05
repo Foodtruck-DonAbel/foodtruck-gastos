@@ -74,6 +74,24 @@ const RECETAS_EJEMPLO = [
   { nombre_producto: "Agregado extra", categoria: "agregados", precio_venta: 600, precio_py: 780, ingredientes: [] },
 ];
 
+const INGREDIENTES_BASE = {
+  completos: [
+    { insumo: "Pan para completo", gramos: 1 },
+    { insumo: "Salchicha 17 cm", gramos: 1 },
+  ],
+  pollo: [
+    { insumo: "Pan para Sandwich Castaño", gramos: 1 },
+    { insumo: "Chicken Fingers", gramos: 3 },
+  ],
+  churrasco: [
+    { insumo: "Pan para Sandwich Castaño", gramos: 1 },
+    { insumo: "Churrascos", gramos: 3 },
+  ],
+  papas: [],
+  bebidas: [],
+  agregados: [],
+};
+
 const INSUMOS_EJEMPLO = [
   { nombre: "Vienesa", precio_por_kg: 5500, unidad: "kg" },
   { nombre: "Pan para completo", precio_por_kg: 2800, unidad: "kg" },
@@ -212,7 +230,7 @@ export default function App() {
     setAdminModal(null); setAdminClave("");
     showToast("Eliminado");
     if (tipo === "venta") cargarVentas();
-    else if (tipo === "receta" || tipo === "insumo") cargarRecetas();
+    else if (tipo === "receta" || tipo === "insumo") { setRecetas([]); setInsumosPrecio([]); cargarRecetas(); }
     else cargarGastos();
   };
 
@@ -283,7 +301,7 @@ export default function App() {
       const pct = Number(descuentoPct);
       if (!pct || pct <= 0 || pct >= 100) { showToast("Porcentaje inválido"); return; }
       const costo = costoProducto(descuentoModal.receta_nombre || descuentoModal.nombre);
-      const precioMinimo = costo > 0 ? Math.ceil(costo / 0.80) : 0;
+      const precioMinimo = costo > 0 ? Math.ceil(costo * 1.20) : 0;
       const precioConDesc = Math.round(descuentoModal.precio_original * (1 - pct / 100));
       if (costo > 0 && precioConDesc < precioMinimo) {
         showToast(`Precio mínimo: ${fmt(precioMinimo)} — margen 20%`); return;
@@ -462,7 +480,7 @@ export default function App() {
                 <input type="number" placeholder="ej: 15" value={descuentoPct} onChange={(e) => setDescuentoPct(e.target.value)} style={S.inp} />
                 {descuentoPct && (() => {
                   const costo = costoProducto(descuentoModal.receta_nombre || descuentoModal.nombre);
-                  const precioMinimo = costo > 0 ? Math.ceil(costo / 0.80) : 0;
+                  const precioMinimo = costo > 0 ? Math.ceil(costo * 1.20) : 0;
                   const precioConDesc = Math.round(descuentoModal.precio_original * (1 - Number(descuentoPct) / 100));
                   const margen = costo > 0 ? Math.round(((precioConDesc - costo) / precioConDesc) * 100) : 100;
                   const ok = precioConDesc >= precioMinimo;
@@ -1011,7 +1029,7 @@ export default function App() {
                 <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginBottom: 10 }}>
                   <Fld label="Nombre del producto"><input value={formReceta.nombre_producto} onChange={(e) => setFormReceta({ ...formReceta, nombre_producto: e.target.value })} style={S.inp} /></Fld>
                   <Fld label="Categoría">
-                    <select value={formReceta.categoria} onChange={(e) => setFormReceta({ ...formReceta, categoria: e.target.value })} style={S.inp}>
+                    <select value={formReceta.categoria} onChange={(e) => { const cat = e.target.value; setFormReceta({ ...formReceta, categoria: cat, ingredientes: editRecetaId ? formReceta.ingredientes : (INGREDIENTES_BASE[cat] || []) }); }} style={S.inp}>
                       {CATEGORIAS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                     </select>
                   </Fld>
@@ -1024,9 +1042,15 @@ export default function App() {
                       const ins = insumosPrecio.find((x) => x.nombre === ing.insumo);
                       return (
                         <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 6, padding: "5px 10px", marginBottom: 5 }}>
-                          <span style={{ fontSize: 13 }}>{ing.insumo}</span>
-                          <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                            <span style={{ color: C.mustard, fontWeight: 600 }}>{ins?.unidad === "unidad" ? `${ing.gramos} und` : `${ing.gramos}g`}</span>
+                          <span style={{ fontSize: 13, flex: 1 }}>{ing.insumo}</span>
+                          <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input
+                              type="number"
+                              value={ing.gramos}
+                              onChange={(e) => setFormReceta({ ...formReceta, ingredientes: formReceta.ingredientes.map((x, j) => j === i ? { ...x, gramos: Number(e.target.value) } : x) })}
+                              style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, color: C.mustard, fontWeight: 700, fontSize: 13, width: 55, padding: "3px 6px", outline: "none", textAlign: "center" }}
+            />
+                            <span style={{ color: C.muted, fontSize: 11 }}>{ins?.unidad === "unidad" ? "und" : "g"}</span>
                             <button onClick={() => setFormReceta({ ...formReceta, ingredientes: formReceta.ingredientes.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
                           </span>
                         </div>
