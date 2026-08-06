@@ -300,7 +300,7 @@ export default function App() {
       const pct = Number(descuentoPct);
       if (!pct || pct <= 0 || pct >= 100) { showToast("Porcentaje inválido"); return; }
       const costo = costoProducto(descuentoModal.receta_nombre || descuentoModal.nombre);
-      const precioMinimo = costo > 0 ? Math.ceil(costo * 1.20) : 0;
+      const precioMinimo = costo > 0 ? Math.ceil(costo / 0.70) : 0;
       const precioConDesc = Math.round(descuentoModal.precio_original * (1 - pct / 100));
       if (costo > 0 && precioConDesc < precioMinimo) {
         showToast(`Precio mínimo: ${fmt(precioMinimo)} — margen 20%`); return;
@@ -475,18 +475,24 @@ export default function App() {
             )}
             {descuentoTipo === "personal" && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>% de descuento — margen mínimo 20%</div>
+                <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>Ingresa el % de descuento</div>
                 <input type="number" placeholder="ej: 15" value={descuentoPct} onChange={(e) => setDescuentoPct(e.target.value)} style={S.inp} />
                 {descuentoPct && (() => {
                   const costo = costoProducto(descuentoModal.receta_nombre || descuentoModal.nombre);
-                  const precioMinimo = costo > 0 ? Math.ceil(costo * 1.20) : 0;
+                  const precioMinimo = costo > 0 ? Math.ceil(costo / 0.70) : 0;
                   const precioConDesc = Math.round(descuentoModal.precio_original * (1 - Number(descuentoPct) / 100));
-                  const margen = costo > 0 ? Math.round(((precioConDesc - costo) / precioConDesc) * 100) : 100;
                   const ok = precioConDesc >= precioMinimo;
                   return (
-                    <div style={{ marginTop: 6, fontSize: 12 }}>
-                      <div style={{ color: ok ? C.green : C.red }}>Precio con desc: {fmt(precioConDesc)} · Margen: {margen}% {ok ? "✓" : "⚠️ No permitido"}</div>
-                      {costo > 0 && <div style={{ color: C.muted, marginTop: 2 }}>Precio mínimo permitido: {fmt(precioMinimo)}</div>}
+                    <div style={{ marginTop: 8, fontSize: 13 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ color: C.muted }}>Descuento</span>
+                        <span style={{ fontWeight: 700, color: C.blue }}>{Number(descuentoPct)}%</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                        <span style={{ color: C.muted }}>Precio final</span>
+                        <span style={{ fontWeight: 800, fontSize: 16, color: ok ? C.green : C.red }}>{fmt(precioConDesc)}</span>
+                      </div>
+                      {!ok && <div style={{ color: C.red, fontSize: 12, marginTop: 4 }}>⚠️ Mínimo: {fmt(precioMinimo)}</div>}
                     </div>
                   );
                 })()}
