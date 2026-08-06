@@ -869,7 +869,7 @@ export default function App() {
             {!loadingRecetas && recetaView === "margenes" && (
               <div>
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
-                  {CATEGORIAS.filter((c) => c.id !== "combos").map((cat) => (
+                  {CATEGORIAS.map((cat) => (
                     <button key={cat.id} onClick={() => setRecetaCatActiva(cat.id)} style={{ background: recetaCatActiva === cat.id ? C.mustard : C.tag, color: recetaCatActiva === cat.id ? C.bg : C.muted, border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>
                       {cat.emoji} {cat.label}
                     </button>
@@ -877,7 +877,10 @@ export default function App() {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {recetas.filter((r) => r.categoria === recetaCatActiva).map((rec) => {
-                    const costo = calcularCosto(rec.ingredientes, insumosPrecio);
+                    const esCombo = rec.categoria === "combos";
+                    const costo = esCombo
+                      ? (rec.productos_combo || []).reduce((s, p) => s + costoProducto(p), 0)
+                      : calcularCosto(rec.ingredientes, insumosPrecio);
                     const venta = preciosVentaEdit[rec.id + "_venta"] !== undefined ? preciosVentaEdit[rec.id + "_venta"] : rec.precio_venta;
                     const margen = venta - costo;
                     const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
@@ -888,10 +891,16 @@ export default function App() {
                           <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: C.muted }}>Costo</div><div style={{ fontWeight: 700, color: C.red, fontSize: 15 }}>{fmt(Math.round(costo))}</div></div>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
-                          {rec.ingredientes.map((ing, i) => {
-                            const ins = insumosPrecio.find((x) => x.nombre === ing.insumo);
-                            return <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: C.muted }}>{ing.insumo} <span style={{ color: C.text }}>{ins?.unidad === "unidad" ? `${ing.gramos}u` : `${ing.gramos}g`}</span></span>;
-                          })}
+                          {esCombo
+                            ? (rec.productos_combo || []).map((p, i) => {
+                                const costoP = costoProducto(p);
+                                return <span key={i} style={{ background: C.purple + "22", borderRadius: 4, padding: "2px 7px", fontSize: 10, color: C.purple }}>{p} <span style={{ color: C.muted }}>{fmt(Math.round(costoP))}</span></span>;
+                              })
+                            : rec.ingredientes.map((ing, i) => {
+                                const ins = insumosPrecio.find((x) => x.nombre === ing.insumo);
+                                return <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: C.muted }}>{ing.insumo} <span style={{ color: C.text }}>{ins?.unidad === "unidad" ? `${ing.gramos}u` : `${ing.gramos}g`}</span></span>;
+                              })
+                          }
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
                           <div>
