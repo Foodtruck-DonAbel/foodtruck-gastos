@@ -124,6 +124,7 @@ export default function App() {
   const [fechaVenta, setFechaVenta] = useState(today());
   const [savingVenta, setSavingVenta] = useState(false);
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
+  const [dashPeriodo, setDashPeriodo] = useState("mes"); // hoy | 7dias | mes
   const [descuentoModal, setDescuentoModal] = useState(null);
   const [descuentoTipo, setDescuentoTipo] = useState("");
   const [descuentoPct, setDescuentoPct] = useState("");
@@ -727,102 +728,188 @@ export default function App() {
               </div>
             )}
 
-            {ventaView === "dashboard" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <StatCard label="Ventas hoy" value={fmt(totalVentasDia)} color={C.green} />
-                  <StatCard label="Ventas mes" value={fmt(totalVentasMes)} color={C.mustard} />
-                  <StatCard label="Gastos mes" value={fmt(totalMes)} color={C.red} />
-                  <StatCard label="Utilidad" value={fmt(utilidadMes)} color={utilidadMes >= 0 ? C.green : C.red} />
-                </div>
-                <div style={S.card}>
-                  <STitle>Por método de pago — {mesActual}</STitle>
-                  {ventasPorMetodo.length === 0 && <Empty />}
-                  {ventasPorMetodo.map((x) => (
-                    <div key={x.m} style={{ marginBottom: 10 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: metodoPagoColors[x.m], display: "inline-block" }} />{x.m} <span style={{ color: C.muted, fontSize: 11 }}>({x.c})</span></span>
-                        <span style={{ fontWeight: 700, color: metodoPagoColors[x.m] }}>{fmt(x.t)}</span>
+            {ventaView === "dashboard" && (() => {
+              // Calcular ventas según período seleccionado
+              const ahora = today();
+              const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
+              const hace7str = hace7.toISOString().slice(0, 10);
+              const ventasPeriodo = dashPeriodo === "hoy"
+                ? ventas.filter((v) => v.fecha === ahora)
+                : dashPeriodo === "7dias"
+                ? ventas.filter((v) => v.fecha >= hace7str && v.fecha <= ahora)
+                : ventasMesActual;
+
+              const totalPeriodo = ventasPeriodo.reduce((s, v) => s + v.total, 0);
+              const cantidadPeriodo = ventasPeriodo.length;
+              const ticketPromedio = cantidadPeriodo > 0 ? Math.round(totalPeriodo / cantidadPeriodo) : 0;
+              const gastosPeriodo = dashPeriodo === "hoy"
+                ? gastos.filter((g) => g.fecha === ahora).reduce((s, g) => s + g.monto, 0)
+                : dashPeriodo === "7dias"
+                ? gastos.filter((g) => g.fecha >= hace7str && g.fecha <= ahora).reduce((s, g) => s + g.monto, 0)
+                : totalMes;
+              const utilidadPeriodo = totalPeriodo - gastosPeriodo;
+
+              // Ventas por día para el gráfico
+              const diasGrafico = dashPeriodo === "hoy"
+                ? [ahora]
+                : dashPeriodo === "7dias"
+                ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().slice(0, 10); })
+                : Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth(), i + 1); return d.toISOString().slice(0, 10); }).filter((d) => d <= ahora);
+
+              const ventasDia = diasGrafico.map((d) => ({
+                dia: d.slice(8), // solo el número de día
+                fecha: d,
+                total: ventas.filter((v) => v.fecha === d).reduce((s, v) => s + v.total, 0),
+              }));
+              const maxDia = Math.max(...ventasDia.map((d) => d.total), 1);
+
+              const metodosPeriodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({
+                m, t: ventasPeriodo.filter((v) => v.metodo_pago === m).reduce((s, v) => s + v.total, 0),
+              })).filter((x) => x.t > 0);
+
+              const productosPeriodo = Object.entries(
+                ventasPeriodo.reduce((acc, v) => { acc[v.producto] = acc[v.producto] || { total: 0, cantidad: 0 }; acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad; return acc; }, {})
+              ).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total).slice(0, 8);
+
+              const cortesiasPeriodo = ventasPeriodo.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "cortesia"; } catch { return false; } });
+              const descuentosPeriodo = ventasPeriodo.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "personal"; } catch { return false; } });
+
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {/* Selector período */}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {[{ id: "hoy", label: "Hoy" }, { id: "7dias", label: "7 días" }, { id: "mes", label: "Este mes" }].map((p) => (
+                      <button key={p.id} onClick={() => setDashPeriodo(p.id)} style={{ flex: 1, background: dashPeriodo === p.id ? C.green : C.tag, color: dashPeriodo === p.id ? "#fff" : C.muted, border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: dashPeriodo === p.id ? 700 : 400, fontSize: 13 }}>{p.label}</button>
+                    ))}
+                  </div>
+
+                  {/* Métricas principales */}
+                  <div style={S.card}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ color: C.muted, fontSize: 11 }}>Ventas</div>
+                        <div style={{ fontWeight: 800, fontSize: 20, color: C.green }}>{fmt(totalPeriodo)}</div>
                       </div>
-                      <Bar value={x.t} max={Math.max(...ventasPorMetodo.map((v) => v.t)) || 1} color={metodoPagoColors[x.m]} />
-                    </div>
-                  ))}
-                </div>
-                <div style={S.card}>
-                  <STitle>Ventas por producto — {mesActual}</STitle>
-                  {ventasPorProductoMetodo.length === 0 && <Empty />}
-                  {ventasPorProductoMetodo.slice(0, 10).map((x) => (
-                    <div key={x.n} style={{ marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${C.border}22` }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 }}>
-                        <span style={{ fontWeight: 600 }}>{x.n} <span style={{ color: C.muted, fontSize: 11 }}>({x.cantidad})</span></span>
-                        <span style={{ fontWeight: 700, color: C.green }}>{fmt(x.total)}</span>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ color: C.muted, fontSize: 11 }}>Ticket prom.</div>
+                        <div style={{ fontWeight: 800, fontSize: 20, color: C.mustard }}>{fmt(ticketPromedio)}</div>
                       </div>
-                      {/* Detalle combos */}
-                      {ventasPorProducto.find((p) => p.n === x.n && Object.keys(p.combos || {}).length > 0) && (
-                        <div style={{ fontSize: 11, color: C.purple, marginBottom: 3 }}>
-                          {Object.entries(ventasPorProducto.find((p) => p.n === x.n).combos).map(([combo, cant]) => (
-                            <span key={combo} style={{ marginRight: 8 }}>🎁 {combo}: {cant}</span>
-                          ))}
-                        </div>
-                      )}
-                      <div style={{ display: "flex", gap: 8, fontSize: 11, color: C.muted, marginBottom: 4 }}>
-                        {["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => x[m] > 0 && <span key={m} style={{ color: metodoPagoColors[m] }}>{m}: {fmt(x[m])}</span>)}
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ color: C.muted, fontSize: 11 }}>Transacciones</div>
+                        <div style={{ fontWeight: 800, fontSize: 20, color: C.blue }}>{cantidadPeriodo}</div>
                       </div>
-                      <Bar value={x.total} max={ventasPorProductoMetodo[0]?.total || 1} color={C.green} />
                     </div>
-                  ))}
-                </div>
-                <div style={S.card}>
-                  <STitle>Cortesías y descuentos — {mesActual}</STitle>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-                    <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                      <div style={{ color: C.muted, fontSize: 11 }}>🎁 Cortesías</div>
-                      <div style={{ fontWeight: 700, fontSize: 18, color: C.orange }}>{cortesiasMes.length}</div>
-                      <div style={{ color: C.muted, fontSize: 11 }}>Costo: {fmt(Math.round(totalCortesias))}</div>
-                    </div>
-                    <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                      <div style={{ color: C.muted, fontSize: 11 }}>% Desc. personal</div>
-                      <div style={{ fontWeight: 700, fontSize: 18, color: C.blue }}>{descuentosMes.length}</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ color: C.muted, fontSize: 11 }}>Gastos</div>
+                        <div style={{ fontWeight: 700, fontSize: 16, color: C.red }}>{fmt(gastosPeriodo)}</div>
+                      </div>
+                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ color: C.muted, fontSize: 11 }}>Utilidad</div>
+                        <div style={{ fontWeight: 700, fontSize: 16, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{fmt(utilidadPeriodo)}</div>
+                      </div>
                     </div>
                   </div>
-                  {cortesiasMes.length > 0 && (
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ color: C.muted, fontSize: 11, marginBottom: 6 }}>Detalle cortesías:</div>
-                      {cortesiasMes.map((v) => { const d = JSON.parse(v.nota || "{}"); return (
+
+                  {/* Gráfico de barras diario */}
+                  {dashPeriodo !== "hoy" && (
+                    <div style={S.card}>
+                      <STitle>Ventas por día</STitle>
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: dashPeriodo === "7dias" ? 8 : 3, height: 100, paddingBottom: 20, position: "relative" }}>
+                        {ventasDia.map((d) => (
+                          <div key={d.fecha} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                            <div style={{ fontSize: 9, color: d.total > 0 ? C.green : C.muted, fontWeight: d.total > 0 ? 700 : 400, whiteSpace: "nowrap" }}>
+                              {d.total > 0 ? fmt(d.total).replace("$", "") : ""}
+                            </div>
+                            <div style={{ width: "100%", background: d.total > 0 ? C.green : C.border, borderRadius: "3px 3px 0 0", height: `${Math.max(4, Math.round((d.total / maxDia) * 70))}px`, transition: "height .3s", position: "relative" }}>
+                              {d.fecha === ahora && <div style={{ position: "absolute", top: -3, left: "50%", transform: "translateX(-50%)", width: 6, height: 6, borderRadius: "50%", background: C.mustard }} />}
+                            </div>
+                            <div style={{ fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted, fontWeight: d.fecha === ahora ? 700 : 400 }}>{d.dia}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 10, fontSize: 11, color: C.muted, justifyContent: "flex-end" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: C.green, display: "inline-block" }} />Ventas</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: C.mustard, display: "inline-block" }} />Hoy</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Por método */}
+                  <div style={S.card}>
+                    <STitle>Por método de pago</STitle>
+                    {metodosPeriodo.length === 0 && <Empty />}
+                    {metodosPeriodo.map((x) => (
+                      <div key={x.m} style={{ marginBottom: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: metodoPagoColors[x.m], display: "inline-block" }} />{x.m}</span>
+                          <span style={{ fontWeight: 700, color: metodoPagoColors[x.m] }}>{fmt(x.t)}</span>
+                        </div>
+                        <Bar value={x.t} max={Math.max(...metodosPeriodo.map((v) => v.t)) || 1} color={metodoPagoColors[x.m]} />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Por producto */}
+                  <div style={S.card}>
+                    <STitle>Por producto</STitle>
+                    {productosPeriodo.length === 0 && <Empty />}
+                    {productosPeriodo.map((x) => (
+                      <div key={x.n} style={{ marginBottom: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                          <span>{x.n} <span style={{ color: C.muted, fontSize: 11 }}>({x.cantidad})</span></span>
+                          <span style={{ fontWeight: 700, color: C.green }}>{fmt(x.total)}</span>
+                        </div>
+                        <Bar value={x.total} max={productosPeriodo[0]?.total || 1} color={C.green} />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Cortesías y descuentos */}
+                  {(cortesiasPeriodo.length > 0 || descuentosPeriodo.length > 0) && (
+                    <div style={S.card}>
+                      <STitle>Cortesías y descuentos</STitle>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                        <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
+                          <div style={{ color: C.muted, fontSize: 11 }}>🎁 Cortesías</div>
+                          <div style={{ fontWeight: 700, fontSize: 18, color: C.orange }}>{cortesiasPeriodo.length}</div>
+                        </div>
+                        <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
+                          <div style={{ color: C.muted, fontSize: 11 }}>% Descuentos</div>
+                          <div style={{ fontWeight: 700, fontSize: 18, color: C.blue }}>{descuentosPeriodo.length}</div>
+                        </div>
+                      </div>
+                      {cortesiasPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (
                         <div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}>
                           <span>{v.producto} <span style={{ color: personColor(d.autorizado_por) }}>({d.autorizado_por})</span></span>
                           <span style={{ color: C.muted }}>{v.fecha}</span>
                         </div>
                       ); })}
-                    </div>
-                  )}
-                  {descuentosMes.length > 0 && (
-                    <div>
-                      <div style={{ color: C.muted, fontSize: 11, marginBottom: 6 }}>Detalle descuentos:</div>
-                      {descuentosMes.map((v) => { const d = JSON.parse(v.nota || "{}"); return (
+                      {descuentosPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (
                         <div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}>
-                          <span>{v.producto} <span style={{ color: C.blue }}>{d.porcentaje}% off → {fmt(d.precio_final)}</span></span>
+                          <span>{v.producto} <span style={{ color: C.blue }}>{d.porcentaje}% off</span></span>
                           <span style={{ color: C.muted }}>{v.fecha}</span>
                         </div>
                       ); })}
                     </div>
                   )}
-                </div>
-                <div style={S.card}>
-                  <STitle>Resumen financiero — {mesActual}</STitle>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Ventas</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(totalVentasMes)}</span></div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Gastos</span><span style={{ fontWeight: 700, color: C.red }}>{fmt(totalMes)}</span></div>
-                    <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontWeight: 700 }}>Utilidad neta</span>
-                      <span style={{ fontWeight: 800, fontSize: 20, color: utilidadMes >= 0 ? C.green : C.red }}>{fmt(utilidadMes)}</span>
+
+                  {/* Resumen financiero */}
+                  <div style={S.card}>
+                    <STitle>Resumen financiero</STitle>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Ventas</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(totalPeriodo)}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Gastos</span><span style={{ fontWeight: 700, color: C.red }}>{fmt(gastosPeriodo)}</span></div>
+                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontWeight: 700 }}>Utilidad neta</span>
+                        <span style={{ fontWeight: 800, fontSize: 20, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{fmt(utilidadPeriodo)}</span>
+                      </div>
+                      {totalPeriodo > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span style={{ color: C.muted }}>Margen neto</span><span style={{ fontWeight: 700, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{Math.round((utilidadPeriodo / totalPeriodo) * 100)}%</span></div>}
                     </div>
-                    {totalVentasMes > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span style={{ color: C.muted }}>Margen neto</span><span style={{ fontWeight: 700, color: utilidadMes >= 0 ? C.green : C.red }}>{Math.round((utilidadMes / totalVentasMes) * 100)}%</span></div>}
                   </div>
                 </div>
-              </div>
-            )}
-
+              );
+            })()}
             {ventaView === "historial" && (
               <div>
                 <div style={{ ...S.card, marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
