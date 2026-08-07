@@ -673,7 +673,7 @@ export default function App() {
                   {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (+30%)</div>}
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {recetas.filter((r) => r.categoria === catActiva).map((rec) => (
+                    {recetas.filter((r) => r.categoria === catActiva).sort((a, b) => a.precio_venta - b.precio_venta).map((rec) => (
                       <button key={rec.id}
                         onClick={() => catActiva === "combos" ? agregarCombo(rec) : agregarAlCarrito(rec)}
                         style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px", cursor: "pointer", textAlign: "left" }}
@@ -732,7 +732,9 @@ export default function App() {
               // Calcular ventas según período seleccionado
               const ahora = today();
               const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
-              const hace7str = hace7.toISOString().slice(0, 10);
+              const hace7str = `${hace7.getFullYear()}-${String(hace7.getMonth()+1).padStart(2,"0")}-${String(hace7.getDate()).padStart(2,"0")}`;
+              const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
+              const hace7str = `${hace7.getFullYear()}-${String(hace7.getMonth()+1).padStart(2,"0")}-${String(hace7.getDate()).padStart(2,"0")}`;
               const ventasPeriodo = dashPeriodo === "hoy"
                 ? ventas.filter((v) => v.fecha === ahora)
                 : dashPeriodo === "7dias"
@@ -751,8 +753,8 @@ export default function App() {
 
               // Ventas por día para el gráfico
               const diasGrafico = dashPeriodo === "hoy"
-                ? [ahora]
-                : dashPeriodo === "7dias"
+                ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })
+                : Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth(), i + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }).filter((d) => d <= ahora);
                 ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().slice(0, 10); })
                 : Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth(), i + 1); return d.toISOString().slice(0, 10); }).filter((d) => d <= ahora);
 
@@ -963,7 +965,7 @@ export default function App() {
                   ))}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {recetas.filter((r) => r.categoria === recetaCatActiva).map((rec) => {
+                  {recetas.filter((r) => r.categoria === recetaCatActiva).sort((a, b) => a.precio_venta - b.precio_venta).map((rec) => {
                     const esCombo = rec.categoria === "combos";
                     const costo = esCombo
                       ? (rec.productos_combo || []).reduce((s, p) => s + costoProducto(p), 0)
@@ -1034,7 +1036,7 @@ export default function App() {
                   ))}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {recetas.filter((r) => r.categoria === recetaCatActiva).map((rec) => {
+                  {recetas.filter((r) => r.categoria === recetaCatActiva).sort((a, b) => a.precio_venta - b.precio_venta).map((rec) => {
                     const costo = calcularCosto(rec.ingredientes, insumosPrecio);
                     return (
                       <div key={rec.id} style={S.card}>
