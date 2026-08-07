@@ -21,7 +21,7 @@ export default function Menu() {
     const cargar = async () => {
       const { data } = await supabase
         .from("recetas")
-        .select("nombre_producto, categoria, precio_venta, ingredientes")
+        .select("nombre_producto, categoria, precio_venta, descripcion_menu")
         .neq("categoria", "combos")
         .order("precio_venta");
       if (data) setRecetas(data);
@@ -37,10 +37,10 @@ export default function Menu() {
   return (
     <div style={{ minHeight: "100vh", background: "#18161A", color: "#F2EEF8", fontFamily: "'Inter', system-ui, sans-serif" }}>
       {/* Header */}
-      <div style={{ background: "#221F26", borderBottom: "1px solid #3A3640", padding: "20px 16px", textAlign: "center" }}>
-        <div style={{ fontSize: 36, marginBottom: 6 }}>🌭</div>
-        <div style={{ fontWeight: 900, fontSize: 26, color: "#E8B84B", letterSpacing: 1 }}>DON ABEL</div>
-        <div style={{ color: "#8A8496", fontSize: 13, marginTop: 2 }}>Rock & Food · Puerto Varas</div>
+      <div style={{ background: "#221F26", borderBottom: "1px solid #3A3640", padding: "24px 16px", textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🌭</div>
+        <div style={{ fontWeight: 900, fontSize: 28, color: "#E8B84B", letterSpacing: 2 }}>DON ABEL</div>
+        <div style={{ color: "#8A8496", fontSize: 13, marginTop: 4 }}>Rock & Food · Puerto Varas</div>
       </div>
 
       {/* Categorías */}
@@ -57,20 +57,14 @@ export default function Menu() {
 
       {/* Productos */}
       <div style={{ maxWidth: 600, margin: "0 auto", padding: "12px 12px 60px" }}>
-        {loading && (
-          <div style={{ textAlign: "center", color: "#8A8496", padding: 60 }}>Cargando menú...</div>
-        )}
-        {!loading && productosCat.length === 0 && (
-          <div style={{ textAlign: "center", color: "#8A8496", padding: 40 }}>Sin productos en esta categoría</div>
-        )}
+        {loading && <div style={{ textAlign: "center", color: "#8A8496", padding: 60 }}>Cargando menú...</div>}
+        {!loading && productosCat.length === 0 && <div style={{ textAlign: "center", color: "#8A8496", padding: 40 }}>Sin productos en esta categoría</div>}
         {productosCat.map((rec, idx) => (
-          <div key={idx} style={{ background: "#2A2730", border: "1px solid #3A3640", borderRadius: 12, padding: "14px 16px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div style={{ flex: 1, paddingRight: 12 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 5 }}>{rec.nombre_producto}</div>
-              {rec.ingredientes && rec.ingredientes.length > 0 && (
-                <div style={{ color: "#8A8496", fontSize: 12, lineHeight: 1.6 }}>
-                  {rec.ingredientes.map((ing) => ing.insumo).join(" · ")}
-                </div>
+          <div key={idx} style={{ background: "#2A2730", border: "1px solid #3A3640", borderRadius: 14, padding: "16px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: rec.descripcion_menu ? 6 : 0 }}>{rec.nombre_producto}</div>
+              {rec.descripcion_menu && (
+                <div style={{ color: "#8A8496", fontSize: 12, lineHeight: 1.6 }}>{rec.descripcion_menu}</div>
               )}
             </div>
             <div style={{ fontWeight: 800, fontSize: 18, color: "#E8B84B", whiteSpace: "nowrap" }}>
