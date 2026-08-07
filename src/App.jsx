@@ -751,10 +751,10 @@ export default function App() {
 
               // Ventas por día para el gráfico
               const diasGrafico = dashPeriodo === "hoy"
+                ? [ahora]
+                : dashPeriodo === "7dias"
                 ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })
                 : Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth(), i + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }).filter((d) => d <= ahora);
-                ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().slice(0, 10); })
-                : Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth(), i + 1); return d.toISOString().slice(0, 10); }).filter((d) => d <= ahora);
 
               const ventasDia = diasGrafico.map((d) => ({
                 dia: d.slice(8), // solo el número de día
