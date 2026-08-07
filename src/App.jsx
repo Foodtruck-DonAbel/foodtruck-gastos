@@ -733,8 +733,6 @@ export default function App() {
               const ahora = today();
               const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
               const hace7str = `${hace7.getFullYear()}-${String(hace7.getMonth()+1).padStart(2,"0")}-${String(hace7.getDate()).padStart(2,"0")}`;
-              const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
-              const hace7str = `${hace7.getFullYear()}-${String(hace7.getMonth()+1).padStart(2,"0")}-${String(hace7.getDate()).padStart(2,"0")}`;
               const ventasPeriodo = dashPeriodo === "hoy"
                 ? ventas.filter((v) => v.fecha === ahora)
                 : dashPeriodo === "7dias"
