@@ -124,6 +124,9 @@ export default function Menu() {
           style={{ color: "#5BAD7F", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
           💬 Escríbenos por WhatsApp
         </a>
+        <a href="https://www.instagram.com/donabel.rockandfood" target="_blank" rel="noopener noreferrer" style={{ color: "#C97DDB", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
+          📸 @donabel.rockandfood
+        </a>
       </div>
     </div>
   );
