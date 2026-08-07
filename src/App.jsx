@@ -139,7 +139,7 @@ export default function App() {
   const [preciosVentaEdit, setPreciosVentaEdit] = useState({});
   const [formInsumo, setFormInsumo] = useState({ nombre: "", precio_por_kg: "", unidad: "kg" });
   const [editInsumoId, setEditInsumoId] = useState(null);
-  const [formReceta, setFormReceta] = useState({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", ingredientes: [], productos_combo: [] });
+  const [formReceta, setFormReceta] = useState({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: [], productos_combo: [] });
   const [editRecetaId, setEditRecetaId] = useState(null);
   const [nuevoIngrediente, setNuevoIngrediente] = useState({ insumo: "", gramos: "" });
   const [nuevoProductoCombo, setNuevoProductoCombo] = useState("");
@@ -351,12 +351,13 @@ export default function App() {
       categoria: formReceta.categoria,
       precio_venta: Number(formReceta.precio_venta),
       precio_py: Number(formReceta.precio_py) || Math.round(Number(formReceta.precio_venta) * 1.3),
+      descripcion_menu: formReceta.descripcion_menu || "",
       ingredientes: esCombo ? [] : formReceta.ingredientes,
       productos_combo: esCombo ? formReceta.productos_combo : [],
     };
     if (editRecetaId) { await supabase.from("recetas").update(data).eq("id", editRecetaId); showToast("✓ Actualizada"); setEditRecetaId(null); }
     else { await supabase.from("recetas").insert([data]); showToast("✓ Guardada"); }
-    setFormReceta({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", ingredientes: [], productos_combo: [] });
+    setFormReceta({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: [], productos_combo: [] });
     cargarRecetas();
   };
 
@@ -1041,7 +1042,7 @@ export default function App() {
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                           <div style={{ fontWeight: 700 }}>{rec.nombre_producto}</div>
                           <div style={{ display: "flex", gap: 8 }}>
-                            <button onClick={() => { setFormReceta({ nombre_producto: rec.nombre_producto, categoria: rec.categoria, precio_venta: rec.precio_venta, precio_py: rec.precio_py || "", ingredientes: rec.ingredientes || [], productos_combo: rec.productos_combo || [] }); setEditRecetaId(rec.id); setRecetaView("nueva"); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
+                            <button onClick={() => { setFormReceta({ nombre_producto: rec.nombre_producto, categoria: rec.categoria, precio_venta: rec.precio_venta, precio_py: rec.precio_py || "", descripcion_menu: rec.descripcion_menu || "", ingredientes: rec.ingredientes || [], productos_combo: rec.productos_combo || [] }); setEditRecetaId(rec.id); setRecetaView("nueva"); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
                             <button onClick={() => solicitarEliminacion("receta", rec)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
                           </div>
                         </div>
@@ -1119,6 +1120,11 @@ export default function App() {
                   <Fld label="Precio normal ($)"><input type="number" value={formReceta.precio_venta} onChange={(e) => setFormReceta({ ...formReceta, precio_venta: e.target.value })} style={S.inp} /></Fld>
                   <Fld label="Precio PY ($)"><input type="number" placeholder={formReceta.precio_venta ? Math.round(Number(formReceta.precio_venta) * 1.3) : ""} value={formReceta.precio_py} onChange={(e) => setFormReceta({ ...formReceta, precio_py: e.target.value })} style={S.inp} /></Fld>
                 </div>
+                <Fld label="Descripción menú (visible en QR)" full>
+                  <textarea placeholder="ej: Vienesa con palta, tomate y mayonesa casera" value={formReceta.descripcion_menu || ""} onChange={(e) => setFormReceta({ ...formReceta, descripcion_menu: e.target.value })} style={{ ...S.inp, minHeight: 60, resize: "vertical", fontFamily: "inherit" }} />
+                </Fld>
+                <div style={{ display: "none" }}>
+                </div>
 
                 {/* Si es combo: selector de productos */}
                 {formReceta.categoria === "combos" ? (
@@ -1173,7 +1179,7 @@ export default function App() {
 
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={guardarReceta} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", fontWeight: 700, cursor: "pointer" }}>{editRecetaId ? "Actualizar" : "Guardar"}</button>
-                  {editRecetaId && <button onClick={() => { setEditRecetaId(null); setFormReceta({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", ingredientes: [], productos_combo: [] }); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "10px 16px", cursor: "pointer" }}>Cancelar</button>}
+                  {editRecetaId && <button onClick={() => { setEditRecetaId(null); setFormReceta({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: [], productos_combo: [] }); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "10px 16px", cursor: "pointer" }}>Cancelar</button>}
                 </div>
               </div>
             )}
