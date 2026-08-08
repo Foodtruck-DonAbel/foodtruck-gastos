@@ -127,10 +127,11 @@ export default function Menu() {
         <a href="https://www.instagram.com/donabel.rockandfood" target="_blank" rel="noopener noreferrer" style={{ color: "#C97DDB", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
           📸 @donabel.rockandfood
         </a>
-        </a>
         <a href="https://www.pedidosya.cl/restaurantes/puerto-varas/rock-and-food-a98cd423-b6af-4e0f-a4cd-eee9ea1c6ea4-menu?origin=shop_list" target="_blank" rel="noopener noreferrer" style={{ color: "#FF6B35", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
           🛵 También en Pedidos Ya
+        </a>
       </div>
+    </div>
     </div>
   );
 }
