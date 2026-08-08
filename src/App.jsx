@@ -917,7 +917,7 @@ export default function App() {
                   ) : (
                     <>
                       <span style={{ fontWeight: 700, color: C.orange, fontSize: 16 }}>{porcentajePY}%</span>
-                      <button onClick={() => setEditandoPY(true); setNuevoPorcentajePY(porcentajePY)} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
+                      <button onClick={() => { setEditandoPY(true); setNuevoPorcentajePY(porcentajePY); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
                     </>
                   )}
                 </div>
