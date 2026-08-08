@@ -235,10 +235,11 @@ export default function App() {
   const confirmarCambioPrecio = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     const { rec } = confirmarPrecioModal;
-    if (preciosPendientes[rec.id + "_precio_venta"] !== undefined) {
-      await supabase.from("recetas").update({ precio_venta: Number(preciosPendientes[rec.id + "_precio_venta"]) }).eq("id", rec.id);
-    }
-    setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; return n; });
+    const updates = {};
+    if (preciosPendientes[rec.id + "_precio_venta"] !== undefined) updates.precio_venta = Number(preciosPendientes[rec.id + "_precio_venta"]);
+    if (preciosPendientes[rec.id + "_precio_py"] !== undefined) updates.precio_py = Number(preciosPendientes[rec.id + "_precio_py"]);
+    await supabase.from("recetas").update(updates).eq("id", rec.id);
+    setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; delete n[rec.id + "_precio_py"]; return n; });
     setConfirmarPrecioModal(null); setAdminClave("");
     showToast("✓ Precio actualizado"); cargarRecetas();
   };
@@ -899,21 +900,6 @@ export default function App() {
             {!loadingRecetas && recetaView === "margenes" && (
               <div>
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
-                <div style={{ ...S.card, display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <div style={{ color: C.muted, fontSize: 12 }}>% Pedidos Ya:</div>
-                  {editandoPY ? (
-                    <>
-                      <input type="number" value={nuevoPorcentajePY} onChange={(e) => setNuevoPorcentajePY(e.target.value)} style={{ ...S.inp, width: 70 }} autoFocus />
-                      <button onClick={() => guardarPorcentajePY(nuevoPorcentajePY)} style={{ background: C.mustard, border: "none", color: C.bg, borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Guardar</button>
-                      <button onClick={() => setEditandoPY(false)} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 12 }}>Cancelar</button>
-                    </>
-                  ) : (
-                    <>
-                      <span style={{ fontWeight: 700, color: C.orange, fontSize: 16 }}>{porcentajePY}%</span>
-                      <button onClick={() => { setEditandoPY(true); setNuevoPorcentajePY(porcentajePY); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
-                    </>
-                  )}
-                </div>
                   {CATEGORIAS.map((cat) => (
                     <button key={cat.id} onClick={() => setRecetaCatActiva(cat.id)} style={{ background: recetaCatActiva === cat.id ? C.mustard : C.tag, color: recetaCatActiva === cat.id ? C.bg : C.muted, border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>
                       {cat.emoji} {cat.label}
@@ -930,7 +916,7 @@ export default function App() {
                     const venta = Number(ventaEditada !== undefined ? ventaEditada : rec.precio_venta);
                     const margen = venta - costo;
                     const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
-                    const hayPendiente = ventaEditada !== undefined;
+                    const hayPendiente = ventaEditada !== undefined || preciosPendientes[rec.id + "_precio_py"] !== undefined;
                     return (
                       <div key={rec.id} style={S.card}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -950,10 +936,21 @@ export default function App() {
                               value={ventaEditada !== undefined ? ventaEditada : rec.precio_venta}
                               onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_venta"]: e.target.value })}
                               style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: ventaEditada !== undefined ? C.orange : C.border }} />
-                          </div>
-                          <div style={{ textAlign: "center" }}>
-                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY ({porcentajePY}%)</div>
-                            <div style={{ fontWeight: 700, fontSize: 13, color: C.orange }}>{fmt(Math.round(venta * (1 + porcentajePY / 100)))}</div>
+                          <div>
+                            {(() => {
+                              const pyPendiente = preciosPendientes[rec.id + "_precio_py"];
+                              const pyValor = pyPendiente !== undefined ? Number(pyPendiente) : Math.round(venta * (1 + porcentajePY / 100));
+                              const pyPct = venta > 0 ? Math.round(((pyValor - venta) / venta) * 100) : porcentajePY;
+                              return (
+                                <>
+                                  <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (+{pyPct}%)</div>
+                                  <input type="number"
+                                    value={pyPendiente !== undefined ? pyPendiente : Math.round(venta * (1 + porcentajePY / 100))}
+                                    onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: e.target.value })}
+                                    style={{ ...S.inp, fontSize: 13, borderColor: pyPendiente !== undefined ? C.orange : C.border }} />
+                                </>
+                              );
+                            })()}
                           </div>
                           <div style={{ textAlign: "center" }}>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Ganancia</div>
