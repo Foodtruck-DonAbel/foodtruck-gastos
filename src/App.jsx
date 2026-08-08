@@ -147,6 +147,7 @@ export default function App() {
   const [editGramos, setEditGramos] = useState({});
   const [porcentajePY, setPorcentajePY] = useState(35);
   const [editandoPY, setEditandoPY] = useState(false);
+  const [nuevoPorcentajePY, setNuevoPorcentajePY] = useState("");
 
   // Resumen
   const [filtroResumen, setFiltroResumen] = useState("");
@@ -909,14 +910,14 @@ export default function App() {
                   <div style={{ color: C.muted, fontSize: 12 }}>% Pedidos Ya:</div>
                   {editandoPY ? (
                     <>
-                      <input type="number" defaultValue={porcentajePY} id="py-input" style={{ ...S.inp, width: 70 }} />
-                      <button onClick={() => guardarPorcentajePY(document.getElementById("py-input").value)} style={{ background: C.mustard, border: "none", color: C.bg, borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Guardar</button>
+                      <input type="number" value={nuevoPorcentajePY} onChange={(e) => setNuevoPorcentajePY(e.target.value)} style={{ ...S.inp, width: 70 }} autoFocus />
+                      <button onClick={() => guardarPorcentajePY(nuevoPorcentajePY)} style={{ background: C.mustard, border: "none", color: C.bg, borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Guardar</button>
                       <button onClick={() => setEditandoPY(false)} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 12 }}>Cancelar</button>
                     </>
                   ) : (
                     <>
                       <span style={{ fontWeight: 700, color: C.orange, fontSize: 16 }}>{porcentajePY}%</span>
-                      <button onClick={() => setEditandoPY(true)} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
+                      <button onClick={() => setEditandoPY(true); setNuevoPorcentajePY(porcentajePY)} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
                     </>
                   )}
                 </div>
