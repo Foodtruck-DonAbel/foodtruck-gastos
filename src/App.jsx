@@ -916,7 +916,6 @@ export default function App() {
                     const venta = Number(ventaEditada !== undefined ? ventaEditada : rec.precio_venta);
                     const margen = venta - costo;
                     const hayPendiente = ventaEditada !== undefined;
-                    const hayPendiente = ventaEditada !== undefined || preciosPendientes[rec.id + "_precio_py"] !== undefined;
                     return (
                       <div key={rec.id} style={S.card}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
