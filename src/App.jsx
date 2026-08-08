@@ -963,12 +963,10 @@ export default function App() {
                           </div>
                         </div>
                         {hayPendiente && (
-                        {hayPendiente && (
                           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                             <button onClick={() => setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
                             <button onClick={() => solicitarCambioPrecio(rec)} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
                           </div>
-                        )}
                         )}
                         <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
                           <div style={{ background: margenColor(margenPct), width: `${Math.min(100, Math.max(0, margenPct))}%`, height: "100%", borderRadius: 4 }} />
