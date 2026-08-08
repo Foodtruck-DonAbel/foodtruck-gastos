@@ -137,6 +137,8 @@ export default function App() {
   const [recetaView, setRecetaView] = useState("margenes");
   const [recetaCatActiva, setRecetaCatActiva] = useState("completos");
   const [preciosVentaEdit, setPreciosVentaEdit] = useState({});
+  const [preciosPendientes, setPreciosPendientes] = useState({}); // precios editados sin confirmar
+  const [confirmarPrecioModal, setConfirmarPrecioModal] = useState(null); // { rec, campo, valor }
   const [formInsumo, setFormInsumo] = useState({ nombre: "", precio_por_kg: "", unidad: "kg" });
   const [editInsumoId, setEditInsumoId] = useState(null);
   const [formReceta, setFormReceta] = useState({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: [], productos_combo: [] });
@@ -323,7 +325,7 @@ export default function App() {
     if (carrito.length === 0) { showToast("Agrega productos"); return; }
     setSavingVenta(true);
     const rows = carrito.map((c) => ({
-      fecha: fechaVenta, producto: c.nombre, cantidad: c.cantidad,
+      fecha: fechaVenta, hora: new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }), producto: c.nombre, cantidad: c.cantidad,
       precio_unitario: c.precio_unitario, total: c.total,
       metodo_pago: c.metodo_pago, persona: persona || null,
       nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}) }) || null,
@@ -362,6 +364,19 @@ export default function App() {
   };
 
   const actualizarPrecioReceta = async (rec, campo, valor) => {
+  const solicitarCambioPrecio = (rec, campo, valor) => {
+    setConfirmarPrecioModal({ rec, campo, valor });
+    setAdminClave(""); setAdminError(false);
+  };
+
+  const confirmarCambioPrecio = async () => {
+    if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
+    const { rec, campo, valor } = confirmarPrecioModal;
+    await actualizarPrecioReceta(rec, campo, valor);
+    setPreciosPendientes((prev) => { const n = { ...prev }; delete n[rec.id + "_" + campo]; return n; });
+    setConfirmarPrecioModal(null); setAdminClave("");
+    showToast("✓ Precio actualizado");
+  };
     await supabase.from("recetas").update({ [campo]: Number(valor) }).eq("id", rec.id); cargarRecetas();
   };
 
@@ -452,6 +467,23 @@ export default function App() {
 
       {/* Modal Admin */}
       {adminModal && (
+      {confirmarPrecioModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔐 Confirmar cambio de precio</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 4 }}>{confirmarPrecioModal.rec.nombre_producto}</div>
+            <div style={{ color: C.mustard, fontWeight: 700, fontSize: 16, marginBottom: 16 }}>
+              {confirmarPrecioModal.campo === "precio_venta" ? "Precio normal" : "Precio PY"}: {fmt(confirmarPrecioModal.valor)}
+            </div>
+            <input type="password" placeholder="Clave" value={adminClave} onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }} onKeyDown={(e) => e.key === "Enter" && confirmarCambioPrecio()} style={{ ...S.inp, fontSize: 18, letterSpacing: 6, marginBottom: 8 }} autoFocus />
+            {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setConfirmarPrecioModal(null); setAdminClave(""); setPreciosPendientes((p) => { const n={...p}; delete n[confirmarPrecioModal.rec.id+"_"+confirmarPrecioModal.campo]; return n; }); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={confirmarCambioPrecio} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔐 Clave de administrador</div>
@@ -749,6 +781,7 @@ export default function App() {
                 ? gastos.filter((g) => g.fecha >= hace7str && g.fecha <= ahora).reduce((s, g) => s + g.monto, 0)
                 : totalMes;
               const utilidadPeriodo = totalPeriodo - gastosPeriodo;
+              const margenOperacional = totalPeriodo > 0 ? Math.round(((totalPeriodo - gastosPeriodo) / totalPeriodo) * 100) : 0;
 
               // Ventas por día para el gráfico
               const diasGrafico = dashPeriodo === "hoy"
@@ -905,7 +938,8 @@ export default function App() {
                         <span style={{ fontWeight: 700 }}>Utilidad neta</span>
                         <span style={{ fontWeight: 800, fontSize: 20, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{fmt(utilidadPeriodo)}</span>
                       </div>
-                      {totalPeriodo > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span style={{ color: C.muted }}>Margen neto</span><span style={{ fontWeight: 700, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{Math.round((utilidadPeriodo / totalPeriodo) * 100)}%</span></div>}
+                      {totalPeriodo > 0 && gastosPeriodo > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span style={{ color: C.muted }}>Margen operacional</span><span style={{ fontWeight: 700, color: margenOperacional >= 0 ? C.green : C.red }}>{margenOperacional}%</span></div>}
+                      {totalPeriodo > 0 && gastosPeriodo === 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Registra gastos del período para ver el margen operacional</div>}
                     </div>
                   </div>
                 </div>
@@ -927,7 +961,7 @@ export default function App() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600 }}>{v.producto}</div>
                       <div style={{ color: C.muted, fontSize: 11, marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <span>{v.fecha}</span><span>{v.cantidad} und</span>
+                        <span>{v.fecha}{v.hora && ` · ${v.hora}`}</span><span>{v.cantidad} und</span>
                         <Tag text={v.metodo_pago} color={(metodoPagoColors[v.metodo_pago] || C.muted) + "33"} textColor={metodoPagoColors[v.metodo_pago] || C.muted} />
                         {v.nota && (() => { try { const d = JSON.parse(v.nota); if (d.tipo === "cortesia") return <Tag text={`🎁 ${d.autorizado_por}`} color={C.green + "33"} textColor={C.green} />; if (d.tipo === "personal") return <Tag text={`${d.porcentaje}% off`} color={C.blue + "33"} textColor={C.blue} />; if (d.combo) return <Tag text={`🎁 ${d.combo}`} color={C.purple + "33"} textColor={C.purple} />; return null; } catch { return null; } })()}
                       </div>
@@ -992,17 +1026,19 @@ export default function App() {
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
                           <div>
-                            <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Precio ($)</div>
-                            <input type="number" value={preciosVentaEdit[rec.id + "_venta"] !== undefined ? preciosVentaEdit[rec.id + "_venta"] : rec.precio_venta}
-                              onChange={(e) => setPreciosVentaEdit({ ...preciosVentaEdit, [rec.id + "_venta"]: e.target.value })}
-                              onBlur={(e) => { actualizarPrecioReceta(rec, "precio_venta", e.target.value); setPreciosVentaEdit({ ...preciosVentaEdit, [rec.id + "_venta"]: undefined }); }}
-                              style={{ ...S.inp, fontWeight: 700, fontSize: 13 }} />
+                            <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Precio ($) {preciosPendientes[rec.id+"_precio_venta"] !== undefined && <span style={{ color: C.orange }}>· sin confirmar</span>}</div>
+                            <input type="number"
+                              value={preciosPendientes[rec.id+"_precio_venta"] !== undefined ? preciosPendientes[rec.id+"_precio_venta"] : rec.precio_venta}
+                              onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id+"_precio_venta"]: e.target.value })}
+                              onBlur={(e) => { if (Number(e.target.value) !== rec.precio_venta) solicitarCambioPrecio(rec, "precio_venta", Number(e.target.value)); }}
+                              style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: preciosPendientes[rec.id+"_precio_venta"] !== undefined ? C.orange : C.border }} />
                           </div>
                           <div>
-                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY ($)</div>
-                            <input type="number" value={preciosVentaEdit[rec.id + "_py"] !== undefined ? preciosVentaEdit[rec.id + "_py"] : (rec.precio_py || "")}
-                              onChange={(e) => setPreciosVentaEdit({ ...preciosVentaEdit, [rec.id + "_py"]: e.target.value })}
-                              onBlur={(e) => { actualizarPrecioReceta(rec, "precio_py", e.target.value); setPreciosVentaEdit({ ...preciosVentaEdit, [rec.id + "_py"]: undefined }); }}
+                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY ($) {preciosPendientes[rec.id+"_precio_py"] !== undefined && <span style={{ color: C.orange }}>· sin confirmar</span>}</div>
+                            <input type="number"
+                              value={preciosPendientes[rec.id+"_precio_py"] !== undefined ? preciosPendientes[rec.id+"_precio_py"] : (rec.precio_py || "")}
+                              onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id+"_precio_py"]: e.target.value })}
+                              onBlur={(e) => { if (Number(e.target.value) !== rec.precio_py) solicitarCambioPrecio(rec, "precio_py", Number(e.target.value)); }}
                               style={{ ...S.inp, fontSize: 13 }} />
                           </div>
                           <div style={{ textAlign: "center" }}>
