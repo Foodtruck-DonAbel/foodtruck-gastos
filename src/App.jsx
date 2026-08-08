@@ -44,35 +44,35 @@ const INGREDIENTES_BASE = {
 };
 
 const RECETAS_EJEMPLO = [
-  { nombre_producto: "Italiano", categoria: "completos", precio_venta: 4100, precio_py: 5330, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Mayonesa casera", gramos: 25 }] },
-  { nombre_producto: "Highway to Hell", categoria: "completos", precio_venta: 4600, precio_py: 5980, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Cebolla caramelizada", gramos: 40 },{ insumo: "Pepinillos", gramos: 20 },{ insumo: "Tocino", gramos: 30 }] },
-  { nombre_producto: "Torn and Frayed", categoria: "completos", precio_venta: 4600, precio_py: 5980, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Cebolla caramelizada", gramos: 40 },{ insumo: "Papas hilo", gramos: 20 }] },
-  { nombre_producto: "Purple Haze", categoria: "completos", precio_venta: 4600, precio_py: 5980, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Chucrut morado", gramos: 30 },{ insumo: "Pepinillos", gramos: 20 },{ insumo: "Tocino", gramos: 30 }] },
-  { nombre_producto: "Dinámico", categoria: "completos", precio_venta: 4900, precio_py: 6370, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Chucrut", gramos: 20 },{ insumo: "Salsa americana", gramos: 15 },{ insumo: "Mayonesa casera", gramos: 20 }] },
-  { nombre_producto: "Paradise City", categoria: "completos", precio_venta: 4900, precio_py: 6370, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Ají", gramos: 10 }] },
-  { nombre_producto: "Sweet Child O' Mine", categoria: "completos", precio_venta: 4900, precio_py: 6370, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Cebolla caramelizada", gramos: 40 },{ insumo: "Queso fundido", gramos: 30 }] },
-  { nombre_producto: "Pollo Highway to Hell", categoria: "pollo", precio_venta: 4500, precio_py: 5850, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Mayonesa casera", gramos: 20 },{ insumo: "Pepinillos", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Pollo Welcome to the Jungle", categoria: "pollo", precio_venta: 4500, precio_py: 5850, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Salsa americana", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Pollo Rock You Like a Hurricane", categoria: "pollo", precio_venta: 4500, precio_py: 5850, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Chucrut", gramos: 25 },{ insumo: "Mostaza", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Pollo Back in Black", categoria: "pollo", precio_venta: 4900, precio_py: 6370, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "BBQ", gramos: 20 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Pollo Thunderstruck", categoria: "pollo", precio_venta: 4900, precio_py: 6370, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Mostaza", gramos: 15 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Pollo Smoke on the Water", categoria: "pollo", precio_venta: 5200, precio_py: 6760, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "BBQ", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Churrasco Highway to Hell", categoria: "churrasco", precio_venta: 5200, precio_py: 6760, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "Mayonesa casera", gramos: 20 },{ insumo: "Pepinillos", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Churrasco Welcome to the Jungle", categoria: "churrasco", precio_venta: 5200, precio_py: 6760, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "Salsa americana", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Churrasco Rock You Like a Hurricane", categoria: "churrasco", precio_venta: 5200, precio_py: 6760, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "Chucrut", gramos: 25 },{ insumo: "Mostaza", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Churrasco Back in Black", categoria: "churrasco", precio_venta: 5700, precio_py: 7410, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "BBQ", gramos: 20 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Churrasco Thunderstruck", categoria: "churrasco", precio_venta: 5700, precio_py: 7410, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "Mostaza", gramos: 15 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Churrasco Smoke on the Water", categoria: "churrasco", precio_venta: 5900, precio_py: 7670, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "BBQ", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
-  { nombre_producto: "Papas fritas", categoria: "papas", precio_venta: 2900, precio_py: 3770, ingredientes: [{ insumo: "Papas fritas", gramos: 300 }] },
-  { nombre_producto: "Salchipapas", categoria: "papas", precio_venta: 3600, precio_py: 4680, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Vienesa", gramos: 80 }] },
-  { nombre_producto: "Salchipapas con tocino", categoria: "papas", precio_venta: 4500, precio_py: 5850, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Tocino", gramos: 30 }] },
-  { nombre_producto: "Papas tocino y cebolla", categoria: "papas", precio_venta: 4000, precio_py: 5200, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Cebolla caramelizada", gramos: 40 }] },
-  { nombre_producto: "Papas queso fundido y tocino", categoria: "papas", precio_venta: 4000, precio_py: 5200, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Queso fundido", gramos: 40 },{ insumo: "Tocino", gramos: 30 }] },
-  { nombre_producto: "Papas con nuggets", categoria: "papas", precio_venta: 4500, precio_py: 5850, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Nuggets", gramos: 6 }] },
-  { nombre_producto: "Papas con nuggets (12 und)", categoria: "papas", precio_venta: 5300, precio_py: 6890, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Nuggets", gramos: 12 }] },
-  { nombre_producto: "Lata 250ml", categoria: "bebidas", precio_venta: 1500, precio_py: 1950, ingredientes: [] },
-  { nombre_producto: "Queso fundido", categoria: "agregados", precio_venta: 1000, precio_py: 1300, ingredientes: [{ insumo: "Queso fundido", gramos: 40 }] },
-  { nombre_producto: "Tocino agregado", categoria: "agregados", precio_venta: 1000, precio_py: 1300, ingredientes: [{ insumo: "Tocino", gramos: 30 }] },
+  { nombre_producto: "Italiano", categoria: "completos", precio_venta: 4100, precio_py: 5535, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Mayonesa casera", gramos: 25 }] },
+  { nombre_producto: "Highway to Hell", categoria: "completos", precio_venta: 4600, precio_py: 6210, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Cebolla caramelizada", gramos: 40 },{ insumo: "Pepinillos", gramos: 20 },{ insumo: "Tocino", gramos: 30 }] },
+  { nombre_producto: "Torn and Frayed", categoria: "completos", precio_venta: 4600, precio_py: 6210, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Cebolla caramelizada", gramos: 40 },{ insumo: "Papas hilo", gramos: 20 }] },
+  { nombre_producto: "Purple Haze", categoria: "completos", precio_venta: 4600, precio_py: 6210, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Chucrut morado", gramos: 30 },{ insumo: "Pepinillos", gramos: 20 },{ insumo: "Tocino", gramos: 30 }] },
+  { nombre_producto: "Dinámico", categoria: "completos", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Chucrut", gramos: 20 },{ insumo: "Salsa americana", gramos: 15 },{ insumo: "Mayonesa casera", gramos: 20 }] },
+  { nombre_producto: "Paradise City", categoria: "completos", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Ají", gramos: 10 }] },
+  { nombre_producto: "Sweet Child O' Mine", categoria: "completos", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Cebolla caramelizada", gramos: 40 },{ insumo: "Queso fundido", gramos: 30 }] },
+  { nombre_producto: "Pollo Highway to Hell", categoria: "pollo", precio_venta: 4500, precio_py: 6075, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Mayonesa casera", gramos: 20 },{ insumo: "Pepinillos", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Pollo Welcome to the Jungle", categoria: "pollo", precio_venta: 4500, precio_py: 6075, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Salsa americana", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Pollo Rock You Like a Hurricane", categoria: "pollo", precio_venta: 4500, precio_py: 6075, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Chucrut", gramos: 25 },{ insumo: "Mostaza", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Pollo Back in Black", categoria: "pollo", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "BBQ", gramos: 20 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Pollo Thunderstruck", categoria: "pollo", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Mostaza", gramos: 15 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Pollo Smoke on the Water", categoria: "pollo", precio_venta: 5200, precio_py: 7020, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "BBQ", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Churrasco Highway to Hell", categoria: "churrasco", precio_venta: 5200, precio_py: 7020, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "Mayonesa casera", gramos: 20 },{ insumo: "Pepinillos", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Churrasco Welcome to the Jungle", categoria: "churrasco", precio_venta: 5200, precio_py: 7020, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "Salsa americana", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Churrasco Rock You Like a Hurricane", categoria: "churrasco", precio_venta: 5200, precio_py: 7020, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "Chucrut", gramos: 25 },{ insumo: "Mostaza", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Churrasco Back in Black", categoria: "churrasco", precio_venta: 5700, precio_py: 7695, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "BBQ", gramos: 20 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Churrasco Thunderstruck", categoria: "churrasco", precio_venta: 5700, precio_py: 7695, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "Mostaza", gramos: 15 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Churrasco Smoke on the Water", categoria: "churrasco", precio_venta: 5900, precio_py: 7965, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Churrasco", gramos: 120 },{ insumo: "BBQ", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
+  { nombre_producto: "Papas fritas", categoria: "papas", precio_venta: 2900, precio_py: 3915, ingredientes: [{ insumo: "Papas fritas", gramos: 300 }] },
+  { nombre_producto: "Salchipapas", categoria: "papas", precio_venta: 3600, precio_py: 4860, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Vienesa", gramos: 80 }] },
+  { nombre_producto: "Salchipapas con tocino", categoria: "papas", precio_venta: 4500, precio_py: 6075, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Tocino", gramos: 30 }] },
+  { nombre_producto: "Papas tocino y cebolla", categoria: "papas", precio_venta: 4000, precio_py: 5400, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Cebolla caramelizada", gramos: 40 }] },
+  { nombre_producto: "Papas queso fundido y tocino", categoria: "papas", precio_venta: 4000, precio_py: 5400, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Queso fundido", gramos: 40 },{ insumo: "Tocino", gramos: 30 }] },
+  { nombre_producto: "Papas con nuggets", categoria: "papas", precio_venta: 4500, precio_py: 6075, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Nuggets", gramos: 6 }] },
+  { nombre_producto: "Papas con nuggets (12 und)", categoria: "papas", precio_venta: 5300, precio_py: 7155, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Nuggets", gramos: 12 }] },
+  { nombre_producto: "Lata 250ml", categoria: "bebidas", precio_venta: 1500, precio_py: 2025, ingredientes: [] },
+  { nombre_producto: "Queso fundido", categoria: "agregados", precio_venta: 1000, precio_py: 1350, ingredientes: [{ insumo: "Queso fundido", gramos: 40 }] },
+  { nombre_producto: "Tocino agregado", categoria: "agregados", precio_venta: 1000, precio_py: 1350, ingredientes: [{ insumo: "Tocino", gramos: 30 }] },
 ];
 
 const INSUMOS_EJEMPLO = [
@@ -136,7 +136,7 @@ export default function App() {
   const [loadingRecetas, setLoadingRecetas] = useState(false);
   const [recetaView, setRecetaView] = useState("margenes");
   const [recetaCatActiva, setRecetaCatActiva] = useState("completos");
-  const [preciosPendientes, setPreciosPendientes] = useState({});
+  const [precioVentaEdit, setPrecioVentaEdit] = useState({}); // { recetaId: valor }
   const [confirmarPrecioModal, setConfirmarPrecioModal] = useState(null);
   const [formInsumo, setFormInsumo] = useState({ nombre: "", precio_por_kg: "", unidad: "kg" });
   const [editInsumoId, setEditInsumoId] = useState(null);
@@ -146,8 +146,6 @@ export default function App() {
   const [nuevoProductoCombo, setNuevoProductoCombo] = useState("");
   const [editGramos, setEditGramos] = useState({});
   const [porcentajePY, setPorcentajePY] = useState(35);
-  const [editandoPY, setEditandoPY] = useState(false);
-  const [nuevoPorcentajePY, setNuevoPorcentajePY] = useState("");
 
   // Resumen
   const [filtroResumen, setFiltroResumen] = useState("");
@@ -206,13 +204,6 @@ export default function App() {
     if (data) setPorcentajePY(data.porcentaje_py || 35);
   };
 
-  const guardarPorcentajePY = async (nuevo) => {
-    await supabase.from("config").update({ porcentaje_py: Number(nuevo) }).eq("id", "general");
-    setPorcentajePY(Number(nuevo));
-    setEditandoPY(false);
-    showToast("✓ Porcentaje PY actualizado");
-  };
-
   // Admin
   const solicitarEliminacion = (tipo, registro) => { setAdminModal({ tipo, registro }); setAdminClave(""); setAdminError(false); };
   const confirmarEliminacion = async () => {
@@ -230,18 +221,21 @@ export default function App() {
     else cargarGastos();
   };
 
-  // Precio con clave
-  const solicitarCambioPrecio = (rec) => { setConfirmarPrecioModal({ rec }); setAdminClave(""); setAdminError(false); };
+  // Precio normal con clave
+  const solicitarCambioPrecio = (rec, valor) => { setConfirmarPrecioModal({ rec, valor }); setAdminClave(""); setAdminError(false); };
   const confirmarCambioPrecio = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
-    const { rec } = confirmarPrecioModal;
-    const updates = {};
-    if (preciosPendientes[rec.id + "_precio_venta"] !== undefined) updates.precio_venta = Number(preciosPendientes[rec.id + "_precio_venta"]);
-    if (preciosPendientes[rec.id + "_precio_py"] !== undefined) updates.precio_py = Number(preciosPendientes[rec.id + "_precio_py"]);
-    await supabase.from("recetas").update(updates).eq("id", rec.id);
-    setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; delete n[rec.id + "_precio_py"]; return n; });
+    const { rec, valor } = confirmarPrecioModal;
+    await supabase.from("recetas").update({ precio_venta: Number(valor) }).eq("id", rec.id);
+    setPrecioVentaEdit((p) => { const n = { ...p }; delete n[rec.id]; return n; });
     setConfirmarPrecioModal(null); setAdminClave("");
     showToast("✓ Precio actualizado"); cargarRecetas();
+  };
+
+  // Precio PY directo sin clave
+  const guardarPrecioPY = async (recId, valor) => {
+    await supabase.from("recetas").update({ precio_py: Number(valor) }).eq("id", recId);
+    showToast("✓ PY actualizado"); cargarRecetas();
   };
 
   // Gastos
@@ -257,7 +251,6 @@ export default function App() {
     cargarGastos(); setSaving(false);
   };
 
-  // Costos
   const calcularCosto = (ingredientes, insumosLista) => {
     if (!ingredientes || !insumosLista) return 0;
     return ingredientes.reduce((total, ing) => {
@@ -274,9 +267,10 @@ export default function App() {
     return calcularCosto(rec.ingredientes, insumosPrecio);
   };
 
-  const precioProducto = (rec) => metodoPago === "Pedidos Ya" ? Math.round(rec.precio_venta * (1 + porcentajePY / 100)) : rec.precio_venta;
+  const precioProducto = (rec) => metodoPago === "Pedidos Ya"
+    ? (rec.precio_py || Math.round(rec.precio_venta * (1 + porcentajePY / 100)))
+    : rec.precio_venta;
 
-  // Ventas
   const agregarAlCarrito = (rec, optsExtra) => {
     const nombre = optsExtra?.nombre || rec.nombre_producto;
     const precio = optsExtra?.precio !== undefined ? optsExtra.precio : precioProducto(rec);
@@ -359,7 +353,6 @@ export default function App() {
     setSavingVenta(false);
   };
 
-  // Recetas CRUD
   const guardarInsumo = async () => {
     if (!formInsumo.nombre || !formInsumo.precio_por_kg) { showToast("Completa nombre y precio"); return; }
     const data = { nombre: formInsumo.nombre.trim(), precio_por_kg: Number(formInsumo.precio_por_kg), unidad: formInsumo.unidad };
@@ -374,7 +367,7 @@ export default function App() {
     const data = {
       nombre_producto: formReceta.nombre_producto.trim(), categoria: formReceta.categoria,
       precio_venta: Number(formReceta.precio_venta),
-      precio_py: Number(formReceta.precio_py) || Math.round(Number(formReceta.precio_venta) * 1.3),
+      precio_py: Number(formReceta.precio_py) || Math.round(Number(formReceta.precio_venta) * (1 + porcentajePY / 100)),
       descripcion_menu: formReceta.descripcion_menu || "",
       ingredientes: esCombo ? [] : formReceta.ingredientes,
       productos_combo: esCombo ? formReceta.productos_combo : [],
@@ -393,7 +386,6 @@ export default function App() {
 
   const margenColor = (pct) => pct >= 60 ? C.green : pct >= 40 ? C.mustard : C.red;
 
-  // Cálculos generales
   const mesActual = today().slice(0, 7);
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
   const ventasMeses = [...new Set(ventas.map((v) => v.fecha.slice(0, 7)))].sort().reverse();
@@ -455,7 +447,6 @@ export default function App() {
 
       {toast && <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: C.mustard, color: C.bg, padding: "8px 20px", borderRadius: 30, fontWeight: 700, fontSize: 13, zIndex: 999, whiteSpace: "nowrap" }}>{toast}</div>}
 
-      {/* Modal Admin */}
       {adminModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
@@ -471,31 +462,22 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal Confirmar Precio */}
       {confirmarPrecioModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔐 Confirmar cambio de precio</div>
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 4 }}>{confirmarPrecioModal.rec.nombre_producto}</div>
-            <div style={{ marginBottom: 16, fontSize: 13 }}>
-              {preciosPendientes[confirmarPrecioModal.rec.id + "_precio_venta"] !== undefined && (
-                <div style={{ color: C.mustard }}>Precio normal: {fmt(Number(preciosPendientes[confirmarPrecioModal.rec.id + "_precio_venta"]))}</div>
-              )}
-              {preciosPendientes[confirmarPrecioModal.rec.id + "_precio_py"] !== undefined && (
-                <div style={{ color: C.orange }}>Precio PY: {fmt(Number(preciosPendientes[confirmarPrecioModal.rec.id + "_precio_py"]))}</div>
-              )}
-            </div>
+            <div style={{ color: C.mustard, fontWeight: 700, fontSize: 18, marginBottom: 16 }}>Nuevo precio: {fmt(confirmarPrecioModal.valor)}</div>
             <input type="password" placeholder="Clave" value={adminClave} onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }} onKeyDown={(e) => e.key === "Enter" && confirmarCambioPrecio()} style={{ ...S.inp, fontSize: 18, letterSpacing: 6, marginBottom: 8 }} autoFocus />
             {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setConfirmarPrecioModal(null); setAdminClave(""); setPreciosPendientes((p) => { const n = { ...p }; delete n[confirmarPrecioModal.rec.id + "_precio_venta"]; delete n[confirmarPrecioModal.rec.id + "_precio_py"]; return n; }); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Descartar</button>
+              <button onClick={() => { setConfirmarPrecioModal(null); setAdminClave(""); setPrecioVentaEdit((p) => { const n={...p}; delete n[confirmarPrecioModal.rec.id]; return n; }); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Descartar</button>
               <button onClick={confirmarCambioPrecio} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal Descuento */}
       {descuentoModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
@@ -542,7 +524,6 @@ export default function App() {
         </div>
       )}
 
-      {/* HEADER */}
       <div style={{ background: C.surface, borderBottom: `1px solid ${C.border}`, padding: "12px 16px", position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ maxWidth: 680, margin: "0 auto" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -562,7 +543,6 @@ export default function App() {
 
       <div style={{ maxWidth: 680, margin: "0 auto", padding: "16px 12px 60px" }}>
 
-        {/* HOME */}
         {view === "home" && (
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
@@ -589,7 +569,6 @@ export default function App() {
           </div>
         )}
 
-        {/* GASTOS */}
         {view === "gastos" && (
           <div>
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
@@ -661,7 +640,6 @@ export default function App() {
           </div>
         )}
 
-        {/* VENTAS */}
         {view === "ventas" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -690,7 +668,7 @@ export default function App() {
                   ))}
                 </div>
                 <div style={S.card}>
-                  {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (+30%)</div>}
+                  {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (+{porcentajePY}%)</div>}
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {recetas.filter((r) => r.categoria === catActiva).sort((a, b) => a.precio_venta - b.precio_venta).map((rec) => (
@@ -802,11 +780,11 @@ export default function App() {
                       <div style={{ display: "flex", alignItems: "flex-end", gap: dashPeriodo === "7dias" ? 8 : 3, height: 100, paddingBottom: 20 }}>
                         {ventasDia.map((d) => (
                           <div key={d.fecha} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                            <div style={{ fontSize: 9, color: d.total > 0 ? C.green : C.muted, fontWeight: d.total > 0 ? 700 : 400 }}>{d.total > 0 ? fmt(d.total).replace("$", "") : ""}</div>
+                            <div style={{ fontSize: 9, color: d.total > 0 ? C.green : C.muted }}>{d.total > 0 ? fmt(d.total).replace("$", "") : ""}</div>
                             <div style={{ width: "100%", background: d.total > 0 ? C.green : C.border, borderRadius: "3px 3px 0 0", height: `${Math.max(4, Math.round((d.total / maxDia) * 70))}px`, position: "relative" }}>
                               {d.fecha === ahora && <div style={{ position: "absolute", top: -3, left: "50%", transform: "translateX(-50%)", width: 6, height: 6, borderRadius: "50%", background: C.mustard }} />}
                             </div>
-                            <div style={{ fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted, fontWeight: d.fecha === ahora ? 700 : 400 }}>{d.dia}</div>
+                            <div style={{ fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted }}>{d.dia}</div>
                           </div>
                         ))}
                       </div>
@@ -886,7 +864,6 @@ export default function App() {
           </div>
         )}
 
-        {/* RECETAS */}
         {view === "recetas" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -896,7 +873,6 @@ export default function App() {
             </div>
             {loadingRecetas && <div style={{ textAlign: "center", color: C.muted, padding: 40 }}>Cargando...</div>}
 
-            {/* Márgenes */}
             {!loadingRecetas && recetaView === "margenes" && (
               <div>
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
@@ -912,10 +888,13 @@ export default function App() {
                     const costo = esCombo
                       ? (rec.productos_combo || []).reduce((s, p) => s + costoProducto(p), 0)
                       : calcularCosto(rec.ingredientes, insumosPrecio);
-                    const ventaEditada = preciosPendientes[rec.id + "_precio_venta"];
-                    const venta = Number(ventaEditada !== undefined ? ventaEditada : rec.precio_venta);
+                    const ventaEdit = precioVentaEdit[rec.id];
+                    const venta = Number(ventaEdit !== undefined ? ventaEdit : rec.precio_venta);
                     const margen = venta - costo;
-                    const hayPendiente = ventaEditada !== undefined;
+                    const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
+                    const pyDefault = Math.round(venta * (1 + porcentajePY / 100));
+                    const pyGuardado = rec.precio_py || pyDefault;
+                    const pyPct = venta > 0 ? Math.round(((pyGuardado - venta) / venta) * 100) : porcentajePY;
                     return (
                       <div key={rec.id} style={S.card}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -930,28 +909,19 @@ export default function App() {
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
                           <div>
-                            <div style={{ fontSize: 10, color: ventaEditada !== undefined ? C.orange : C.muted, marginBottom: 3 }}>Precio ($)</div>
+                            <div style={{ fontSize: 10, color: ventaEdit !== undefined ? C.orange : C.muted, marginBottom: 3 }}>Precio ($)</div>
                             <input type="number"
-                              value={ventaEditada !== undefined ? ventaEditada : rec.precio_venta}
-                              onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_venta"]: e.target.value })}
-                              style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: ventaEditada !== undefined ? C.orange : C.border }} />
+                              value={ventaEdit !== undefined ? ventaEdit : rec.precio_venta}
+                              onChange={(e) => setPrecioVentaEdit({ ...precioVentaEdit, [rec.id]: e.target.value })}
+                              style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: ventaEdit !== undefined ? C.orange : C.border }} />
                           </div>
                           <div>
-                            {(() => {
-                              const pyPendiente = preciosPendientes[rec.id + "_precio_py"];
-                              const pyValor = pyPendiente !== undefined ? Number(pyPendiente) : Math.round(venta * (1 + porcentajePY / 100));
-                              const pyPct = venta > 0 ? Math.round(((pyValor - venta) / venta) * 100) : porcentajePY;
-                              return (
-                                <>
-                                  <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (+{pyPct}%)</div>
-                                  <input type="number"
-                                    value={pyPendiente !== undefined ? pyPendiente : Math.round(venta * (1 + porcentajePY / 100))}
-                                    onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: e.target.value })}
-                                    onBlur={async (e) => { const val = Number(e.target.value); await supabase.from("recetas").update({ precio_py: val }).eq("id", rec.id); setPreciosPendientes((p) => { const n={...p}; delete n[rec.id+"_precio_py"]; return n; }); showToast("✓ PY actualizado"); }}
-                                    style={{ ...S.inp, fontSize: 13, borderColor: pyPendiente !== undefined ? C.orange : C.border }} />/
-                                </>
-                              );
-                            })()}
+                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (+{pyPct}%)</div>
+                            <input type="number"
+                              defaultValue={pyGuardado}
+                              key={rec.id + "_py_" + rec.precio_py}
+                              onBlur={async (e) => { const val = Number(e.target.value); if (val !== pyGuardado) await guardarPrecioPY(rec.id, val); }}
+                              style={{ ...S.inp, fontSize: 13 }} />
                           </div>
                           <div style={{ textAlign: "center" }}>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Ganancia</div>
@@ -962,10 +932,10 @@ export default function App() {
                             <div style={{ fontWeight: 800, fontSize: 18, color: margenColor(margenPct) }}>{Math.round(margenPct)}%</div>
                           </div>
                         </div>
-                        {hayPendiente && (
+                        {ventaEdit !== undefined && (
                           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                            <button onClick={() => setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
-                            <button onClick={() => solicitarCambioPrecio(rec)} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
+                            <button onClick={() => setPrecioVentaEdit((p) => { const n = { ...p }; delete n[rec.id]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
+                            <button onClick={() => solicitarCambioPrecio(rec, Number(ventaEdit))} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
                           </div>
                         )}
                         <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
@@ -978,7 +948,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Productos */}
             {!loadingRecetas && recetaView === "productos" && (
               <div>
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
@@ -1025,7 +994,7 @@ export default function App() {
                         <div style={{ display: "flex", gap: 14, fontSize: 12 }}>
                           {rec.categoria !== "combos" && <span style={{ color: C.muted }}>Costo: <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costo))}</span></span>}
                           <span style={{ color: C.muted }}>Precio: <span style={{ color: C.mustard, fontWeight: 700 }}>{fmt(rec.precio_venta)}</span></span>
-                          <span style={{ color: C.muted }}>PY: <span style={{ color: C.orange, fontWeight: 700 }}>{fmt(rec.precio_py || 0)}</span></span>
+                          <span style={{ color: C.muted }}>PY: <span style={{ color: C.orange, fontWeight: 700 }}>{fmt(rec.precio_py || Math.round(rec.precio_venta * (1 + porcentajePY / 100)))}</span></span>
                         </div>
                       </div>
                     );
@@ -1034,7 +1003,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Insumos */}
             {!loadingRecetas && recetaView === "insumos" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={S.card}>
@@ -1059,7 +1027,6 @@ export default function App() {
               </div>
             )}
 
-            {/* Nueva/Editar receta */}
             {!loadingRecetas && recetaView === "nueva" && (
               <div style={S.card}>
                 <STitle>{editRecetaId ? "Editar receta" : "Nueva receta"}</STitle>
@@ -1071,7 +1038,7 @@ export default function App() {
                     </select>
                   </Fld>
                   <Fld label="Precio normal ($)"><input type="number" value={formReceta.precio_venta} onChange={(e) => setFormReceta({ ...formReceta, precio_venta: e.target.value })} style={S.inp} /></Fld>
-                  <Fld label="Precio PY ($)"><input type="number" placeholder={formReceta.precio_venta ? Math.round(Number(formReceta.precio_venta) * 1.3) : ""} value={formReceta.precio_py} onChange={(e) => setFormReceta({ ...formReceta, precio_py: e.target.value })} style={S.inp} /></Fld>
+                  <Fld label="Precio PY ($)"><input type="number" placeholder={formReceta.precio_venta ? Math.round(Number(formReceta.precio_venta) * (1 + porcentajePY / 100)) : ""} value={formReceta.precio_py} onChange={(e) => setFormReceta({ ...formReceta, precio_py: e.target.value })} style={S.inp} /></Fld>
                 </div>
                 <Fld label="Descripción menú (visible en QR)" full>
                   <textarea placeholder="ej: Vienesa con palta, tomate y mayonesa casera" value={formReceta.descripcion_menu || ""} onChange={(e) => setFormReceta({ ...formReceta, descripcion_menu: e.target.value })} style={{ ...S.inp, minHeight: 60, resize: "vertical", fontFamily: "inherit" }} />
@@ -1135,7 +1102,6 @@ export default function App() {
           </div>
         )}
 
-        {/* RESUMEN */}
         {view === "resumen" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={S.card}>
