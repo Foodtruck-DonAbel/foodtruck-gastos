@@ -950,7 +950,6 @@ export default function App() {
                                     onFocus={(e) => { if (preciosPendientes[rec.id + "_precio_py"] === undefined) setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: Math.round(venta * (1 + porcentajePY / 100)) }); }}
                                     onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: e.target.value })}
                                     style={{ ...S.inp, fontSize: 13, borderColor: pyPendiente !== undefined ? C.orange : C.border }} />
-                                    style={{ ...S.inp, fontSize: 13, borderColor: pyPendiente !== undefined ? C.orange : C.border }} />
                                 </>
                               );
                             })()}
