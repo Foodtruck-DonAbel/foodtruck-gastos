@@ -161,7 +161,7 @@ export default function App() {
 
   useEffect(() => {
     if (view === "gastos" || view === "resumen") cargarGastos();
-    if (view === "ventas" || view === "resumen") { cargarVentas(); if (recetas.length === 0) cargarRecetas(); }
+    if (view === "ventas" || view === "resumen") { cargarVentas(); cargarGastos(); if (recetas.length === 0) cargarRecetas(); }
     if (view === "recetas") cargarRecetas();
   }, [view]);
 
