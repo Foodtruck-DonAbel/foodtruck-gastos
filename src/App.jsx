@@ -936,6 +936,7 @@ export default function App() {
                               value={ventaEditada !== undefined ? ventaEditada : rec.precio_venta}
                               onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_venta"]: e.target.value })}
                               style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: ventaEditada !== undefined ? C.orange : C.border }} />
+                          </div>
                           <div>
                             {(() => {
                               const pyPendiente = preciosPendientes[rec.id + "_precio_py"];
