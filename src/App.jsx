@@ -1050,7 +1050,7 @@ export default function App() {
                         {(preciosPendientes[rec.id+"_precio_venta"] !== undefined || preciosPendientes[rec.id+"_precio_py"] !== undefined) && (
                           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                             <button onClick={() => setPreciosPendientes((p) => { const n={...p}; delete n[rec.id+"_precio_venta"]; delete n[rec.id+"_precio_py"]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
-                            <button onClick={() => { const campo = preciosPendientes[rec.id+"_precio_venta"] !== undefined ? "precio_venta" : "precio_py"; const valor = Number(preciosPendientes[rec.id+"_"+campo]); solicitarCambioPrecio(rec, campo, valor); if (preciosPendientes[rec.id+"_precio_venta"] !== undefined && preciosPendientes[rec.id+"_precio_py"] !== undefined) { solicitarCambioPrecio(rec, "precio_venta", Number(preciosPendientes[rec.id+"_precio_venta"])); } }} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
+                            <button onClick={() => solicitarCambioPrecio(rec, "precio_venta", Number(preciosPendientes[rec.id+"_precio_venta"] ?? rec.precio_venta))} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
                           </div>
                         )}
                         <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
