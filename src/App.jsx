@@ -70,7 +70,7 @@ const RECETAS_EJEMPLO = [
   { nombre_producto: "Papas queso fundido y tocino", categoria: "papas", precio_venta: 4000, precio_py: 5200, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Queso fundido", gramos: 40 },{ insumo: "Tocino", gramos: 30 }] },
   { nombre_producto: "Papas con nuggets", categoria: "papas", precio_venta: 4500, precio_py: 5850, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Nuggets", gramos: 6 }] },
   { nombre_producto: "Papas con nuggets (12 und)", categoria: "papas", precio_venta: 5300, precio_py: 6890, ingredientes: [{ insumo: "Papas fritas", gramos: 300 },{ insumo: "Nuggets", gramos: 12 }] },
-  { nombre_producto: "Lata 250ml", categoria: "bebidas", precio_venta: 1000, precio_py: 1300, ingredientes: [] },
+  { nombre_producto: "Lata 250ml", categoria: "bebidas", precio_venta: 1500, precio_py: 1950, ingredientes: [] },
   { nombre_producto: "Queso fundido", categoria: "agregados", precio_venta: 1000, precio_py: 1300, ingredientes: [{ insumo: "Queso fundido", gramos: 40 }] },
   { nombre_producto: "Tocino agregado", categoria: "agregados", precio_venta: 1000, precio_py: 1300, ingredientes: [{ insumo: "Tocino", gramos: 30 }] },
 ];
@@ -124,11 +124,11 @@ export default function App() {
   const [fechaVenta, setFechaVenta] = useState(today());
   const [savingVenta, setSavingVenta] = useState(false);
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
-  const [dashPeriodo, setDashPeriodo] = useState("mes"); // hoy | 7dias | mes
   const [descuentoModal, setDescuentoModal] = useState(null);
   const [descuentoTipo, setDescuentoTipo] = useState("");
   const [descuentoPct, setDescuentoPct] = useState("");
   const [cortesiaDueno, setCortesiaDueno] = useState("");
+  const [dashPeriodo, setDashPeriodo] = useState("mes");
 
   // Recetas
   const [insumosPrecio, setInsumosPrecio] = useState([]);
@@ -136,9 +136,8 @@ export default function App() {
   const [loadingRecetas, setLoadingRecetas] = useState(false);
   const [recetaView, setRecetaView] = useState("margenes");
   const [recetaCatActiva, setRecetaCatActiva] = useState("completos");
-  const [preciosVentaEdit, setPreciosVentaEdit] = useState({});
-  const [preciosPendientes, setPreciosPendientes] = useState({}); // precios editados sin confirmar
-  const [confirmarPrecioModal, setConfirmarPrecioModal] = useState(null); // { rec, campo, valor }
+  const [preciosPendientes, setPreciosPendientes] = useState({});
+  const [confirmarPrecioModal, setConfirmarPrecioModal] = useState(null);
   const [formInsumo, setFormInsumo] = useState({ nombre: "", precio_por_kg: "", unidad: "kg" });
   const [editInsumoId, setEditInsumoId] = useState(null);
   const [formReceta, setFormReceta] = useState({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: [], productos_combo: [] });
@@ -160,8 +159,9 @@ export default function App() {
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
   useEffect(() => {
-    if (view === "gastos" || view === "resumen") cargarGastos();
-    if (view === "ventas" || view === "resumen") { cargarVentas(); cargarGastos(); if (recetas.length === 0) cargarRecetas(); }
+    if (view === "gastos") cargarGastos();
+    if (view === "ventas") { cargarVentas(); cargarGastos(); if (recetas.length === 0) cargarRecetas(); }
+    if (view === "resumen") { cargarGastos(); cargarVentas(); }
     if (view === "recetas") cargarRecetas();
   }, [view]);
 
@@ -215,6 +215,20 @@ export default function App() {
     else cargarGastos();
   };
 
+  // Precio con clave
+  const solicitarCambioPrecio = (rec) => { setConfirmarPrecioModal({ rec }); setAdminClave(""); setAdminError(false); };
+  const confirmarCambioPrecio = async () => {
+    if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
+    const { rec } = confirmarPrecioModal;
+    const updates = {};
+    if (preciosPendientes[rec.id + "_precio_venta"] !== undefined) updates.precio_venta = Number(preciosPendientes[rec.id + "_precio_venta"]);
+    if (preciosPendientes[rec.id + "_precio_py"] !== undefined) updates.precio_py = Number(preciosPendientes[rec.id + "_precio_py"]);
+    await supabase.from("recetas").update(updates).eq("id", rec.id);
+    setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; delete n[rec.id + "_precio_py"]; return n; });
+    setConfirmarPrecioModal(null); setAdminClave("");
+    showToast("✓ Precio actualizado"); cargarRecetas();
+  };
+
   // Gastos
   const agregarGasto = async () => {
     if (!persona) { showToast("Selecciona quién registra"); return; }
@@ -245,10 +259,9 @@ export default function App() {
     return calcularCosto(rec.ingredientes, insumosPrecio);
   };
 
-  // Precio según método de pago
   const precioProducto = (rec) => metodoPago === "Pedidos Ya" ? (rec.precio_py || Math.round(rec.precio_venta * 1.3)) : rec.precio_venta;
 
-  // Ventas - agregar al carrito
+  // Ventas
   const agregarAlCarrito = (rec, optsExtra) => {
     const nombre = optsExtra?.nombre || rec.nombre_producto;
     const precio = optsExtra?.precio !== undefined ? optsExtra.precio : precioProducto(rec);
@@ -261,16 +274,11 @@ export default function App() {
     }
   };
 
-  // Agregar combo al carrito — desglosa productos con etiqueta combo
   const agregarCombo = (comboRec) => {
     const productos = comboRec.productos_combo || [];
     if (productos.length === 0) { showToast("Este combo no tiene productos definidos"); return; }
     const precioCombo = precioProducto(comboRec);
-    // Distribuir el precio del combo entre los productos proporcionalmente
-    const sumaNormal = productos.reduce((s, p) => {
-      const r = recetas.find((r) => r.nombre_producto === p);
-      return s + (r ? r.precio_venta : 0);
-    }, 0);
+    const sumaNormal = productos.reduce((s, p) => { const r = recetas.find((r) => r.nombre_producto === p); return s + (r ? r.precio_venta : 0); }, 0);
     productos.forEach((nombreProd) => {
       const r = recetas.find((r) => r.nombre_producto === nombreProd);
       if (!r) return;
@@ -304,9 +312,7 @@ export default function App() {
       const costo = costoProducto(descuentoModal.receta_nombre || descuentoModal.nombre);
       const precioMinimo = costo > 0 ? Math.ceil(costo / 0.70) : 0;
       const precioConDesc = Math.round(descuentoModal.precio_original * (1 - pct / 100));
-      if (costo > 0 && precioConDesc < precioMinimo) {
-        showToast(`Precio mínimo: ${fmt(precioMinimo)}`); return;
-      }
+      if (costo > 0 && precioConDesc < precioMinimo) { showToast(`Precio mínimo: ${fmt(precioMinimo)}`); return; }
       nuevoPrecio = precioConDesc;
       descInfo = { tipo: "personal", porcentaje: pct, precio_final: precioConDesc };
     }
@@ -324,8 +330,10 @@ export default function App() {
   const registrarVenta = async () => {
     if (carrito.length === 0) { showToast("Agrega productos"); return; }
     setSavingVenta(true);
+    const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
     const rows = carrito.map((c) => ({
-      fecha: fechaVenta, hora: new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }), producto: c.nombre, cantidad: c.cantidad,
+      fecha: fechaVenta, hora,
+      producto: c.nombre, cantidad: c.cantidad,
       precio_unitario: c.precio_unitario, total: c.total,
       metodo_pago: c.metodo_pago, persona: persona || null,
       nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}) }) || null,
@@ -349,8 +357,7 @@ export default function App() {
     if (!formReceta.nombre_producto || !formReceta.precio_venta) { showToast("Completa nombre y precio"); return; }
     const esCombo = formReceta.categoria === "combos";
     const data = {
-      nombre_producto: formReceta.nombre_producto.trim(),
-      categoria: formReceta.categoria,
+      nombre_producto: formReceta.nombre_producto.trim(), categoria: formReceta.categoria,
       precio_venta: Number(formReceta.precio_venta),
       precio_py: Number(formReceta.precio_py) || Math.round(Number(formReceta.precio_venta) * 1.3),
       descripcion_menu: formReceta.descripcion_menu || "",
@@ -361,24 +368,6 @@ export default function App() {
     else { await supabase.from("recetas").insert([data]); showToast("✓ Guardada"); }
     setFormReceta({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: [], productos_combo: [] });
     cargarRecetas();
-  };
-
-  const actualizarPrecioReceta = async (rec, campo, valor) => {
-  const solicitarCambioPrecio = (rec, campo, valor) => {
-    setConfirmarPrecioModal({ rec, campo, valor });
-    setAdminClave(""); setAdminError(false);
-  };
-
-  const confirmarCambioPrecio = async () => {
-    if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
-    const { rec } = confirmarPrecioModal;
-    const updates = {};
-    if (preciosPendientes[rec.id+"_precio_venta"] !== undefined) updates.precio_venta = Number(preciosPendientes[rec.id+"_precio_venta"]);
-    if (preciosPendientes[rec.id+"_precio_py"] !== undefined) updates.precio_py = Number(preciosPendientes[rec.id+"_precio_py"]);
-    await supabase.from("recetas").update(updates).eq("id", rec.id);
-    setPreciosPendientes((p) => { const n={...p}; delete n[rec.id+"_precio_venta"]; delete n[rec.id+"_precio_py"]; return n; });
-    setConfirmarPrecioModal(null); setAdminClave("");
-    showToast("✓ Precio actualizado"); cargarRecetas();
   };
 
   const actualizarGramosIngrediente = async (rec, idx, nuevosGramos) => {
@@ -416,17 +405,11 @@ export default function App() {
   const porInsumo = Object.entries(gastosResumen.reduce((acc, g) => { acc[g.insumo] = (acc[g.insumo] || 0) + g.monto; return acc; }, {})).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 10);
 
   const ventasMesActual = ventas.filter((v) => v.fecha.startsWith(mesActual));
-
-  // Dashboard — ventas por producto con detalle combo
   const ventasPorProducto = Object.entries(
     ventasMesActual.reduce((acc, v) => {
       if (!acc[v.producto]) acc[v.producto] = { total: 0, cantidad: 0, combos: {} };
-      acc[v.producto].total += v.total;
-      acc[v.producto].cantidad += v.cantidad;
-      try {
-        const nota = JSON.parse(v.nota || "{}");
-        if (nota.combo) acc[v.producto].combos[nota.combo] = (acc[v.producto].combos[nota.combo] || 0) + v.cantidad;
-      } catch {}
+      acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad;
+      try { const nota = JSON.parse(v.nota || "{}"); if (nota.combo) acc[v.producto].combos[nota.combo] = (acc[v.producto].combos[nota.combo] || 0) + v.cantidad; } catch {}
       return acc;
     }, {})
   ).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total);
@@ -439,15 +422,6 @@ export default function App() {
   const cortesiasMes = ventasMesActual.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "cortesia"; } catch { return false; } });
   const descuentosMes = ventasMesActual.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "personal"; } catch { return false; } });
   const totalCortesias = cortesiasMes.reduce((s, v) => { const rec = recetas.find((r) => r.nombre_producto === v.producto); return s + (rec ? calcularCosto(rec.ingredientes, insumosPrecio) : 0); }, 0);
-
-  const ventasPorProductoMetodo = Object.entries(
-    ventasMesActual.reduce((acc, v) => {
-      if (!acc[v.producto]) acc[v.producto] = { Efectivo: 0, Tarjeta: 0, "Pedidos Ya": 0, total: 0, cantidad: 0 };
-      acc[v.producto][v.metodo_pago] = (acc[v.producto][v.metodo_pago] || 0) + v.total;
-      acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad;
-      return acc;
-    }, {})
-  ).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total);
 
   const S = {
     card: { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: "16px" },
@@ -482,21 +456,30 @@ export default function App() {
         </div>
       )}
 
+      {/* Modal Confirmar Precio */}
       {confirmarPrecioModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔐 Confirmar cambio de precio</div>
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 4 }}>{confirmarPrecioModal.rec.nombre_producto}</div>
-            <div style={{ color: C.mustard, fontWeight: 700, fontSize: 16, marginBottom: 16 }}>{confirmarPrecioModal.campo === "precio_venta" ? "Precio normal" : "Precio PY"}: {fmt(confirmarPrecioModal.valor)}</div>
+            <div style={{ marginBottom: 16, fontSize: 13 }}>
+              {preciosPendientes[confirmarPrecioModal.rec.id + "_precio_venta"] !== undefined && (
+                <div style={{ color: C.mustard }}>Precio normal: {fmt(Number(preciosPendientes[confirmarPrecioModal.rec.id + "_precio_venta"]))}</div>
+              )}
+              {preciosPendientes[confirmarPrecioModal.rec.id + "_precio_py"] !== undefined && (
+                <div style={{ color: C.orange }}>Precio PY: {fmt(Number(preciosPendientes[confirmarPrecioModal.rec.id + "_precio_py"]))}</div>
+              )}
+            </div>
             <input type="password" placeholder="Clave" value={adminClave} onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }} onKeyDown={(e) => e.key === "Enter" && confirmarCambioPrecio()} style={{ ...S.inp, fontSize: 18, letterSpacing: 6, marginBottom: 8 }} autoFocus />
             {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setConfirmarPrecioModal(null); setAdminClave(""); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={() => { setConfirmarPrecioModal(null); setAdminClave(""); setPreciosPendientes((p) => { const n = { ...p }; delete n[confirmarPrecioModal.rec.id + "_precio_venta"]; delete n[confirmarPrecioModal.rec.id + "_precio_py"]; return n; }); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Descartar</button>
               <button onClick={confirmarCambioPrecio} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
             </div>
           </div>
         </div>
       )}
+
       {/* Modal Descuento */}
       {descuentoModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
@@ -509,7 +492,7 @@ export default function App() {
             </div>
             {descuentoTipo === "cortesia" && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ color: C.muted, fontSize: 12, marginBottom: 8 }}>¿Quién autoriza? (producto $0)</div>
+                <div style={{ color: C.muted, fontSize: 12, marginBottom: 8 }}>¿Quién autoriza?</div>
                 <div style={{ display: "flex", gap: 6 }}>
                   {["Raul", "Pepe", "Alejandro"].map((d) => (
                     <button key={d} onClick={() => setCortesiaDueno(d)} style={{ flex: 1, background: cortesiaDueno === d ? personColor(d) : C.tag, color: cortesiaDueno === d ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "8px 0", cursor: "pointer", fontWeight: cortesiaDueno === d ? 700 : 400, fontSize: 12 }}>{d}</button>
@@ -528,14 +511,8 @@ export default function App() {
                   const ok = precioConDesc >= precioMinimo;
                   return (
                     <div style={{ marginTop: 8, fontSize: 13 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ color: C.muted }}>Descuento</span>
-                        <span style={{ fontWeight: 700, color: C.blue }}>{Number(descuentoPct)}%</span>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-                        <span style={{ color: C.muted }}>Precio final</span>
-                        <span style={{ fontWeight: 800, fontSize: 16, color: ok ? C.green : C.red }}>{fmt(precioConDesc)}</span>
-                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Descuento</span><span style={{ fontWeight: 700, color: C.blue }}>{Number(descuentoPct)}%</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}><span style={{ color: C.muted }}>Precio final</span><span style={{ fontWeight: 800, fontSize: 16, color: ok ? C.green : C.red }}>{fmt(precioConDesc)}</span></div>
                       {!ok && <div style={{ color: C.red, fontSize: 12, marginTop: 4 }}>⚠️ Mínimo: {fmt(precioMinimo)}</div>}
                     </div>
                   );
@@ -690,8 +667,6 @@ export default function App() {
                     </div>
                   </Fld>
                 </div>
-
-                {/* Categorías */}
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
                   {CATEGORIAS.map((cat) => (
                     <button key={cat.id} onClick={() => setCatActiva(cat.id)} style={{ background: catActiva === cat.id ? C.mustard : C.tag, color: catActiva === cat.id ? C.bg : C.muted, border: "none", borderRadius: 20, padding: "5px 14px", cursor: "pointer", fontWeight: catActiva === cat.id ? 700 : 400, fontSize: 12, whiteSpace: "nowrap" }}>
@@ -699,15 +674,12 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-
-                {/* Productos desde recetas */}
                 <div style={S.card}>
                   {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (+30%)</div>}
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {recetas.filter((r) => r.categoria === catActiva).sort((a, b) => a.precio_venta - b.precio_venta).map((rec) => (
-                      <button key={rec.id}
-                        onClick={() => catActiva === "combos" ? agregarCombo(rec) : agregarAlCarrito(rec)}
+                      <button key={rec.id} onClick={() => catActiva === "combos" ? agregarCombo(rec) : agregarAlCarrito(rec)}
                         style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px", cursor: "pointer", textAlign: "left" }}
                         onMouseEnter={(e) => e.currentTarget.style.borderColor = catActiva === "combos" ? C.purple : C.mustard}
                         onMouseLeave={(e) => e.currentTarget.style.borderColor = C.border}>
@@ -720,8 +692,6 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-
-                {/* Carrito */}
                 {carrito.length > 0 && (
                   <div style={S.card}>
                     <STitle>Pedido actual</STitle>
@@ -761,114 +731,72 @@ export default function App() {
             )}
 
             {ventaView === "dashboard" && (() => {
-              // Calcular ventas según período seleccionado
               const ahora = today();
               const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
               const hace7str = `${hace7.getFullYear()}-${String(hace7.getMonth()+1).padStart(2,"0")}-${String(hace7.getDate()).padStart(2,"0")}`;
-              const ventasPeriodo = dashPeriodo === "hoy"
-                ? ventas.filter((v) => v.fecha === ahora)
-                : dashPeriodo === "7dias"
-                ? ventas.filter((v) => v.fecha >= hace7str && v.fecha <= ahora)
+              const ventasPeriodo = dashPeriodo === "hoy" ? ventas.filter((v) => v.fecha === ahora)
+                : dashPeriodo === "7dias" ? ventas.filter((v) => v.fecha >= hace7str && v.fecha <= ahora)
                 : ventasMesActual;
-
               const totalPeriodo = ventasPeriodo.reduce((s, v) => s + v.total, 0);
               const cantidadPeriodo = ventasPeriodo.length;
               const ticketPromedio = cantidadPeriodo > 0 ? Math.round(totalPeriodo / cantidadPeriodo) : 0;
-              const gastosPeriodo = dashPeriodo === "hoy"
-                ? gastos.filter((g) => g.fecha === ahora).reduce((s, g) => s + g.monto, 0)
-                : dashPeriodo === "7dias"
-                ? gastos.filter((g) => g.fecha >= hace7str && g.fecha <= ahora).reduce((s, g) => s + g.monto, 0)
+              const gastosPeriodo = dashPeriodo === "hoy" ? gastos.filter((g) => g.fecha === ahora).reduce((s, g) => s + g.monto, 0)
+                : dashPeriodo === "7dias" ? gastos.filter((g) => g.fecha >= hace7str && g.fecha <= ahora).reduce((s, g) => s + g.monto, 0)
                 : totalMes;
               const utilidadPeriodo = totalPeriodo - gastosPeriodo;
-              const margenOperacional = totalPeriodo > 0 ? Math.round(((totalPeriodo - gastosPeriodo) / totalPeriodo) * 100) : 0;
-
-              // Ventas por día para el gráfico
-              const diasGrafico = dashPeriodo === "hoy"
-                ? [ahora]
-                : dashPeriodo === "7dias"
-                ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })
+              const margenOperacional = totalPeriodo > 0 && gastosPeriodo > 0 ? Math.round((utilidadPeriodo / totalPeriodo) * 100) : null;
+              const diasGrafico = dashPeriodo === "hoy" ? [ahora]
+                : dashPeriodo === "7dias" ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })
                 : Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth(), i + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }).filter((d) => d <= ahora);
-
-              const ventasDia = diasGrafico.map((d) => ({
-                dia: d.slice(8), // solo el número de día
-                fecha: d,
-                total: ventas.filter((v) => v.fecha === d).reduce((s, v) => s + v.total, 0),
-              }));
+              const ventasDia = diasGrafico.map((d) => ({ dia: d.slice(8), fecha: d, total: ventas.filter((v) => v.fecha === d).reduce((s, v) => s + v.total, 0) }));
               const maxDia = Math.max(...ventasDia.map((d) => d.total), 1);
-
-              const metodosPeriodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({
-                m, t: ventasPeriodo.filter((v) => v.metodo_pago === m).reduce((s, v) => s + v.total, 0),
-              })).filter((x) => x.t > 0);
-
-              const productosPeriodo = Object.entries(
-                ventasPeriodo.reduce((acc, v) => { acc[v.producto] = acc[v.producto] || { total: 0, cantidad: 0 }; acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad; return acc; }, {})
-              ).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total).slice(0, 8);
-
+              const metodosPeriodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({ m, t: ventasPeriodo.filter((v) => v.metodo_pago === m).reduce((s, v) => s + v.total, 0) })).filter((x) => x.t > 0);
+              const productosPeriodo = Object.entries(ventasPeriodo.reduce((acc, v) => { acc[v.producto] = acc[v.producto] || { total: 0, cantidad: 0 }; acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad; return acc; }, {})).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total).slice(0, 8);
               const cortesiasPeriodo = ventasPeriodo.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "cortesia"; } catch { return false; } });
               const descuentosPeriodo = ventasPeriodo.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "personal"; } catch { return false; } });
-
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {/* Selector período */}
                   <div style={{ display: "flex", gap: 6 }}>
                     {[{ id: "hoy", label: "Hoy" }, { id: "7dias", label: "7 días" }, { id: "mes", label: "Este mes" }].map((p) => (
                       <button key={p.id} onClick={() => setDashPeriodo(p.id)} style={{ flex: 1, background: dashPeriodo === p.id ? C.green : C.tag, color: dashPeriodo === p.id ? "#fff" : C.muted, border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: dashPeriodo === p.id ? 700 : 400, fontSize: 13 }}>{p.label}</button>
                     ))}
                   </div>
-
-                  {/* Métricas principales */}
                   <div style={S.card}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ color: C.muted, fontSize: 11 }}>Ventas</div>
-                        <div style={{ fontWeight: 800, fontSize: 20, color: C.green }}>{fmt(totalPeriodo)}</div>
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ color: C.muted, fontSize: 11 }}>Ticket prom.</div>
-                        <div style={{ fontWeight: 800, fontSize: 20, color: C.mustard }}>{fmt(ticketPromedio)}</div>
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ color: C.muted, fontSize: 11 }}>Transacciones</div>
-                        <div style={{ fontWeight: 800, fontSize: 20, color: C.blue }}>{cantidadPeriodo}</div>
-                      </div>
+                      <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Ventas</div><div style={{ fontWeight: 800, fontSize: 20, color: C.green }}>{fmt(totalPeriodo)}</div></div>
+                      <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Ticket prom.</div><div style={{ fontWeight: 800, fontSize: 20, color: C.mustard }}>{fmt(ticketPromedio)}</div></div>
+                      <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Transacciones</div><div style={{ fontWeight: 800, fontSize: 20, color: C.blue }}>{cantidadPeriodo}</div></div>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                        <div style={{ color: C.muted, fontSize: 11 }}>Gastos</div>
-                        <div style={{ fontWeight: 700, fontSize: 16, color: C.red }}>{fmt(gastosPeriodo)}</div>
-                      </div>
-                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                        <div style={{ color: C.muted, fontSize: 11 }}>Utilidad</div>
-                        <div style={{ fontWeight: 700, fontSize: 16, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{fmt(utilidadPeriodo)}</div>
-                      </div>
+                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}><div style={{ color: C.muted, fontSize: 11 }}>Gastos</div><div style={{ fontWeight: 700, fontSize: 16, color: C.red }}>{fmt(gastosPeriodo)}</div></div>
+                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}><div style={{ color: C.muted, fontSize: 11 }}>Utilidad</div><div style={{ fontWeight: 700, fontSize: 16, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{fmt(utilidadPeriodo)}</div></div>
                     </div>
+                    {margenOperacional !== null && (
+                      <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                        <span style={{ color: C.muted }}>Margen operacional</span>
+                        <span style={{ fontWeight: 700, color: margenOperacional >= 0 ? C.green : C.red }}>{margenOperacional}%</span>
+                      </div>
+                    )}
+                    {gastosPeriodo === 0 && totalPeriodo > 0 && (
+                      <div style={{ color: C.muted, fontSize: 11, marginTop: 8 }}>Registra gastos del período para ver el margen operacional</div>
+                    )}
                   </div>
-
-                  {/* Gráfico de barras diario */}
                   {dashPeriodo !== "hoy" && (
                     <div style={S.card}>
                       <STitle>Ventas por día</STitle>
-                      <div style={{ display: "flex", alignItems: "flex-end", gap: dashPeriodo === "7dias" ? 8 : 3, height: 100, paddingBottom: 20, position: "relative" }}>
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: dashPeriodo === "7dias" ? 8 : 3, height: 100, paddingBottom: 20 }}>
                         {ventasDia.map((d) => (
                           <div key={d.fecha} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                            <div style={{ fontSize: 9, color: d.total > 0 ? C.green : C.muted, fontWeight: d.total > 0 ? 700 : 400, whiteSpace: "nowrap" }}>
-                              {d.total > 0 ? fmt(d.total).replace("$", "") : ""}
-                            </div>
-                            <div style={{ width: "100%", background: d.total > 0 ? C.green : C.border, borderRadius: "3px 3px 0 0", height: `${Math.max(4, Math.round((d.total / maxDia) * 70))}px`, transition: "height .3s", position: "relative" }}>
+                            <div style={{ fontSize: 9, color: d.total > 0 ? C.green : C.muted, fontWeight: d.total > 0 ? 700 : 400 }}>{d.total > 0 ? fmt(d.total).replace("$", "") : ""}</div>
+                            <div style={{ width: "100%", background: d.total > 0 ? C.green : C.border, borderRadius: "3px 3px 0 0", height: `${Math.max(4, Math.round((d.total / maxDia) * 70))}px`, position: "relative" }}>
                               {d.fecha === ahora && <div style={{ position: "absolute", top: -3, left: "50%", transform: "translateX(-50%)", width: 6, height: 6, borderRadius: "50%", background: C.mustard }} />}
                             </div>
                             <div style={{ fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted, fontWeight: d.fecha === ahora ? 700 : 400 }}>{d.dia}</div>
                           </div>
                         ))}
                       </div>
-                      <div style={{ display: "flex", gap: 10, fontSize: 11, color: C.muted, justifyContent: "flex-end" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: C.green, display: "inline-block" }} />Ventas</span>
-                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: C.mustard, display: "inline-block" }} />Hoy</span>
-                      </div>
                     </div>
                   )}
-
-                  {/* Por método */}
                   <div style={S.card}>
                     <STitle>Por método de pago</STitle>
                     {metodosPeriodo.length === 0 && <Empty />}
@@ -882,8 +810,6 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-
-                  {/* Por producto */}
                   <div style={S.card}>
                     <STitle>Por producto</STitle>
                     {productosPeriodo.length === 0 && <Empty />}
@@ -897,53 +823,21 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-
-                  {/* Cortesías y descuentos */}
                   {(cortesiasPeriodo.length > 0 || descuentosPeriodo.length > 0) && (
                     <div style={S.card}>
                       <STitle>Cortesías y descuentos</STitle>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-                        <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                          <div style={{ color: C.muted, fontSize: 11 }}>🎁 Cortesías</div>
-                          <div style={{ fontWeight: 700, fontSize: 18, color: C.orange }}>{cortesiasPeriodo.length}</div>
-                        </div>
-                        <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                          <div style={{ color: C.muted, fontSize: 11 }}>% Descuentos</div>
-                          <div style={{ fontWeight: 700, fontSize: 18, color: C.blue }}>{descuentosPeriodo.length}</div>
-                        </div>
+                        <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}><div style={{ color: C.muted, fontSize: 11 }}>🎁 Cortesías</div><div style={{ fontWeight: 700, fontSize: 18, color: C.orange }}>{cortesiasPeriodo.length}</div></div>
+                        <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}><div style={{ color: C.muted, fontSize: 11 }}>% Descuentos</div><div style={{ fontWeight: 700, fontSize: 18, color: C.blue }}>{descuentosPeriodo.length}</div></div>
                       </div>
-                      {cortesiasPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (
-                        <div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}>
-                          <span>{v.producto} <span style={{ color: personColor(d.autorizado_por) }}>({d.autorizado_por})</span></span>
-                          <span style={{ color: C.muted }}>{v.fecha}</span>
-                        </div>
-                      ); })}
-                      {descuentosPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (
-                        <div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}>
-                          <span>{v.producto} <span style={{ color: C.blue }}>{d.porcentaje}% off</span></span>
-                          <span style={{ color: C.muted }}>{v.fecha}</span>
-                        </div>
-                      ); })}
+                      {cortesiasPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (<div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}><span>{v.producto} <span style={{ color: personColor(d.autorizado_por) }}>({d.autorizado_por})</span></span><span style={{ color: C.muted }}>{v.fecha}</span></div>); })}
+                      {descuentosPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (<div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}><span>{v.producto} <span style={{ color: C.blue }}>{d.porcentaje}% off</span></span><span style={{ color: C.muted }}>{v.fecha}</span></div>); })}
                     </div>
                   )}
-
-                  {/* Resumen financiero */}
-                  <div style={S.card}>
-                    <STitle>Resumen financiero</STitle>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Ventas</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(totalPeriodo)}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Gastos</span><span style={{ fontWeight: 700, color: C.red }}>{fmt(gastosPeriodo)}</span></div>
-                      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontWeight: 700 }}>Utilidad neta</span>
-                        <span style={{ fontWeight: 800, fontSize: 20, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{fmt(utilidadPeriodo)}</span>
-                      </div>
-                      {totalPeriodo > 0 && gastosPeriodo > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span style={{ color: C.muted }}>Margen operacional</span><span style={{ fontWeight: 700, color: margenOperacional >= 0 ? C.green : C.red }}>{margenOperacional}%</span></div>}
-                      {totalPeriodo > 0 && gastosPeriodo === 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Registra gastos del período para ver el margen operacional</div>}
-                    </div>
-                  </div>
                 </div>
               );
             })()}
+
             {ventaView === "historial" && (
               <div>
                 <div style={{ ...S.card, marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -960,7 +854,8 @@ export default function App() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 600 }}>{v.producto}</div>
                       <div style={{ color: C.muted, fontSize: 11, marginTop: 3, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <span>{v.fecha}{v.hora && ` · ${v.hora}`}</span><span>{v.cantidad} und</span>
+                        <span>{v.fecha}{v.hora ? ` · ${v.hora}` : ""}</span>
+                        <span>{v.cantidad} und</span>
                         <Tag text={v.metodo_pago} color={(metodoPagoColors[v.metodo_pago] || C.muted) + "33"} textColor={metodoPagoColors[v.metodo_pago] || C.muted} />
                         {v.nota && (() => { try { const d = JSON.parse(v.nota); if (d.tipo === "cortesia") return <Tag text={`🎁 ${d.autorizado_por}`} color={C.green + "33"} textColor={C.green} />; if (d.tipo === "personal") return <Tag text={`${d.porcentaje}% off`} color={C.blue + "33"} textColor={C.blue} />; if (d.combo) return <Tag text={`🎁 ${d.combo}`} color={C.purple + "33"} textColor={C.purple} />; return null; } catch { return null; } })()}
                       </div>
@@ -981,7 +876,7 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {[{ id: "margenes", label: "📊 Márgenes" }, { id: "productos", label: "🏷️ Productos" }, { id: "insumos", label: "🛒 Insumos" }, { id: "nueva", label: "+ Nueva" }].map((t) => (
-                <button key={t.id} onClick={() => { if (t.id === "nueva" && !editRecetaId) { setFormReceta({ nombre_producto: "", categoria: recetaCatActiva, precio_venta: "", precio_py: "", ingredientes: INGREDIENTES_BASE[recetaCatActiva] || [], productos_combo: [] }); } setRecetaView(t.id); }} style={{ background: recetaView === t.id ? C.mustard : C.tag, color: recetaView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontWeight: recetaView === t.id ? 700 : 400, fontSize: 12 }}>{t.label}</button>
+                <button key={t.id} onClick={() => { if (t.id === "nueva" && !editRecetaId) { setFormReceta({ nombre_producto: "", categoria: recetaCatActiva, precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: INGREDIENTES_BASE[recetaCatActiva] || [], productos_combo: [] }); } setRecetaView(t.id); }} style={{ background: recetaView === t.id ? C.mustard : C.tag, color: recetaView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontWeight: recetaView === t.id ? 700 : 400, fontSize: 12 }}>{t.label}</button>
               ))}
             </div>
             {loadingRecetas && <div style={{ textAlign: "center", color: C.muted, padding: 40 }}>Cargando...</div>}
@@ -1002,9 +897,11 @@ export default function App() {
                     const costo = esCombo
                       ? (rec.productos_combo || []).reduce((s, p) => s + costoProducto(p), 0)
                       : calcularCosto(rec.ingredientes, insumosPrecio);
-                    const venta = Number(preciosPendientes[rec.id+"_precio_venta"] !== undefined ? preciosPendientes[rec.id+"_precio_venta"] : rec.precio_venta);
+                    const ventaEditada = preciosPendientes[rec.id + "_precio_venta"];
+                    const venta = Number(ventaEditada !== undefined ? ventaEditada : rec.precio_venta);
                     const margen = venta - costo;
                     const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
+                    const hayPendiente = ventaEditada !== undefined || preciosPendientes[rec.id + "_precio_py"] !== undefined;
                     return (
                       <div key={rec.id} style={S.card}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -1013,30 +910,24 @@ export default function App() {
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
                           {esCombo
-                            ? (rec.productos_combo || []).map((p, i) => {
-                                const costoP = costoProducto(p);
-                                return <span key={i} style={{ background: C.purple + "22", borderRadius: 4, padding: "2px 7px", fontSize: 10, color: C.purple }}>{p} <span style={{ color: C.muted }}>{fmt(Math.round(costoP))}</span></span>;
-                              })
-                            : rec.ingredientes.map((ing, i) => {
-                                const ins = insumosPrecio.find((x) => x.nombre === ing.insumo);
-                                return <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: C.muted }}>{ing.insumo} <span style={{ color: C.text }}>{ins?.unidad === "unidad" ? `${ing.gramos}u` : `${ing.gramos}g`}</span></span>;
-                              })
+                            ? (rec.productos_combo || []).map((p, i) => <span key={i} style={{ background: C.purple + "22", borderRadius: 4, padding: "2px 7px", fontSize: 10, color: C.purple }}>{p} <span style={{ color: C.muted }}>{fmt(Math.round(costoProducto(p)))}</span></span>)
+                            : rec.ingredientes.map((ing, i) => { const ins = insumosPrecio.find((x) => x.nombre === ing.insumo); return <span key={i} style={{ background: C.tag, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: C.muted }}>{ing.insumo} <span style={{ color: C.text }}>{ins?.unidad === "unidad" ? `${ing.gramos}u` : `${ing.gramos}g`}</span></span>; })
                           }
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
                           <div>
-                            <div style={{ fontSize: 10, color: preciosPendientes[rec.id+"_precio_venta"] !== undefined ? C.orange : C.muted, marginBottom: 3 }}>Precio ($)</div>
+                            <div style={{ fontSize: 10, color: ventaEditada !== undefined ? C.orange : C.muted, marginBottom: 3 }}>Precio ($)</div>
                             <input type="number"
-                              value={preciosPendientes[rec.id+"_precio_venta"] !== undefined ? preciosPendientes[rec.id+"_precio_venta"] : rec.precio_venta}
-                              onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id+"_precio_venta"]: e.target.value })}
-                              style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: preciosPendientes[rec.id+"_precio_venta"] !== undefined ? C.orange : C.border }} />
+                              value={ventaEditada !== undefined ? ventaEditada : rec.precio_venta}
+                              onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_venta"]: e.target.value })}
+                              style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: ventaEditada !== undefined ? C.orange : C.border }} />
                           </div>
                           <div>
                             <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY ($)</div>
                             <input type="number"
-                              value={preciosPendientes[rec.id+"_precio_py"] !== undefined ? preciosPendientes[rec.id+"_precio_py"] : (rec.precio_py || "")}
-                              onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id+"_precio_py"]: e.target.value })}
-                              style={{ ...S.inp, fontSize: 13, borderColor: preciosPendientes[rec.id+"_precio_py"] !== undefined ? C.orange : C.border }} />
+                              value={preciosPendientes[rec.id + "_precio_py"] !== undefined ? preciosPendientes[rec.id + "_precio_py"] : (rec.precio_py || "")}
+                              onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: e.target.value })}
+                              style={{ ...S.inp, fontSize: 13 }} />
                           </div>
                           <div style={{ textAlign: "center" }}>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Ganancia</div>
@@ -1047,10 +938,10 @@ export default function App() {
                             <div style={{ fontWeight: 800, fontSize: 18, color: margenColor(margenPct) }}>{Math.round(margenPct)}%</div>
                           </div>
                         </div>
-                        {(preciosPendientes[rec.id+"_precio_venta"] !== undefined || preciosPendientes[rec.id+"_precio_py"] !== undefined) && (
+                        {hayPendiente && (
                           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                            <button onClick={() => setPreciosPendientes((p) => { const n={...p}; delete n[rec.id+"_precio_venta"]; delete n[rec.id+"_precio_py"]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
-                            <button onClick={() => solicitarCambioPrecio(rec, "precio_venta", Number(preciosPendientes[rec.id+"_precio_venta"] ?? rec.precio_venta))} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
+                            <button onClick={() => setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; delete n[rec.id + "_precio_py"]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
+                            <button onClick={() => solicitarCambioPrecio(rec)} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
                           </div>
                         )}
                         <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
@@ -1085,7 +976,7 @@ export default function App() {
                             <button onClick={() => solicitarEliminacion("receta", rec)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
                           </div>
                         </div>
-                        {recetaCatActiva === "combos" ? (
+                        {rec.categoria === "combos" ? (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
                             {(rec.productos_combo || []).map((p, i) => <span key={i} style={{ background: C.purple + "33", borderRadius: 4, padding: "2px 8px", fontSize: 11, color: C.purple }}>{p}</span>)}
                           </div>
@@ -1094,7 +985,6 @@ export default function App() {
                             {(rec.ingredientes || []).map((ing, i) => {
                               const ins = insumosPrecio.find((x) => x.nombre === ing.insumo);
                               const key = rec.id + "_" + i;
-                              const esUnidad = ins?.unidad === "unidad";
                               return (
                                 <div key={i} style={{ background: C.tag, borderRadius: 6, padding: "4px 8px", fontSize: 11, display: "flex", alignItems: "center", gap: 5 }}>
                                   <span style={{ color: C.muted }}>{ing.insumo}</span>
@@ -1102,14 +992,14 @@ export default function App() {
                                     onChange={(e) => setEditGramos({ ...editGramos, [key]: e.target.value })}
                                     onBlur={(e) => { if (e.target.value !== String(ing.gramos)) actualizarGramosIngrediente(rec, i, e.target.value); setEditGramos({ ...editGramos, [key]: undefined }); }}
                                     style={{ background: C.bg, border: "none", borderBottom: `1px solid ${C.border}`, color: C.mustard, fontWeight: 700, fontSize: 11, width: 40, outline: "none", textAlign: "center" }} />
-                                  <span style={{ color: C.muted, fontSize: 10 }}>{esUnidad ? "und" : "g"}</span>
+                                  <span style={{ color: C.muted, fontSize: 10 }}>{ins?.unidad === "unidad" ? "und" : "g"}</span>
                                 </div>
                               );
                             })}
                           </div>
                         )}
                         <div style={{ display: "flex", gap: 14, fontSize: 12 }}>
-                          {recetaCatActiva !== "combos" && <span style={{ color: C.muted }}>Costo: <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costo))}</span></span>}
+                          {rec.categoria !== "combos" && <span style={{ color: C.muted }}>Costo: <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costo))}</span></span>}
                           <span style={{ color: C.muted }}>Precio: <span style={{ color: C.mustard, fontWeight: 700 }}>{fmt(rec.precio_venta)}</span></span>
                           <span style={{ color: C.muted }}>PY: <span style={{ color: C.orange, fontWeight: 700 }}>{fmt(rec.precio_py || 0)}</span></span>
                         </div>
@@ -1162,60 +1052,56 @@ export default function App() {
                 <Fld label="Descripción menú (visible en QR)" full>
                   <textarea placeholder="ej: Vienesa con palta, tomate y mayonesa casera" value={formReceta.descripcion_menu || ""} onChange={(e) => setFormReceta({ ...formReceta, descripcion_menu: e.target.value })} style={{ ...S.inp, minHeight: 60, resize: "vertical", fontFamily: "inherit" }} />
                 </Fld>
-                <div style={{ display: "none" }}>
-                </div>
-
-                {/* Si es combo: selector de productos */}
-                {formReceta.categoria === "combos" ? (
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ color: C.muted, fontSize: 11, marginBottom: 8 }}>Productos del combo:</div>
-                    {formReceta.productos_combo.map((p, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 6, padding: "5px 10px", marginBottom: 5 }}>
-                        <span style={{ fontSize: 13, color: C.purple }}>{p}</span>
-                        <button onClick={() => setFormReceta({ ...formReceta, productos_combo: formReceta.productos_combo.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
-                      </div>
-                    ))}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <select value={nuevoProductoCombo} onChange={(e) => setNuevoProductoCombo(e.target.value)} style={S.inp}>
-                        <option value="">Selecciona producto…</option>
-                        {recetas.filter((r) => r.categoria !== "combos").map((r) => <option key={r.id} value={r.nombre_producto}>{r.nombre_producto}</option>)}
-                      </select>
-                      <button onClick={() => { if (!nuevoProductoCombo) return; setFormReceta({ ...formReceta, productos_combo: [...formReceta.productos_combo, nuevoProductoCombo] }); setNuevoProductoCombo(""); }} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.mustard, borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>+</button>
-                    </div>
-                  </div>
-                ) : (
-                  /* Ingredientes normales */
-                  <div style={{ marginBottom: 12 }}>
-                    {formReceta.ingredientes.length > 0 && (
-                      <div style={{ marginBottom: 10 }}>
-                        {formReceta.ingredientes.map((ing, i) => {
-                          const ins = insumosPrecio.find((x) => x.nombre === ing.insumo);
-                          return (
-                            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 6, padding: "5px 10px", marginBottom: 5 }}>
-                              <span style={{ fontSize: 13, flex: 1 }}>{ing.insumo}</span>
-                              <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                <input type="number" value={ing.gramos} onChange={(e) => setFormReceta({ ...formReceta, ingredientes: formReceta.ingredientes.map((x, j) => j === i ? { ...x, gramos: Number(e.target.value) } : x) })} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, color: C.mustard, fontWeight: 700, fontSize: 13, width: 55, padding: "3px 6px", outline: "none", textAlign: "center" }} />
-                                <span style={{ color: C.muted, fontSize: 11 }}>{ins?.unidad === "unidad" ? "und" : "g"}</span>
-                                <button onClick={() => setFormReceta({ ...formReceta, ingredientes: formReceta.ingredientes.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {(() => {
-                      const ins = insumosPrecio.find((i) => i.nombre === nuevoIngrediente.insumo);
-                      return (
-                        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8 }}>
-                          <select value={nuevoIngrediente.insumo} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, insumo: e.target.value, gramos: "" })} style={S.inp}><option value="">Selecciona insumo…</option>{insumosPrecio.map((i) => <option key={i.id} value={i.nombre}>{i.nombre}</option>)}</select>
-                          <input type="number" placeholder={ins?.unidad === "unidad" ? "unidades" : "gramos"} value={nuevoIngrediente.gramos} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, gramos: e.target.value })} style={S.inp} />
-                          <button onClick={() => { if (!nuevoIngrediente.insumo || !nuevoIngrediente.gramos) return; setFormReceta({ ...formReceta, ingredientes: [...formReceta.ingredientes, { insumo: nuevoIngrediente.insumo, gramos: Number(nuevoIngrediente.gramos) }] }); setNuevoIngrediente({ insumo: "", gramos: "" }); }} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.mustard, borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>+</button>
+                <div style={{ marginTop: 10 }}>
+                  {formReceta.categoria === "combos" ? (
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ color: C.muted, fontSize: 11, marginBottom: 8 }}>Productos del combo:</div>
+                      {formReceta.productos_combo.map((p, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 6, padding: "5px 10px", marginBottom: 5 }}>
+                          <span style={{ fontSize: 13, color: C.purple }}>{p}</span>
+                          <button onClick={() => setFormReceta({ ...formReceta, productos_combo: formReceta.productos_combo.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
                         </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
+                      ))}
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <select value={nuevoProductoCombo} onChange={(e) => setNuevoProductoCombo(e.target.value)} style={S.inp}>
+                          <option value="">Selecciona producto…</option>
+                          {recetas.filter((r) => r.categoria !== "combos").map((r) => <option key={r.id} value={r.nombre_producto}>{r.nombre_producto}</option>)}
+                        </select>
+                        <button onClick={() => { if (!nuevoProductoCombo) return; setFormReceta({ ...formReceta, productos_combo: [...formReceta.productos_combo, nuevoProductoCombo] }); setNuevoProductoCombo(""); }} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.mustard, borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>+</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ marginBottom: 12 }}>
+                      {formReceta.ingredientes.length > 0 && (
+                        <div style={{ marginBottom: 10 }}>
+                          {formReceta.ingredientes.map((ing, i) => {
+                            const ins = insumosPrecio.find((x) => x.nombre === ing.insumo);
+                            return (
+                              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 6, padding: "5px 10px", marginBottom: 5 }}>
+                                <span style={{ fontSize: 13, flex: 1 }}>{ing.insumo}</span>
+                                <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                  <input type="number" value={ing.gramos} onChange={(e) => setFormReceta({ ...formReceta, ingredientes: formReceta.ingredientes.map((x, j) => j === i ? { ...x, gramos: Number(e.target.value) } : x) })} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 5, color: C.mustard, fontWeight: 700, fontSize: 13, width: 55, padding: "3px 6px", outline: "none", textAlign: "center" }} />
+                                  <span style={{ color: C.muted, fontSize: 11 }}>{ins?.unidad === "unidad" ? "und" : "g"}</span>
+                                  <button onClick={() => setFormReceta({ ...formReceta, ingredientes: formReceta.ingredientes.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>✕</button>
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {(() => {
+                        const ins = insumosPrecio.find((i) => i.nombre === nuevoIngrediente.insumo);
+                        return (
+                          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8 }}>
+                            <select value={nuevoIngrediente.insumo} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, insumo: e.target.value, gramos: "" })} style={S.inp}><option value="">Selecciona insumo…</option>{insumosPrecio.map((i) => <option key={i.id} value={i.nombre}>{i.nombre}</option>)}</select>
+                            <input type="number" placeholder={ins?.unidad === "unidad" ? "unidades" : "gramos"} value={nuevoIngrediente.gramos} onChange={(e) => setNuevoIngrediente({ ...nuevoIngrediente, gramos: e.target.value })} style={S.inp} />
+                            <button onClick={() => { if (!nuevoIngrediente.insumo || !nuevoIngrediente.gramos) return; setFormReceta({ ...formReceta, ingredientes: [...formReceta.ingredientes, { insumo: nuevoIngrediente.insumo, gramos: Number(nuevoIngrediente.gramos) }] }); setNuevoIngrediente({ insumo: "", gramos: "" }); }} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.mustard, borderRadius: 7, padding: "8px 14px", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>+</button>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={guardarReceta} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", fontWeight: 700, cursor: "pointer" }}>{editRecetaId ? "Actualizar" : "Guardar"}</button>
                   {editRecetaId && <button onClick={() => { setEditRecetaId(null); setFormReceta({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: [], productos_combo: [] }); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "10px 16px", cursor: "pointer" }}>Cancelar</button>}
@@ -1286,6 +1172,4 @@ function STitle({ children }) {
 }
 function Empty() {
   return <div style={{ color: "#8A8496", fontSize: 12 }}>Sin datos aún</div>;
-}
-
 }
