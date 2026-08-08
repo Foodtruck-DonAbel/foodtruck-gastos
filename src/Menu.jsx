@@ -8,9 +8,9 @@ const CATEGORIAS = [
   { id: "papas", label: "Papas", emoji: "🍟" },
   { id: "bebidas", label: "Bebidas", emoji: "🥤" },
   { id: "agregados", label: "Agregados", emoji: "➕" },
+  { id: "combos", label: "Combos", emoji: "🎁" },
 ];
 
-// Descripciones por producto
 const DESCRIPCIONES = {
   "Italiano": "Vienesa, palta, tomate y mayonesa casera",
   "Highway to Hell": "Vienesa, cebolla caramelizada, pepinillos y tocino",
@@ -54,8 +54,7 @@ export default function Menu() {
     const cargar = async () => {
       const { data } = await supabase
         .from("recetas")
-        .select("nombre_producto, categoria, precio_venta, descripcion_menu")
-        .neq("categoria", "combos")
+        .select("nombre_producto, categoria, precio_venta, descripcion_menu, productos_combo")
         .order("precio_venta");
       if (data) setRecetas(data);
       setLoading(false);
@@ -78,7 +77,7 @@ export default function Menu() {
         <div style={{ color: "#8A8496", fontSize: 12, marginTop: 4 }}>Puerto Varas · Chile</div>
       </div>
 
-      {/* Categorías — grid en vez de scroll horizontal */}
+      {/* Categorías grid 3x2 */}
       <div style={{ padding: "16px 12px 0", maxWidth: 600, margin: "0 auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
           {CATEGORIAS.map((cat) => (
@@ -104,13 +103,19 @@ export default function Menu() {
         {!loading && productosCat.length === 0 && <div style={{ textAlign: "center", color: "#8A8496", padding: 40 }}>Sin productos en esta categoría</div>}
         {productosCat.map((rec, idx) => {
           const descripcion = rec.descripcion_menu || DESCRIPCIONES[rec.nombre_producto] || "";
+          const esCombo = rec.categoria === "combos";
           return (
             <div key={idx} style={{ background: "#2A2730", border: "1px solid #3A3640", borderRadius: 14, padding: "14px 16px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: descripcion ? 5 : 0 }}>{rec.nombre_producto}</div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 5 }}>{rec.nombre_producto}</div>
+                {esCombo && rec.productos_combo && rec.productos_combo.length > 0 && (
+                  <div style={{ color: "#C97DDB", fontSize: 12, marginBottom: 4 }}>
+                    {rec.productos_combo.join(" + ")}
+                  </div>
+                )}
                 {descripcion && <div style={{ color: "#8A8496", fontSize: 12, lineHeight: 1.6 }}>{descripcion}</div>}
               </div>
-              <div style={{ fontWeight: 800, fontSize: 18, color: "#E8B84B", whiteSpace: "nowrap" }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: esCombo ? "#C97DDB" : "#E8B84B", whiteSpace: "nowrap" }}>
                 {fmt(rec.precio_venta)}
               </div>
             </div>
@@ -119,19 +124,22 @@ export default function Menu() {
       </div>
 
       {/* Footer */}
-      <div style={{ textAlign: "center", padding: "20px 16px 40px", color: "#8A8496", fontSize: 12, borderTop: "1px solid #3A3640" }}>
+      <div style={{ textAlign: "center", padding: "20px 16px 40px", borderTop: "1px solid #3A3640", display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
         <a href="https://wa.me/56965205046?text=Hola%20Don%20Abel%2C%20quiero%20información"
           style={{ color: "#5BAD7F", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
           💬 Escríbenos por WhatsApp
         </a>
-        <a href="https://www.instagram.com/donabel.rockandfood" target="_blank" rel="noopener noreferrer" style={{ color: "#C97DDB", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
+        <a href="https://www.instagram.com/donabel.rockandfood"
+          target="_blank" rel="noopener noreferrer"
+          style={{ color: "#C97DDB", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
           📸 @donabel.rockandfood
         </a>
-        <a href="https://www.pedidosya.cl/restaurantes/puerto-varas/rock-and-food-a98cd423-b6af-4e0f-a4cd-eee9ea1c6ea4-menu?origin=shop_list" target="_blank" rel="noopener noreferrer" style={{ color: "#FF6B35", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
+        <a href="https://www.pedidosya.cl/restaurantes/puerto-varas/rock-and-food-a98cd423-b6af-4e0f-a4cd-eee9ea1c6ea4-menu?origin=shop_list"
+          target="_blank" rel="noopener noreferrer"
+          style={{ color: "#FF6B35", textDecoration: "none", fontWeight: 600, fontSize: 14 }}>
           🛵 También en Pedidos Ya
         </a>
       </div>
-    </div>
     </div>
   );
 }
