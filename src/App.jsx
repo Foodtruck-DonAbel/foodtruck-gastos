@@ -1287,3 +1287,5 @@ function STitle({ children }) {
 function Empty() {
   return <div style={{ color: "#8A8496", fontSize: 12 }}>Sin datos aún</div>;
 }
+
+}
