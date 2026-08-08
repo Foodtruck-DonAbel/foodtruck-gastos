@@ -235,17 +235,10 @@ export default function App() {
   const confirmarCambioPrecio = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     const { rec } = confirmarPrecioModal;
-    const updates = {};
     if (preciosPendientes[rec.id + "_precio_venta"] !== undefined) {
-      updates.precio_venta = Number(preciosPendientes[rec.id + "_precio_venta"]);
-      // Si no hay PY editado manualmente, recalcular automático
-      if (preciosPendientes[rec.id + "_precio_py"] === undefined) {
-        updates.precio_py = Math.round(Math.round(Number(preciosPendientes[rec.id + "_precio_venta"]) * (1 + porcentajePY / 100)));
-      }
+      await supabase.from("recetas").update({ precio_venta: Number(preciosPendientes[rec.id + "_precio_venta"]) }).eq("id", rec.id);
     }
-    if (preciosPendientes[rec.id + "_precio_py"] !== undefined) updates.precio_py = Number(preciosPendientes[rec.id + "_precio_py"]);
-    await supabase.from("recetas").update(updates).eq("id", rec.id);
-    setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; delete n[rec.id + "_precio_py"]; return n; });
+    setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; return n; });
     setConfirmarPrecioModal(null); setAdminClave("");
     showToast("✓ Precio actualizado"); cargarRecetas();
   };
@@ -280,7 +273,7 @@ export default function App() {
     return calcularCosto(rec.ingredientes, insumosPrecio);
   };
 
-  const precioProducto = (rec) => metodoPago === "Pedidos Ya" ? (rec.precio_py || Math.round(rec.precio_venta * (1 + porcentajePY / 100))) : rec.precio_venta;
+  const precioProducto = (rec) => metodoPago === "Pedidos Ya" ? Math.round(rec.precio_venta * (1 + porcentajePY / 100)) : rec.precio_venta;
 
   // Ventas
   const agregarAlCarrito = (rec, optsExtra) => {
@@ -937,7 +930,7 @@ export default function App() {
                     const venta = Number(ventaEditada !== undefined ? ventaEditada : rec.precio_venta);
                     const margen = venta - costo;
                     const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
-                    const hayPendiente = ventaEditada !== undefined || preciosPendientes[rec.id + "_precio_py"] !== undefined;
+                    const hayPendiente = ventaEditada !== undefined;
                     return (
                       <div key={rec.id} style={S.card}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
@@ -958,12 +951,9 @@ export default function App() {
                               onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_venta"]: e.target.value })}
                               style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: ventaEditada !== undefined ? C.orange : C.border }} />
                           </div>
-                          <div>
-                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY ($)</div>
-                            <input type="number"
-                              value={preciosPendientes[rec.id + "_precio_py"] !== undefined ? preciosPendientes[rec.id + "_precio_py"] : (rec.precio_py || "")}
-                              onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: e.target.value })}
-                              style={{ ...S.inp, fontSize: 13 }} />
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY ({porcentajePY}%)</div>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: C.orange }}>{fmt(Math.round(venta * (1 + porcentajePY / 100)))}</div>
                           </div>
                           <div style={{ textAlign: "center" }}>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Ganancia</div>
