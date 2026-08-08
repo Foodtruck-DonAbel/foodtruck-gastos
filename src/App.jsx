@@ -182,17 +182,6 @@ export default function App() {
   };
 
   const cargarRecetas = async () => {
-  const cargarConfig = async () => {
-    const { data } = await supabase.from("config").select("*").eq("id", "general").single();
-    if (data) setPorcentajePY(data.porcentaje_py || 35);
-  };
-
-  const guardarPorcentajePY = async (nuevo) => {
-    await supabase.from("config").update({ porcentaje_py: Number(nuevo) }).eq("id", "general");
-    setPorcentajePY(Number(nuevo));
-    setEditandoPY(false);
-    showToast("✓ Porcentaje PY actualizado");
-  };
     setLoadingRecetas(true);
     const [{ data: ins }, { data: rec }] = await Promise.all([
       supabase.from("insumos_precio").select("*").order("nombre"),
@@ -209,6 +198,18 @@ export default function App() {
       setRecetas(rec2 || []);
     } else setRecetas(rec || []);
     setLoadingRecetas(false);
+  };
+
+  const cargarConfig = async () => {
+    const { data } = await supabase.from("config").select("*").eq("id", "general").single();
+    if (data) setPorcentajePY(data.porcentaje_py || 35);
+  };
+
+  const guardarPorcentajePY = async (nuevo) => {
+    await supabase.from("config").update({ porcentaje_py: Number(nuevo) }).eq("id", "general");
+    setPorcentajePY(Number(nuevo));
+    setEditandoPY(false);
+    showToast("✓ Porcentaje PY actualizado");
   };
 
   // Admin
