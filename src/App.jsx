@@ -947,7 +947,9 @@ export default function App() {
                                   <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (+{pyPct}%)</div>
                                   <input type="number"
                                     value={pyPendiente !== undefined ? pyPendiente : Math.round(venta * (1 + porcentajePY / 100))}
+                                    onFocus={(e) => { if (preciosPendientes[rec.id + "_precio_py"] === undefined) setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: Math.round(venta * (1 + porcentajePY / 100)) }); }}
                                     onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: e.target.value })}
+                                    style={{ ...S.inp, fontSize: 13, borderColor: pyPendiente !== undefined ? C.orange : C.border }} />
                                     style={{ ...S.inp, fontSize: 13, borderColor: pyPendiente !== undefined ? C.orange : C.border }} />
                                 </>
                               );
