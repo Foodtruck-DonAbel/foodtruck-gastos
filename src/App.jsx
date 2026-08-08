@@ -915,7 +915,7 @@ export default function App() {
                     const ventaEditada = preciosPendientes[rec.id + "_precio_venta"];
                     const venta = Number(ventaEditada !== undefined ? ventaEditada : rec.precio_venta);
                     const margen = venta - costo;
-                    const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
+                    const hayPendiente = ventaEditada !== undefined;
                     const hayPendiente = ventaEditada !== undefined || preciosPendientes[rec.id + "_precio_py"] !== undefined;
                     return (
                       <div key={rec.id} style={S.card}>
@@ -947,9 +947,9 @@ export default function App() {
                                   <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (+{pyPct}%)</div>
                                   <input type="number"
                                     value={pyPendiente !== undefined ? pyPendiente : Math.round(venta * (1 + porcentajePY / 100))}
-                                    onFocus={(e) => { if (preciosPendientes[rec.id + "_precio_py"] === undefined) setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: Math.round(venta * (1 + porcentajePY / 100)) }); }}
                                     onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id + "_precio_py"]: e.target.value })}
-                                    style={{ ...S.inp, fontSize: 13, borderColor: pyPendiente !== undefined ? C.orange : C.border }} />
+                                    onBlur={async (e) => { const val = Number(e.target.value); await supabase.from("recetas").update({ precio_py: val }).eq("id", rec.id); setPreciosPendientes((p) => { const n={...p}; delete n[rec.id+"_precio_py"]; return n; }); showToast("✓ PY actualizado"); }}
+                                    style={{ ...S.inp, fontSize: 13, borderColor: pyPendiente !== undefined ? C.orange : C.border }} />/
                                 </>
                               );
                             })()}
@@ -964,10 +964,12 @@ export default function App() {
                           </div>
                         </div>
                         {hayPendiente && (
+                        {hayPendiente && (
                           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                            <button onClick={() => setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; delete n[rec.id + "_precio_py"]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
+                            <button onClick={() => setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
                             <button onClick={() => solicitarCambioPrecio(rec)} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
                           </div>
+                        )}
                         )}
                         <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
                           <div style={{ background: margenColor(margenPct), width: `${Math.min(100, Math.max(0, margenPct))}%`, height: "100%", borderRadius: 4 }} />
