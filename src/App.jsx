@@ -145,6 +145,8 @@ export default function App() {
   const [nuevoIngrediente, setNuevoIngrediente] = useState({ insumo: "", gramos: "" });
   const [nuevoProductoCombo, setNuevoProductoCombo] = useState("");
   const [editGramos, setEditGramos] = useState({});
+  const [porcentajePY, setPorcentajePY] = useState(35);
+  const [editandoPY, setEditandoPY] = useState(false);
 
   // Resumen
   const [filtroResumen, setFiltroResumen] = useState("");
@@ -162,7 +164,7 @@ export default function App() {
     if (view === "gastos") cargarGastos();
     if (view === "ventas") { cargarVentas(); cargarGastos(); if (recetas.length === 0) cargarRecetas(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); }
-    if (view === "recetas") cargarRecetas();
+    if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
 
   const cargarGastos = async () => {
@@ -180,6 +182,17 @@ export default function App() {
   };
 
   const cargarRecetas = async () => {
+  const cargarConfig = async () => {
+    const { data } = await supabase.from("config").select("*").eq("id", "general").single();
+    if (data) setPorcentajePY(data.porcentaje_py || 35);
+  };
+
+  const guardarPorcentajePY = async (nuevo) => {
+    await supabase.from("config").update({ porcentaje_py: Number(nuevo) }).eq("id", "general");
+    setPorcentajePY(Number(nuevo));
+    setEditandoPY(false);
+    showToast("✓ Porcentaje PY actualizado");
+  };
     setLoadingRecetas(true);
     const [{ data: ins }, { data: rec }] = await Promise.all([
       supabase.from("insumos_precio").select("*").order("nombre"),
@@ -221,7 +234,13 @@ export default function App() {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     const { rec } = confirmarPrecioModal;
     const updates = {};
-    if (preciosPendientes[rec.id + "_precio_venta"] !== undefined) updates.precio_venta = Number(preciosPendientes[rec.id + "_precio_venta"]);
+    if (preciosPendientes[rec.id + "_precio_venta"] !== undefined) {
+      updates.precio_venta = Number(preciosPendientes[rec.id + "_precio_venta"]);
+      // Si no hay PY editado manualmente, recalcular automático
+      if (preciosPendientes[rec.id + "_precio_py"] === undefined) {
+        updates.precio_py = Math.round(Math.round(Number(preciosPendientes[rec.id + "_precio_venta"]) * (1 + porcentajePY / 100)));
+      }
+    }
     if (preciosPendientes[rec.id + "_precio_py"] !== undefined) updates.precio_py = Number(preciosPendientes[rec.id + "_precio_py"]);
     await supabase.from("recetas").update(updates).eq("id", rec.id);
     setPreciosPendientes((p) => { const n = { ...p }; delete n[rec.id + "_precio_venta"]; delete n[rec.id + "_precio_py"]; return n; });
@@ -259,7 +278,7 @@ export default function App() {
     return calcularCosto(rec.ingredientes, insumosPrecio);
   };
 
-  const precioProducto = (rec) => metodoPago === "Pedidos Ya" ? (rec.precio_py || Math.round(rec.precio_venta * 1.3)) : rec.precio_venta;
+  const precioProducto = (rec) => metodoPago === "Pedidos Ya" ? (rec.precio_py || Math.round(rec.precio_venta * (1 + porcentajePY / 100))) : rec.precio_venta;
 
   // Ventas
   const agregarAlCarrito = (rec, optsExtra) => {
@@ -885,6 +904,21 @@ export default function App() {
             {!loadingRecetas && recetaView === "margenes" && (
               <div>
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, marginBottom: 10 }}>
+                <div style={{ ...S.card, display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div style={{ color: C.muted, fontSize: 12 }}>% Pedidos Ya:</div>
+                  {editandoPY ? (
+                    <>
+                      <input type="number" defaultValue={porcentajePY} id="py-input" style={{ ...S.inp, width: 70 }} />
+                      <button onClick={() => guardarPorcentajePY(document.getElementById("py-input").value)} style={{ background: C.mustard, border: "none", color: C.bg, borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>Guardar</button>
+                      <button onClick={() => setEditandoPY(false)} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 12 }}>Cancelar</button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontWeight: 700, color: C.orange, fontSize: 16 }}>{porcentajePY}%</span>
+                      <button onClick={() => setEditandoPY(true)} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>Editar</button>
+                    </>
+                  )}
+                </div>
                   {CATEGORIAS.map((cat) => (
                     <button key={cat.id} onClick={() => setRecetaCatActiva(cat.id)} style={{ background: recetaCatActiva === cat.id ? C.mustard : C.tag, color: recetaCatActiva === cat.id ? C.bg : C.muted, border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>
                       {cat.emoji} {cat.label}
