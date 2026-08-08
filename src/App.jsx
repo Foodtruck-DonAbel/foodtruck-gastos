@@ -371,13 +371,14 @@ export default function App() {
 
   const confirmarCambioPrecio = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
-    const { rec, campo, valor } = confirmarPrecioModal;
-    await actualizarPrecioReceta(rec, campo, valor);
-    setPreciosPendientes((prev) => { const n = { ...prev }; delete n[rec.id + "_" + campo]; return n; });
+    const { rec } = confirmarPrecioModal;
+    const updates = {};
+    if (preciosPendientes[rec.id+"_precio_venta"] !== undefined) updates.precio_venta = Number(preciosPendientes[rec.id+"_precio_venta"]);
+    if (preciosPendientes[rec.id+"_precio_py"] !== undefined) updates.precio_py = Number(preciosPendientes[rec.id+"_precio_py"]);
+    await supabase.from("recetas").update(updates).eq("id", rec.id);
+    setPreciosPendientes((p) => { const n={...p}; delete n[rec.id+"_precio_venta"]; delete n[rec.id+"_precio_py"]; return n; });
     setConfirmarPrecioModal(null); setAdminClave("");
-    showToast("✓ Precio actualizado");
-  };
-    await supabase.from("recetas").update({ [campo]: Number(valor) }).eq("id", rec.id); cargarRecetas();
+    showToast("✓ Precio actualizado"); cargarRecetas();
   };
 
   const actualizarGramosIngrediente = async (rec, idx, nuevosGramos) => {
@@ -1001,7 +1002,7 @@ export default function App() {
                     const costo = esCombo
                       ? (rec.productos_combo || []).reduce((s, p) => s + costoProducto(p), 0)
                       : calcularCosto(rec.ingredientes, insumosPrecio);
-                    const venta = preciosVentaEdit[rec.id + "_venta"] !== undefined ? preciosVentaEdit[rec.id + "_venta"] : rec.precio_venta;
+                    const venta = Number(preciosPendientes[rec.id+"_precio_venta"] !== undefined ? preciosPendientes[rec.id+"_precio_venta"] : rec.precio_venta);
                     const margen = venta - costo;
                     const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
                     return (
@@ -1024,20 +1025,18 @@ export default function App() {
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8 }}>
                           <div>
-                            <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Precio ($) {preciosPendientes[rec.id+"_precio_venta"] !== undefined && <span style={{ color: C.orange }}>· sin confirmar</span>}</div>
+                            <div style={{ fontSize: 10, color: preciosPendientes[rec.id+"_precio_venta"] !== undefined ? C.orange : C.muted, marginBottom: 3 }}>Precio ($)</div>
                             <input type="number"
                               value={preciosPendientes[rec.id+"_precio_venta"] !== undefined ? preciosPendientes[rec.id+"_precio_venta"] : rec.precio_venta}
                               onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id+"_precio_venta"]: e.target.value })}
-                              onBlur={(e) => { if (Number(e.target.value) !== rec.precio_venta) solicitarCambioPrecio(rec, "precio_venta", Number(e.target.value)); }}
                               style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: preciosPendientes[rec.id+"_precio_venta"] !== undefined ? C.orange : C.border }} />
                           </div>
                           <div>
-                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY ($) {preciosPendientes[rec.id+"_precio_py"] !== undefined && <span style={{ color: C.orange }}>· sin confirmar</span>}</div>
+                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY ($)</div>
                             <input type="number"
                               value={preciosPendientes[rec.id+"_precio_py"] !== undefined ? preciosPendientes[rec.id+"_precio_py"] : (rec.precio_py || "")}
                               onChange={(e) => setPreciosPendientes({ ...preciosPendientes, [rec.id+"_precio_py"]: e.target.value })}
-                              onBlur={(e) => { if (Number(e.target.value) !== rec.precio_py) solicitarCambioPrecio(rec, "precio_py", Number(e.target.value)); }}
-                              style={{ ...S.inp, fontSize: 13 }} />
+                              style={{ ...S.inp, fontSize: 13, borderColor: preciosPendientes[rec.id+"_precio_py"] !== undefined ? C.orange : C.border }} />
                           </div>
                           <div style={{ textAlign: "center" }}>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Ganancia</div>
@@ -1048,6 +1047,12 @@ export default function App() {
                             <div style={{ fontWeight: 800, fontSize: 18, color: margenColor(margenPct) }}>{Math.round(margenPct)}%</div>
                           </div>
                         </div>
+                        {(preciosPendientes[rec.id+"_precio_venta"] !== undefined || preciosPendientes[rec.id+"_precio_py"] !== undefined) && (
+                          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                            <button onClick={() => setPreciosPendientes((p) => { const n={...p}; delete n[rec.id+"_precio_venta"]; delete n[rec.id+"_precio_py"]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "7px 0", cursor: "pointer", fontSize: 12 }}>Descartar</button>
+                            <button onClick={() => { const campo = preciosPendientes[rec.id+"_precio_venta"] !== undefined ? "precio_venta" : "precio_py"; const valor = Number(preciosPendientes[rec.id+"_"+campo]); solicitarCambioPrecio(rec, campo, valor); if (preciosPendientes[rec.id+"_precio_venta"] !== undefined && preciosPendientes[rec.id+"_precio_py"] !== undefined) { solicitarCambioPrecio(rec, "precio_venta", Number(preciosPendientes[rec.id+"_precio_venta"])); } }} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔐 Guardar precio</button>
+                          </div>
+                        )}
                         <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
                           <div style={{ background: margenColor(margenPct), width: `${Math.min(100, Math.max(0, margenPct))}%`, height: "100%", borderRadius: 4 }} />
                         </div>
