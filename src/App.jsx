@@ -26,6 +26,44 @@ const fmt = (n) => "$" + Number(n || 0).toLocaleString("es-CL");
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const normProv = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+// Mapa de equivalencias: nombre en gastos -> nombre en insumos_precio
+const MAPA_INSUMOS = {
+  "palta": "Palta",
+  "tomate": "Tomate",
+  "pan para completo": "Pan para completo",
+  "pan castaño brioche para sandwich": "Pan para Sandwich Castaño",
+  "pan castaño": "Pan para Sandwich Castaño",
+  "salchichas": "Salchichas 17 cm",
+  "salchicha": "Salchichas 17 cm",
+  "chicken fingers sadia": "Chicken Fingers",
+  "chicken fingers": "Chicken Fingers",
+  "churrascos": "Churrascos",
+  "churrasco": "Churrascos",
+  "tocino": "Tocino",
+  "ketchup": "Ketchup",
+  "mayonesa": "Mayonesa",
+  "mayonesa casera": "Mayonesa Casera",
+  "mostaza": "Mostaza",
+  "queso cheddar": "Queso cheddar",
+  "envases completos": "Envases para completos",
+  "envases papas fritas": "Envase para Papas / Sandwich/ PY",
+};
+
+// Convierte todo a gramos/unidades para comparar
+const aGramos = (cantidad, unidad) => {
+  if (!cantidad || isNaN(Number(cantidad))) return 0;
+  const n = Number(cantidad);
+  if (unidad === "kg") return n * 1000;
+  if (unidad === "litro") return n * 1000;
+  if (unidad === "g") return n;
+  if (unidad === "ml") return n;
+  return n; // unidad, caja, etc.
+};
+
+const resolverInsumo = (nombreGasto) => {
+  const norm = (nombreGasto || "").trim().toLowerCase();
+  return MAPA_INSUMOS[norm] || null;
+};
 const CATEGORIAS = [
   { id: "completos", label: "Completos", emoji: "🌭" },
   { id: "pollo", label: "Pollo", emoji: "🍗" },
@@ -149,6 +187,7 @@ export default function App() {
 
   // Resumen
   const [filtroResumen, setFiltroResumen] = useState("");
+  const [stockData, setStockData] = useState([]);
 
   // Admin
   const ADMIN_CLAVE = "1232026";
@@ -160,7 +199,7 @@ export default function App() {
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
   useEffect(() => {
-    if (view === "gastos") cargarGastos();
+    if (view === "gastos") { cargarGastos(); cargarVentas(); if (recetas.length === 0) cargarRecetas(); }
     if (view === "ventas") { cargarVentas(); cargarGastos(); if (recetas.length === 0) cargarRecetas(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
@@ -202,6 +241,52 @@ export default function App() {
   const cargarConfig = async () => {
     const { data } = await supabase.from("config").select("*").eq("id", "general").single();
     if (data) setPorcentajePY(data.porcentaje_py || 35);
+  };
+
+  const calcularStock = (gastosData, ventasData, recetasData, insumosData) => {
+    // 1. Sumar compras por insumo (en gramos/unidades)
+    const compras = {};
+    gastosData.forEach((g) => {
+      const insumoRef = resolverInsumo(g.insumo);
+      if (!insumoRef) return;
+      if (!compras[insumoRef]) compras[insumoRef] = 0;
+      compras[insumoRef] += aGramos(g.cantidad, g.unidad);
+    });
+
+    // 2. Sumar consumo por insumo según ventas x recetas
+    const consumo = {};
+    ventasData.forEach((v) => {
+      const rec = recetasData.find((r) => r.nombre_producto === v.producto);
+      if (!rec || !rec.ingredientes) return;
+      rec.ingredientes.forEach((ing) => {
+        const ins = insumosData.find((i) => i.nombre === ing.insumo);
+        if (!ins) return;
+        if (!consumo[ing.insumo]) consumo[ing.insumo] = 0;
+        const cantIngrediente = ins.unidad === "unidad" ? ing.gramos : ing.gramos;
+        consumo[ing.insumo] += cantIngrediente * v.cantidad;
+      });
+    });
+
+    // 3. Calcular stock disponible
+    const insumosMapeados = Object.keys(MAPA_INSUMOS).map((k) => MAPA_INSUMOS[k]);
+    const insumosUnicos = [...new Set(Object.values(MAPA_INSUMOS))];
+    return insumosUnicos.map((nombre) => {
+      const ins = insumosData.find((i) => i.nombre === nombre);
+      const comprado = compras[nombre] || 0;
+      const consumido = consumo[nombre] || 0;
+      const disponible = comprado - consumido;
+      const unidad = ins?.unidad || "unidad";
+      // Convertir disponible a unidad legible
+      const esKgLitro = unidad === "kg" || unidad === "litro";
+      const disponibleKg = esKgLitro ? disponible / 1000 : disponible;
+      const alerta = esKgLitro
+        ? disponible < 500 ? "rojo" : disponible < 1000 ? "naranja" : "verde"
+        : disponible < 5 ? "rojo" : disponible < 10 ? "naranja" : "verde";
+      return { nombre, comprado, consumido, disponible, disponibleKg, unidad, alerta, ins };
+    }).filter((x) => x.comprado > 0 || x.consumido > 0).sort((a, b) => {
+      const ord = { rojo: 0, naranja: 1, verde: 2 };
+      return ord[a.alerta] - ord[b.alerta];
+    });
   };
 
   // Admin
@@ -572,7 +657,7 @@ export default function App() {
         {view === "gastos" && (
           <div>
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-              {[{ id: "nuevo", label: "+ Nuevo" }, { id: "historial", label: "Historial" }].map((t) => (
+              {[{ id: "nuevo", label: "+ Nuevo" }, { id: "historial", label: "Historial" }, { id: "stock", label: "📦 Stock" }].map((t) => (
                 <button key={t.id} onClick={() => setGastosView(t.id)} style={{ background: gastosView === t.id ? C.mustard : C.tag, color: gastosView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 16px", cursor: "pointer", fontWeight: gastosView === t.id ? 700 : 400, fontSize: 13 }}>{t.label}</button>
               ))}
             </div>
@@ -637,6 +722,43 @@ export default function App() {
                 <button onClick={exportCSV} style={{ marginTop: 8, background: C.surface, border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "9px 0", cursor: "pointer", fontSize: 13, width: "100%" }}>Exportar CSV</button>
               </div>
             )}
+            {gastosView === "stock" && (() => {
+              const stock = calcularStock(gastos, ventas, recetas, insumosPrecio);
+              const alertColor = { verde: C.green, naranja: C.orange, rojo: C.red };
+              const alertEmoji = { verde: "🟢", naranja: "🟡", rojo: "🔴" };
+              return (
+                <div>
+                  <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>Basado en compras registradas vs ventas del período.</div>
+                  {stock.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 40 }}>Sin datos suficientes. Registra compras con cantidad y unidad.</div>}
+                  {stock.map((s) => {
+                    const unidadDisplay = s.unidad === "kg" || s.unidad === "litro" ? s.unidad : "und";
+                    const esKgLitro = s.unidad === "kg" || s.unidad === "litro";
+                    const dispStr = esKgLitro
+                      ? s.disponibleKg >= 1 ? `${s.disponibleKg.toFixed(2)} ${s.unidad}` : `${Math.round(s.disponible)} g`
+                      : `${Math.round(s.disponible)} und`;
+                    const compradoStr = esKgLitro ? `${(s.comprado/1000).toFixed(2)} ${s.unidad}` : `${Math.round(s.comprado)} und`;
+                    const consumidoStr = esKgLitro ? `${(s.consumido/1000).toFixed(2)} ${s.unidad}` : `${Math.round(s.consumido)} und`;
+                    return (
+                      <div key={s.nombre} style={{ ...S.card, marginBottom: 10, borderLeft: `4px solid ${alertColor[s.alerta]}` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                          <div style={{ fontWeight: 700 }}>{alertEmoji[s.alerta]} {s.nombre}</div>
+                          <div style={{ fontWeight: 800, fontSize: 18, color: alertColor[s.alerta] }}>{dispStr}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 16, fontSize: 12, color: C.muted }}>
+                          <span>Comprado: <span style={{ color: C.text }}>{compradoStr}</span></span>
+                          <span>Consumido: <span style={{ color: C.text }}>{consumidoStr}</span></span>
+                        </div>
+                        <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
+                          <div style={{ background: alertColor[s.alerta], width: `${Math.min(100, s.comprado > 0 ? Math.round((Math.max(0, s.disponible) / s.comprado) * 100) : 0)}%`, height: "100%", borderRadius: 4 }} />
+                        </div>
+                        {s.alerta === "rojo" && <div style={{ color: C.red, fontSize: 11, marginTop: 6, fontWeight: 700 }}>⚠️ Stock crítico — comprar urgente</div>}
+                        {s.alerta === "naranja" && <div style={{ color: C.orange, fontSize: 11, marginTop: 6 }}>⚡ Stock bajo — considerar compra</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
 
