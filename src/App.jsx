@@ -25,6 +25,14 @@ const personColor = (n) => ({ Raul: "#6B9FD4", Pepe: "#E8B84B", Alejandro: "#5BA
 const fmt = (n) => "$" + Number(n || 0).toLocaleString("es-CL");
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const normProv = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const UNIDAD_DEFAULT_INSUMO = {
+  "Salchichas": "unidad", "Chicken Fingers": "unidad", "Churrascos": "unidad",
+  "Pan para completo": "unidad", "Pan Castaño Brioche para Sandwich": "unidad",
+  "Queso cheddar": "unidad", "Nuggets": "unidad", "Nuggets pollo": "unidad",
+  "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg",
+  "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
+  "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro",
+};
 
 // Mapa de equivalencias: nombre en gastos -> nombre en insumos_precio
 const MAPA_INSUMOS = {
@@ -668,10 +676,10 @@ export default function App() {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <Fld label="Fecha"><input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} style={S.inp} /></Fld>
                     <Fld label="Monto ($)"><input type="number" placeholder="0" value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} style={S.inp} /></Fld>
-                    <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => setForm({ ...form, insumo: e.target.value })} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
+                    <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => { const unidadAuto = UNIDAD_DEFAULT_INSUMO[e.target.value]; setForm({ ...form, insumo: e.target.value, unidad: unidadAuto || form.unidad }); }} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
                     {form.insumo === "Otro" && <Fld label="¿Cuál?" full><input value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value })} style={S.inp} /></Fld>}
                     <Fld label="Cantidad"><input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} style={S.inp} /></Fld>
-                    <Fld label="Unidad"><select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>{["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}</select></Fld>
+                    <Fld label="Unidad">{ UNIDAD_DEFAULT_INSUMO[form.insumo] ? (<div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, color: C.mustard, padding: "8px 10px", fontSize: 13, fontWeight: 700 }}>{UNIDAD_DEFAULT_INSUMO[form.insumo]} <span style={{ color: C.muted, fontWeight: 400, fontSize: 11 }}>(fijo por receta)</span></div>) : (<select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>{["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}</select>) }</Fld>
                     <Fld label="Fondo"><select value={form.fondo} onChange={(e) => setForm({ ...form, fondo: e.target.value })} style={S.inp}>{FONDOS.map((f) => <option key={f}>{f}</option>)}</select></Fld>
                     <Fld label="Proveedor"><select value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value, proveedorCustom: "" })} style={S.inp}><option value="">Sin proveedor</option>{proveedores.map((p) => <option key={p}>{p}</option>)}<option value="__nuevo__">+ Nuevo…</option></select></Fld>
                     {form.proveedor === "__nuevo__" && <Fld label="Nombre" full><input value={form.proveedorCustom} onChange={(e) => setForm({ ...form, proveedorCustom: e.target.value })} style={S.inp} /></Fld>}
