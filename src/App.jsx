@@ -39,7 +39,9 @@ const MAPA_INSUMOS = {
   "palta": "Palta",
   "tomate": "Tomate",
   "pan para completo": "Pan para completo",
+  "pan para sandwich castaño": "Pan para Sandwich Castaño",
   "pan castaño brioche para sandwich": "Pan para Sandwich Castaño",
+  "pan castaño": "Pan para Sandwich Castaño",
   "pan castaño": "Pan para Sandwich Castaño",
   "salchichas": "Salchichas 17 cm",
   "salchicha": "Salchichas 17 cm",
@@ -196,6 +198,7 @@ export default function App() {
   // Resumen
   const [filtroResumen, setFiltroResumen] = useState("");
   const [stockData, setStockData] = useState([]);
+  const [modalActualizarPrecio, setModalActualizarPrecio] = useState(null);
 
   // Admin
   const ADMIN_CLAVE = "1232026";
@@ -342,6 +345,19 @@ export default function App() {
     showToast("✓ Gasto guardado");
     setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", nota: "", insumoCustom: "" });
     cargarGastos(); setSaving(false);
+    // Verificar si hay diferencia de precio con insumos
+    const insumoRef = resolverInsumo(insumofinal);
+    const cantidad = Number(form.cantidad);
+    const monto = Number(form.monto);
+    if (insumoRef && cantidad > 0 && monto > 0) {
+      const ins = insumosPrecio.find((i) => i.nombre === insumoRef);
+      if (ins) {
+        const precioNuevo = Math.round(monto / cantidad);
+        if (Math.abs(precioNuevo - ins.precio_por_kg) > 5) {
+          setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo });
+        }
+      }
+    }
   };
 
   const calcularCosto = (ingredientes, insumosLista) => {
@@ -572,6 +588,23 @@ export default function App() {
       )}
 
       {descuentoModal && (
+      {modalActualizarPrecio && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>💰 Precio actualizado</div>
+            <div style={{ fontWeight: 600, color: C.mustard, marginBottom: 12 }}>{modalActualizarPrecio.insumoRef}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, fontSize: 13 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio actual en recetas:</span><span style={{ fontWeight: 700 }}>{fmt(modalActualizarPrecio.precioActual)}/{modalActualizarPrecio.ins.unidad}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio según esta compra:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(modalActualizarPrecio.precioNuevo)}/{modalActualizarPrecio.ins.unidad}</span></div>
+            </div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>¿Actualizar el costo en recetas con el nuevo precio?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setModalActualizarPrecio(null)} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>No</button>
+              <button onClick={async () => { await supabase.from("insumos_precio").update({ precio_por_kg: modalActualizarPrecio.precioNuevo }).eq("id", modalActualizarPrecio.ins.id); setModalActualizarPrecio(null); cargarRecetas(); showToast("✓ Precio actualizado en recetas"); }} style={{ flex: 1, background: C.green, border: "none", color: "#fff", borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Sí, actualizar</button>
+            </div>
+          </div>
+        </div>
+      )}
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Descuento — {descuentoModal.nombre}</div>
