@@ -41,22 +41,24 @@ const MAPA_INSUMOS = {
   "pan para completo": "Pan para completo",
   "pan para sandwich castaño": "Pan para Sandwich Castaño",
   "pan castaño brioche para sandwich": "Pan para Sandwich Castaño",
-  "pan castaño": "Pan para Sandwich Castaño",
-  "pan castaño": "Pan para Sandwich Castaño",
+  "salchichas 17 cm": "Salchichas 17 cm",
   "salchichas": "Salchichas 17 cm",
-  "salchicha": "Salchichas 17 cm",
-  "chicken fingers sadia": "Chicken Fingers",
   "chicken fingers": "Chicken Fingers",
   "churrascos": "Churrascos",
-  "churrasco": "Churrascos",
   "tocino": "Tocino",
   "ketchup": "Ketchup",
   "mayonesa": "Mayonesa",
   "mayonesa casera": "Mayonesa Casera",
   "mostaza": "Mostaza",
   "queso cheddar": "Queso cheddar",
-  "envases completos": "Envases para completos",
-  "envases papas fritas": "Envase para Papas / Sandwich/ PY",
+  "envases para completos": "Envases para completos",
+  "envase para papas / sandwich/ py": "Envase para Papas / Sandwich/ PY",
+  "chucrut": "Chucrut",
+  "papas fritas": "Papas fritas",
+  "salsa americana": "Salsa Americana",
+  "salsa bbq": "Salsa BBQ",
+  "cebolla caramelizada": "Cebolla Caramelizada",
+  "aceite para freir": "Aceite para Freir",
 };
 
 // Convierte todo a gramos/unidades para comparar
@@ -588,23 +590,6 @@ export default function App() {
       )}
 
       {descuentoModal && (
-      {modalActualizarPrecio && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>💰 Precio actualizado</div>
-            <div style={{ fontWeight: 600, color: C.mustard, marginBottom: 12 }}>{modalActualizarPrecio.insumoRef}</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, fontSize: 13 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio actual en recetas:</span><span style={{ fontWeight: 700 }}>{fmt(modalActualizarPrecio.precioActual)}/{modalActualizarPrecio.ins.unidad}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio según esta compra:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(modalActualizarPrecio.precioNuevo)}/{modalActualizarPrecio.ins.unidad}</span></div>
-            </div>
-            <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>¿Actualizar el costo en recetas con el nuevo precio?</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => setModalActualizarPrecio(null)} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>No</button>
-              <button onClick={async () => { await supabase.from("insumos_precio").update({ precio_por_kg: modalActualizarPrecio.precioNuevo }).eq("id", modalActualizarPrecio.ins.id); setModalActualizarPrecio(null); cargarRecetas(); showToast("✓ Precio actualizado en recetas"); }} style={{ flex: 1, background: C.green, border: "none", color: "#fff", borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Sí, actualizar</button>
-            </div>
-          </div>
-        </div>
-      )}
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Descuento — {descuentoModal.nombre}</div>
@@ -645,6 +630,24 @@ export default function App() {
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => { setDescuentoModal(null); setDescuentoTipo(""); setDescuentoPct(""); setCortesiaDueno(""); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "9px 0", cursor: "pointer" }}>Cancelar</button>
               <button onClick={aplicarDescuento} style={{ flex: 1, background: C.green, border: "none", color: "#fff", borderRadius: 7, padding: "9px 0", cursor: "pointer", fontWeight: 700 }}>Aplicar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalActualizarPrecio && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>💰 Precio actualizado</div>
+            <div style={{ fontWeight: 600, color: C.mustard, marginBottom: 12 }}>{modalActualizarPrecio.insumoRef}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, fontSize: 13 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio actual en recetas:</span><span style={{ fontWeight: 700 }}>{fmt(modalActualizarPrecio.precioActual)}/{modalActualizarPrecio.ins.unidad}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio según esta compra:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(modalActualizarPrecio.precioNuevo)}/{modalActualizarPrecio.ins.unidad}</span></div>
+            </div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>¿Actualizar el costo en recetas con el nuevo precio?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setModalActualizarPrecio(null)} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>No</button>
+              <button onClick={async () => { await supabase.from("insumos_precio").update({ precio_por_kg: modalActualizarPrecio.precioNuevo }).eq("id", modalActualizarPrecio.ins.id); setModalActualizarPrecio(null); cargarRecetas(); showToast("✓ Precio actualizado en recetas"); }} style={{ flex: 1, background: C.green, border: "none", color: "#fff", borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Sí, actualizar</button>
             </div>
           </div>
         </div>
