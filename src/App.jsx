@@ -35,6 +35,8 @@ const UNIDAD_DEFAULT_INSUMO = {
 };
 
 // Mapa de equivalencias: nombre en gastos -> nombre en insumos_precio
+const MERMA_INSUMOS = { "Palta": 0.30 }; // 30% merma
+
 const MAPA_INSUMOS = {
   "palta": "Palta",
   "tomate": "Tomate",
@@ -354,9 +356,11 @@ export default function App() {
     if (insumoRef && cantidad > 0 && monto > 0) {
       const ins = insumosPrecio.find((i) => i.nombre === insumoRef);
       if (ins) {
-        const precioNuevo = Math.round(monto / cantidad);
+        const merma = MERMA_INSUMOS[insumoRef] || 0;
+        const cantidadAprovechable = merma > 0 ? cantidad * (1 - merma) : cantidad;
+        const precioNuevo = Math.round(monto / cantidadAprovechable);
         if (Math.abs(precioNuevo - ins.precio_por_kg) > 5) {
-          setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo });
+          setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo, cantidad, cantidadAprovechable, merma });
         }
       }
     }
@@ -638,9 +642,16 @@ export default function App() {
       {modalActualizarPrecio && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>💰 Precio actualizado</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>💰 Precio de compra</div>
             <div style={{ fontWeight: 600, color: C.mustard, marginBottom: 12 }}>{modalActualizarPrecio.insumoRef}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, fontSize: 13 }}>
+              {modalActualizarPrecio.merma > 0 && (
+                <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px", marginBottom: 4 }}>
+                  <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>🥑 Factor merma {Math.round(modalActualizarPrecio.merma * 100)}%</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span style={{ color: C.muted }}>Comprado:</span><span>{modalActualizarPrecio.cantidad} kg</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span style={{ color: C.muted }}>Aprovechable:</span><span style={{ color: C.green, fontWeight: 700 }}>{modalActualizarPrecio.cantidadAprovechable.toFixed(2)} kg</span></div>
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio actual en recetas:</span><span style={{ fontWeight: 700 }}>{fmt(modalActualizarPrecio.precioActual)}/{modalActualizarPrecio.ins.unidad}</span></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio según esta compra:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(modalActualizarPrecio.precioNuevo)}/{modalActualizarPrecio.ins.unidad}</span></div>
             </div>
