@@ -215,7 +215,7 @@ export default function App() {
 
   useEffect(() => {
     if (view === "gastos") { cargarGastos(); cargarVentas(); if (recetas.length === 0) cargarRecetas(); }
-    if (view === "ventas") { cargarVentas(); cargarGastos(); if (recetas.length === 0) cargarRecetas(); }
+    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
@@ -404,12 +404,15 @@ export default function App() {
     if (productos.length === 0) { showToast("Este combo no tiene productos definidos"); return; }
     const precioCombo = precioProducto(comboRec);
     const sumaNormal = productos.reduce((s, p) => { const r = recetas.find((r) => r.nombre_producto === p); return s + (r ? r.precio_venta : 0); }, 0);
+    const nuevosItems = [];
     productos.forEach((nombreProd) => {
       const r = recetas.find((r) => r.nombre_producto === nombreProd);
       if (!r) return;
       const precioProp = sumaNormal > 0 ? Math.round((r.precio_venta / sumaNormal) * precioCombo) : 0;
-      agregarAlCarrito(r, { nombre: nombreProd, precio: precioProp, combo: comboRec.nombre_producto });
+      nuevosItems.push({ nombre: nombreProd, cantidad: 1, precio_unitario: precioProp, precio_original: precioProp, metodo_pago: metodoPago, total: precioProp, descuento: null, receta_nombre: r.nombre_producto, combo: comboRec.nombre_producto });
     });
+    if (nuevosItems.length === 0) { showToast("No se encontraron productos del combo"); return; }
+    setCarrito((prev) => [...prev, ...nuevosItems]);
     showToast(`✓ ${comboRec.nombre_producto} agregado`);
   };
 
