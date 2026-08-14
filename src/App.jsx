@@ -343,11 +343,12 @@ export default function App() {
     if (!persona) { showToast("Selecciona quién registra"); return; }
     const insumofinal = form.insumo === "Otro" ? (form.insumoCustom || "Otro") : form.insumo;
     const provFinal = form.proveedor === "__nuevo__" ? normProv(form.proveedorCustom) : form.proveedor;
-    if (!form.monto || isNaN(Number(form.monto))) { showToast("Completa el monto"); return; }
+    if (!form.monto || isNaN(Number(form.monto))) { setForm({ ...form, _errorMonto: true }); showToast("Completa el monto"); return; }
+    if (!form.cantidad || isNaN(Number(form.cantidad)) || Number(form.cantidad) <= 0) { setForm({ ...form, _errorCantidad: true }); showToast("Completa la cantidad"); return; }
     setSaving(true);
     await supabase.from("gastos").insert([{ fecha: form.fecha, insumo: insumofinal, cantidad: form.cantidad || null, unidad: form.unidad, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: form.nota || null }]);
     showToast("✓ Gasto guardado");
-    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", nota: "", insumoCustom: "" });
+    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", _errorMonto: false, _errorCantidad: false });
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
     const insumoRef = resolverInsumo(insumofinal);
@@ -722,10 +723,22 @@ export default function App() {
                   <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Registrar gasto</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <Fld label="Fecha"><input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} style={S.inp} /></Fld>
-                    <Fld label="Monto ($)"><input type="number" placeholder="0" value={form.monto} onChange={(e) => setForm({ ...form, monto: e.target.value })} style={S.inp} /></Fld>
+                    <Fld label="Total que pagaste por este insumo ($)" full>
+                      <input type="text" inputMode="numeric" placeholder="ej: 12.790" value={form.montoDisplay || ""}
+                        onChange={(e) => {
+                          const raw = e.target.value.replace(/\./g, "").replace(/[^0-9]/g, "");
+                          const display = raw ? Number(raw).toLocaleString("es-CL") : "";
+                          setForm({ ...form, monto: raw, montoDisplay: display });
+                        }}
+                        style={{ ...S.inp, borderColor: form._errorMonto ? C.red : C.border }} />
+                      {form._errorMonto && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa el monto</div>}
+                    </Fld>
                     <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => { const unidadAuto = UNIDAD_DEFAULT_INSUMO[e.target.value]; setForm({ ...form, insumo: e.target.value, unidad: unidadAuto || form.unidad }); }} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
                     {form.insumo === "Otro" && <Fld label="¿Cuál?" full><input value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value })} style={S.inp} /></Fld>}
-                    <Fld label="Cantidad"><input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} style={S.inp} /></Fld>
+                    <Fld label="Cantidad *">
+                      <input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value, _errorCantidad: false })} style={{ ...S.inp, borderColor: form._errorCantidad ? C.red : C.border }} />
+                      {form._errorCantidad && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa la cantidad</div>}
+                    </Fld>
                     <Fld label="Unidad">{ UNIDAD_DEFAULT_INSUMO[form.insumo] ? (<div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, color: C.mustard, padding: "8px 10px", fontSize: 13, fontWeight: 700 }}>{UNIDAD_DEFAULT_INSUMO[form.insumo]} <span style={{ color: C.muted, fontWeight: 400, fontSize: 11 }}>(fijo por receta)</span></div>) : (<select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>{["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}</select>) }</Fld>
                     <Fld label="Fondo"><select value={form.fondo} onChange={(e) => setForm({ ...form, fondo: e.target.value })} style={S.inp}>{FONDOS.map((f) => <option key={f}>{f}</option>)}</select></Fld>
                     <Fld label="Proveedor"><select value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value, proveedorCustom: "" })} style={S.inp}><option value="">Sin proveedor</option>{proveedores.map((p) => <option key={p}>{p}</option>)}<option value="__nuevo__">+ Nuevo…</option></select></Fld>
