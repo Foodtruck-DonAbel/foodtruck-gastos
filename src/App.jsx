@@ -403,16 +403,23 @@ export default function App() {
     const productos = comboRec.productos_combo || [];
     if (productos.length === 0) { showToast("Este combo no tiene productos definidos"); return; }
     const precioCombo = precioProducto(comboRec);
-    const sumaNormal = productos.reduce((s, p) => { const r = recetas.find((r) => r.nombre_producto === p); return s + (r ? r.precio_venta : 0); }, 0);
-    const nuevosItems = [];
-    productos.forEach((nombreProd) => {
-      const r = recetas.find((r) => r.nombre_producto === nombreProd);
-      if (!r) return;
-      const precioProp = sumaNormal > 0 ? Math.round((r.precio_venta / sumaNormal) * precioCombo) : 0;
-      nuevosItems.push({ nombre: nombreProd, cantidad: 1, precio_unitario: precioProp, precio_original: precioProp, metodo_pago: metodoPago, total: precioProp, descuento: null, receta_nombre: r.nombre_producto, combo: comboRec.nombre_producto });
-    });
-    if (nuevosItems.length === 0) { showToast("No se encontraron productos del combo"); return; }
-    setCarrito((prev) => [...prev, ...nuevosItems]);
+    // Verificar que existen los productos
+    const productosEncontrados = productos.filter((p) => recetas.find((r) => r.nombre_producto === p));
+    if (productosEncontrados.length === 0) { showToast("No se encontraron productos del combo"); return; }
+    // Agregar como una sola línea — los productos internos van en nota
+    const item = {
+      nombre: comboRec.nombre_producto,
+      cantidad: 1,
+      precio_unitario: precioCombo,
+      precio_original: precioCombo,
+      metodo_pago: metodoPago,
+      total: precioCombo,
+      descuento: null,
+      receta_nombre: comboRec.nombre_producto,
+      combo: comboRec.nombre_producto,
+      productos_combo: productos,
+    };
+    setCarrito((prev) => [...prev, item]);
     showToast(`✓ ${comboRec.nombre_producto} agregado`);
   };
 
@@ -459,13 +466,23 @@ export default function App() {
     if (carrito.length === 0) { showToast("Agrega productos"); return; }
     setSavingVenta(true);
     const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
-    const rows = carrito.map((c) => ({
-      fecha: fechaVenta, hora,
-      producto: c.nombre, cantidad: c.cantidad,
-      precio_unitario: c.precio_unitario, total: c.total,
-      metodo_pago: c.metodo_pago, persona: persona || null,
-      nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}) }) || null,
-    }));
+    const rows = [];
+    carrito.forEach((c) => {
+      if (c.productos_combo && c.productos_combo.length > 0) {
+        // Combo: registrar el combo como una línea + cada producto interno
+        rows.push({ fecha: fechaVenta, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ combo: c.combo, productos: c.productos_combo }) });
+        // Registrar cada producto del combo con precio 0 para stock
+        const sumaNormal = c.productos_combo.reduce((s, p) => { const r = recetas.find((r) => r.nombre_producto === p); return s + (r ? r.precio_venta : 0); }, 0);
+        c.productos_combo.forEach((nombreProd) => {
+          const r = recetas.find((r) => r.nombre_producto === nombreProd);
+          if (!r) return;
+          const precioProp = sumaNormal > 0 ? Math.round((r.precio_venta / sumaNormal) * c.precio_unitario) : 0;
+          rows.push({ fecha: fechaVenta, hora, producto: nombreProd, cantidad: c.cantidad, precio_unitario: precioProp, total: precioProp * c.cantidad, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ combo: c.combo, es_componente: true }) });
+        });
+      } else {
+        rows.push({ fecha: fechaVenta, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}) }) || null });
+      }
+    });
     const { error } = await supabase.from("ventas").insert(rows);
     if (error) showToast("Error al guardar");
     else { showToast(`✓ Venta — ${fmt(totalCarrito)}`); setCarrito([]); cargarVentas(); }
