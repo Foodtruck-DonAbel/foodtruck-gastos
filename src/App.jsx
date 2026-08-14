@@ -541,13 +541,16 @@ export default function App() {
   const ventasFiltradas = ventas.filter((v) => {
     if (filtroVentas.mes && !v.fecha.startsWith(filtroVentas.mes)) return false;
     if (filtroVentas.metodo && v.metodo_pago !== filtroVentas.metodo) return false;
+    // Ocultar componentes internos de combos
+    try { const nota = JSON.parse(v.nota || "{}"); if (nota.es_componente) return false; } catch {}
     return true;
   });
 
   const porPersonaGastos = PERSONAS.map((p) => ({ p, t: gastosResumen.filter((g) => g.persona === p).reduce((s, g) => s + g.monto, 0), c: gastosResumen.filter((g) => g.persona === p).length })).filter((x) => x.t > 0);
   const porInsumo = Object.entries(gastosResumen.reduce((acc, g) => { acc[g.insumo] = (acc[g.insumo] || 0) + g.monto; return acc; }, {})).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 10);
 
-  const ventasMesActual = ventas.filter((v) => v.fecha.startsWith(mesActual));
+  const esComponente = (v) => { try { return JSON.parse(v.nota || "{}").es_componente === true; } catch { return false; } };
+  const ventasMesActual = ventas.filter((v) => v.fecha.startsWith(mesActual) && !esComponente(v));
   const ventasPorProducto = Object.entries(
     ventasMesActual.reduce((acc, v) => {
       if (!acc[v.producto]) acc[v.producto] = { total: 0, cantidad: 0, combos: {} };
