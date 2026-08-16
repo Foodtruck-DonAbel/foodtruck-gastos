@@ -198,6 +198,14 @@ export default function App() {
   const [nuevoProductoCombo, setNuevoProductoCombo] = useState("");
   const [editGramos, setEditGramos] = useState({});
   const [porcentajePY, setPorcentajePY] = useState(35);
+  const [turnoActivo, setTurnoActivo] = useState(null); // turno abierto actual
+  const [modalApertura, setModalApertura] = useState(false);
+  const [modalCierre, setModalCierre] = useState(false);
+  const [modalReabrir, setModalReabrir] = useState(false);
+  const [saldoApertura, setSaldoApertura] = useState("");
+  const [claveSupervisor, setClaveSupervisor] = useState("");
+  const [errorSupervisor, setErrorSupervisor] = useState(false);
+  const [ultimoCierre, setUltimoCierre] = useState(null);
 
   // Resumen
   const [filtroResumen, setFiltroResumen] = useState("");
@@ -206,6 +214,27 @@ export default function App() {
 
   // Admin
   const ADMIN_CLAVE = "1232026";
+  const SUPERVISOR_CLAVE = "72012026";
+
+  // EmailJS
+  const EMAILJS_SERVICE = "service_v3p46hv";
+  const EMAILJS_TEMPLATE = "gq06j29";
+  const EMAILJS_KEY = "0k2rM-U1xXPh43usT";
+
+  const enviarEmail = async (tipo_turno, mensaje) => {
+    try {
+      await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          service_id: EMAILJS_SERVICE,
+          template_id: EMAILJS_TEMPLATE,
+          user_id: EMAILJS_KEY,
+          template_params: { tipo_turno, message: mensaje, name: "Don Abel", email: "a.monsalves1981@gmail.com" },
+        }),
+      });
+    } catch (e) { console.error("Error email:", e); }
+  };
   const [adminModal, setAdminModal] = useState(null);
   const [adminClave, setAdminClave] = useState("");
   const [adminError, setAdminError] = useState(false);
@@ -215,7 +244,7 @@ export default function App() {
 
   useEffect(() => {
     if (view === "gastos") { cargarGastos(); cargarVentas(); if (recetas.length === 0) cargarRecetas(); }
-    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); }
+    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
@@ -256,6 +285,76 @@ export default function App() {
   const cargarConfig = async () => {
     const { data } = await supabase.from("config").select("*").eq("id", "general").single();
     if (data) setPorcentajePY(data.porcentaje_py || 35);
+  };
+
+  const cargarTurno = async () => {
+    const { data } = await supabase.from("turnos").select("*").order("created_at", { ascending: false }).limit(2);
+    if (data && data.length > 0) {
+      const ultimo = data[0];
+      if (ultimo.tipo === "apertura") setTurnoActivo(ultimo);
+      else { setTurnoActivo(null); setUltimoCierre(ultimo); }
+      if (data.length > 1 && data[0].tipo === "apertura") setUltimoCierre(data[1]);
+    }
+  };
+
+  const abrirCaja = async () => {
+    if (!saldoApertura || isNaN(Number(saldoApertura.replace(/./g, "")))) { showToast("Ingresa el saldo"); return; }
+    const saldo = Number(saldoApertura.replace(/./g, ""));
+    const diferencia = ultimoCierre ? saldo - ultimoCierre.saldo_final : 0;
+    const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+    const { data } = await supabase.from("turnos").insert([{ tipo: "apertura", persona: persona || "Sin nombre", saldo_inicial: saldo, diferencia, nota: diferencia !== 0 ? `Diferencia con cierre anterior: ${fmt(diferencia)}` : null }]).select().single();
+    if (data) {
+      setTurnoActivo(data);
+      setModalApertura(false);
+      setSaldoApertura("");
+      const msg = `🟢 APERTURA DE CAJA
+Persona: ${persona || "Sin nombre"}
+Hora: ${hora}
+Saldo inicial: ${fmt(saldo)}${diferencia !== 0 ? `
+Diferencia con cierre anterior: ${fmt(diferencia)}` : ""}`;
+      await enviarEmail("🟢 Apertura", msg);
+      showToast("✓ Caja abierta");
+    }
+  };
+
+  const calcularResumenTurno = () => {
+    if (!turnoActivo) return null;
+    const ventasTurno = ventas.filter((v) => {
+      if (esComponente(v)) return false;
+      return new Date(v.created_at) >= new Date(turnoActivo.created_at);
+    });
+    const efectivo = ventasTurno.filter((v) => v.metodo_pago === "Efectivo").reduce((s, v) => s + v.total, 0);
+    const tarjeta = ventasTurno.filter((v) => v.metodo_pago === "Tarjeta").reduce((s, v) => s + v.total, 0);
+    const py = ventasTurno.filter((v) => v.metodo_pago === "Pedidos Ya").reduce((s, v) => s + v.total, 0);
+    const cortesiasTurno = ventasTurno.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "cortesia"; } catch { return false; } });
+    const gastosTurno = gastos.filter((g) => g.fondo === "Efectivo foodtruck" && new Date(g.created_at) >= new Date(turnoActivo.created_at)).reduce((s, g) => s + g.monto, 0);
+    const efectivoEsperado = turnoActivo.saldo_inicial + efectivo - gastosTurno;
+    return { ventasTurno, efectivo, tarjeta, py, cortesiasTurno, gastosTurno, efectivoEsperado };
+  };
+
+  const cerrarCaja = async (saldoFinal) => {
+    const resumen = calcularResumenTurno();
+    if (!resumen) return;
+    const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+    const diferencia = saldoFinal - resumen.efectivoEsperado;
+    await supabase.from("turnos").insert([{ tipo: "cierre", persona: persona || "Sin nombre", saldo_inicial: turnoActivo.saldo_inicial, saldo_final: saldoFinal, diferencia, ventas_efectivo: resumen.efectivo, ventas_tarjeta: resumen.tarjeta, ventas_py: resumen.py, cortesias: resumen.cortesiasTurno.length }]);
+    setTurnoActivo(null);
+    setModalCierre(false);
+    await cargarTurno();
+    const msg = `🔴 CIERRE DE CAJA
+Persona: ${persona || "Sin nombre"}
+Hora: ${hora}
+Saldo inicial: ${fmt(turnoActivo.saldo_inicial)}
+Ventas efectivo: ${fmt(resumen.efectivo)}
+Gastos efectivo: ${fmt(resumen.gastosTurno)}
+Efectivo esperado: ${fmt(resumen.efectivoEsperado)}
+Saldo final contado: ${fmt(saldoFinal)}
+Diferencia: ${fmt(diferencia)}
+Tarjeta: ${fmt(resumen.tarjeta)}
+Pedidos Ya: ${fmt(resumen.py)}
+Cortesías: ${resumen.cortesiasTurno.length}`;
+    await enviarEmail("🔴 Cierre", msg);
+    showToast("✓ Caja cerrada");
   };
 
   const calcularStock = (gastosData, ventasData, recetasData, insumosData) => {
@@ -602,6 +701,66 @@ export default function App() {
       )}
 
       {confirmarPrecioModal && (
+
+      {/* Modal Apertura de Caja */}
+      {modalApertura && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.green}`, borderRadius: 14, padding: 28, maxWidth: 360, width: "90%" }}>
+            <div style={{ fontSize: 32, textAlign: "center", marginBottom: 8 }}>🟢</div>
+            <div style={{ fontWeight: 800, fontSize: 18, textAlign: "center", marginBottom: 4 }}>Apertura de Caja</div>
+            {ultimoCierre && <div style={{ color: C.muted, fontSize: 12, textAlign: "center", marginBottom: 16 }}>Último cierre: {fmt(ultimoCierre.saldo_final)}</div>}
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>¿Con cuánto efectivo abre la caja?</div>
+            <input type="text" inputMode="numeric" placeholder={ultimoCierre ? fmt(ultimoCierre.saldo_final) : "ej: 50.000"}
+              value={saldoApertura}
+              onChange={(e) => { const raw = e.target.value.replace(/./g, "").replace(/[^0-9]/g, ""); const display = raw ? Number(raw).toLocaleString("es-CL") : ""; setSaldoApertura(display); }}
+              style={{ ...S.inp, fontSize: 20, fontWeight: 700, textAlign: "center", marginBottom: 16 }} autoFocus />
+            {ultimoCierre && saldoApertura && Number(saldoApertura.replace(/./g, "")) !== ultimoCierre.saldo_final && (
+              <div style={{ color: Number(saldoApertura.replace(/./g, "")) < ultimoCierre.saldo_final ? C.red : C.green, fontSize: 13, textAlign: "center", marginBottom: 12, fontWeight: 700 }}>
+                Diferencia con cierre anterior: {fmt(Number(saldoApertura.replace(/./g, "")) - ultimoCierre.saldo_final)}
+              </div>
+            )}
+            <button onClick={abrirCaja} style={{ width: "100%", background: C.green, border: "none", color: "#fff", borderRadius: 10, padding: "14px 0", cursor: "pointer", fontWeight: 800, fontSize: 16 }}>Abrir Caja</button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Cierre de Caja */}
+      {modalCierre && (() => {
+        const resumen = calcularResumenTurno();
+        const [saldoContado, setSaldoContado] = React.useState("");
+        if (!resumen) return null;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, overflowY: "auto" }}>
+            <div style={{ background: C.card, border: `1px solid ${C.red}`, borderRadius: 14, padding: 24, maxWidth: 400, width: "90%", margin: "20px auto" }}>
+              <div style={{ fontSize: 32, textAlign: "center", marginBottom: 8 }}>🔴</div>
+              <div style={{ fontWeight: 800, fontSize: 18, textAlign: "center", marginBottom: 16 }}>Cierre de Caja</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Saldo inicial:</span><span style={{ fontWeight: 700 }}>{fmt(turnoActivo.saldo_inicial)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>+ Ventas efectivo:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(resumen.efectivo)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>- Gastos efectivo:</span><span style={{ fontWeight: 700, color: C.red }}>{fmt(resumen.gastosTurno)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}><span style={{ fontWeight: 700 }}>Efectivo esperado:</span><span style={{ fontWeight: 800, fontSize: 16, color: C.mustard }}>{fmt(resumen.efectivoEsperado)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }}><span style={{ color: C.muted }}>Tarjeta:</span><span style={{ fontWeight: 700, color: C.blue }}>{fmt(resumen.tarjeta)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Pedidos Ya:</span><span style={{ fontWeight: 700, color: C.orange }}>{fmt(resumen.py)}</span></div>
+                {resumen.cortesiasTurno.length > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Cortesías:</span><span style={{ fontWeight: 700 }}>{resumen.cortesiasTurno.length}</span></div>}
+              </div>
+              <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>¿Cuánto efectivo hay en caja?</div>
+              <input type="text" inputMode="numeric" placeholder="ej: 45.000"
+                value={saldoContado}
+                onChange={(e) => { const raw = e.target.value.replace(/./g, "").replace(/[^0-9]/g, ""); const display = raw ? Number(raw).toLocaleString("es-CL") : ""; setSaldoContado(display); }}
+                style={{ ...S.inp, fontSize: 18, fontWeight: 700, textAlign: "center", marginBottom: 8 }} />
+              {saldoContado && (
+                <div style={{ color: Number(saldoContado.replace(/./g, "")) < resumen.efectivoEsperado ? C.red : C.green, fontSize: 13, textAlign: "center", marginBottom: 12, fontWeight: 700 }}>
+                  Diferencia: {fmt(Number(saldoContado.replace(/./g, "")) - resumen.efectivoEsperado)}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setModalCierre(false)} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 9, padding: "12px 0", cursor: "pointer" }}>Volver</button>
+                <button onClick={() => cerrarCaja(Number(saldoContado.replace(/./g, "")))} disabled={!saldoContado} style={{ flex: 2, background: C.red, border: "none", color: "#fff", borderRadius: 9, padding: "12px 0", cursor: "pointer", fontWeight: 800 }}>Confirmar Cierre</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔐 Confirmar cambio de precio</div>
@@ -862,6 +1021,18 @@ export default function App() {
             </div>
 
             {ventaView === "registrar" && (
+              {/* Banner caja */}
+              {!turnoActivo ? (
+                <div style={{ background: C.red + "22", border: `1px solid ${C.red}`, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div><div style={{ fontWeight: 700, color: C.red }}>🔴 Caja cerrada</div><div style={{ color: C.muted, fontSize: 12 }}>Abre la caja antes de registrar ventas</div></div>
+                  <button onClick={() => { if (!persona) { showToast("Selecciona quién abre"); return; } setModalApertura(true); }} style={{ background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700 }}>Abrir caja</button>
+                </div>
+              ) : (
+                <div style={{ background: C.green + "22", border: `1px solid ${C.green}`, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div><div style={{ fontWeight: 700, color: C.green }}>🟢 Caja abierta</div><div style={{ color: C.muted, fontSize: 12 }}>Saldo inicial: {fmt(turnoActivo.saldo_inicial)} · {turnoActivo.persona}</div></div>
+                  <button onClick={() => setModalCierre(true)} style={{ background: C.red, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700 }}>Cerrar turno</button>
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ ...S.card, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Fld label="Fecha"><input type="date" value={fechaVenta} onChange={(e) => setFechaVenta(e.target.value)} style={S.inp} /></Fld>
