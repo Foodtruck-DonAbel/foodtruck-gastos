@@ -1020,7 +1020,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             </div>
 
             {ventaView === "registrar" && (
-              <>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {/* Banner caja */}
               {!turnoActivo ? (
                 <div style={{ background: C.red + "22", border: `1px solid ${C.red}`, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1033,8 +1033,6 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <button onClick={() => setModalCierre(true)} style={{ background: C.red, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700 }}>Cerrar turno</button>
                 </div>
               )}
-              </>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ ...S.card, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                   <Fld label="Fecha"><input type="date" value={fechaVenta} onChange={(e) => setFechaVenta(e.target.value)} style={S.inp} /></Fld>
                   <Fld label="Método de pago">
