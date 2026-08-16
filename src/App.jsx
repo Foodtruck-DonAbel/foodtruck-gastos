@@ -710,7 +710,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>¿Con cuánto efectivo abre la caja?</div>
             <input type="text" inputMode="numeric" placeholder={ultimoCierre ? fmt(ultimoCierre.saldo_final) : "ej: 50.000"}
               value={saldoApertura}
-              onChange={(e) => { const raw = e.target.value.replace(/./g, "").replace(/[^0-9]/g, ""); const display = raw ? Number(raw).toLocaleString("es-CL") : ""; setSaldoApertura(display); }}
+              onChange={(e) => { const raw = e.target.value.replace(/[^0-9]/g, ""); const display = raw ? Number(raw).toLocaleString("es-CL") : ""; setSaldoApertura(display); }}
               style={{ ...S.inp, fontSize: 20, fontWeight: 700, textAlign: "center", marginBottom: 16 }} autoFocus />
             {ultimoCierre && saldoApertura && Number(saldoApertura.replace(/./g, "")) !== ultimoCierre.saldo_final && (
               <div style={{ color: Number(saldoApertura.replace(/./g, "")) < ultimoCierre.saldo_final ? C.red : C.green, fontSize: 13, textAlign: "center", marginBottom: 12, fontWeight: 700 }}>
