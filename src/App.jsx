@@ -700,8 +700,6 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         </div>
       )}
 
-      {confirmarPrecioModal && (
-
       {/* Modal Apertura de Caja */}
       {modalApertura && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500 }}>
@@ -761,6 +759,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
           </div>
         );
       })()}
+      {confirmarPrecioModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔐 Confirmar cambio de precio</div>
