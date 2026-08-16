@@ -345,13 +345,13 @@ Diferencia con cierre anterior: ${fmt(diferencia)}` : ""}`;
 Persona: ${persona || "Sin nombre"}
 Hora: ${hora}
 Saldo inicial: ${fmt(turnoActivo.saldo_inicial)}
-Ventas efectivo: ${fmt(resumen.efectivo)}
-Gastos efectivo: ${fmt(resumen.gastosTurno)}
-Efectivo esperado: ${fmt(resumen.efectivoEsperado)}
+Ventas efectivo: ${fmt(resumenTurno.efectivo)}
+Gastos efectivo: ${fmt(resumenTurno.gastosTurno)}
+Efectivo esperado: ${fmt(resumenTurno.efectivoEsperado)}
 Saldo final contado: ${fmt(saldoFinal)}
 Diferencia: ${fmt(diferencia)}
-Tarjeta: ${fmt(resumen.tarjeta)}
-Pedidos Ya: ${fmt(resumen.py)}
+Tarjeta: ${fmt(resumenTurno.tarjeta)}
+Pedidos Ya: ${fmt(resumenTurno.py)}
 Cortesías: ${resumen.cortesiasTurno.length}`;
     await enviarEmail("🔴 Cierre", msg);
     showToast("✓ Caja cerrada");
@@ -674,6 +674,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   const exportCSV = () => {
+  const resumenTurno = modalCierre && turnoActivo ? calcularResumenTurno() : null;
+
     const header = "Fecha,Insumo,Cantidad,Unidad,Fondo,Proveedor,Monto,Persona,Nota\n";
     const rows = gastos.map((g) => [g.fecha, g.insumo, g.cantidad || "", g.unidad || "", g.fondo, g.proveedor || "", g.monto, g.persona, g.nota || ""].join(",")).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });
@@ -723,22 +725,19 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       )}
 
       {/* Modal Cierre de Caja */}
-      {modalCierre && turnoActivo && (() => {
-        const resumen = calcularResumenTurno();
-        if (!resumen) return null;
-        return (
+      {modalCierre && turnoActivo && resumenTurno && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, overflowY: "auto" }}>
             <div style={{ background: C.card, border: `1px solid ${C.red}`, borderRadius: 14, padding: 24, maxWidth: 400, width: "90%", margin: "20px auto" }}>
               <div style={{ fontSize: 32, textAlign: "center", marginBottom: 8 }}>🔴</div>
               <div style={{ fontWeight: 800, fontSize: 18, textAlign: "center", marginBottom: 16 }}>Cierre de Caja</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Saldo inicial:</span><span style={{ fontWeight: 700 }}>{fmt(turnoActivo.saldo_inicial)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>+ Ventas efectivo:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(resumen.efectivo)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>- Gastos efectivo:</span><span style={{ fontWeight: 700, color: C.red }}>{fmt(resumen.gastosTurno)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}><span style={{ fontWeight: 700 }}>Efectivo esperado:</span><span style={{ fontWeight: 800, fontSize: 16, color: C.mustard }}>{fmt(resumen.efectivoEsperado)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }}><span style={{ color: C.muted }}>Tarjeta:</span><span style={{ fontWeight: 700, color: C.blue }}>{fmt(resumen.tarjeta)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Pedidos Ya:</span><span style={{ fontWeight: 700, color: C.orange }}>{fmt(resumen.py)}</span></div>
-                {resumen.cortesiasTurno.length > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Cortesías:</span><span style={{ fontWeight: 700 }}>{resumen.cortesiasTurno.length}</span></div>}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>+ Ventas efectivo:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(resumenTurno.efectivo)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>- Gastos efectivo:</span><span style={{ fontWeight: 700, color: C.red }}>{fmt(resumenTurno.gastosTurno)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}><span style={{ fontWeight: 700 }}>Efectivo esperado:</span><span style={{ fontWeight: 800, fontSize: 16, color: C.mustard }}>{fmt(resumenTurno.efectivoEsperado)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }}><span style={{ color: C.muted }}>Tarjeta:</span><span style={{ fontWeight: 700, color: C.blue }}>{fmt(resumenTurno.tarjeta)}</span></div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Pedidos Ya:</span><span style={{ fontWeight: 700, color: C.orange }}>{fmt(resumenTurno.py)}</span></div>
+                {resumenTurno.cortesiasTurno.length > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Cortesías:</span><span style={{ fontWeight: 700 }}>{resumenTurno.cortesiasTurno.length}</span></div>}
               </div>
               <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>¿Cuánto efectivo hay en caja?</div>
               <input type="text" inputMode="numeric" placeholder="ej: 45.000"
@@ -746,18 +745,17 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 onChange={(e) => { const raw = e.target.value.replace(/./g, "").replace(/[^0-9]/g, ""); const display = raw ? Number(raw).toLocaleString("es-CL") : ""; setSaldoContado(display); }}
                 style={{ ...S.inp, fontSize: 18, fontWeight: 700, textAlign: "center", marginBottom: 8 }} />
               {saldoContado && (
-                <div style={{ color: Number(saldoContado.replace(/./g, "")) < resumen.efectivoEsperado ? C.red : C.green, fontSize: 13, textAlign: "center", marginBottom: 12, fontWeight: 700 }}>
-                  Diferencia: {fmt(Number(saldoContado.replace(/./g, "")) - resumen.efectivoEsperado)}
+                <div style={{ color: Number(saldoContado.replace(/[^0-9]/g, "")) < resumenTurno.efectivoEsperado ? C.red : C.green, fontSize: 13, textAlign: "center", marginBottom: 12, fontWeight: 700 }}>
+                  Diferencia: {fmt(Number(saldoContado.replace(/[^0-9]/g, "")) - resumenTurno.efectivoEsperado)}
                 </div>
               )}
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setModalCierre(false)} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 9, padding: "12px 0", cursor: "pointer" }}>Volver</button>
-                <button onClick={() => cerrarCaja(Number(saldoContado.replace(/./g, "")))} disabled={!saldoContado} style={{ flex: 2, background: C.red, border: "none", color: "#fff", borderRadius: 9, padding: "12px 0", cursor: "pointer", fontWeight: 800 }}>Confirmar Cierre</button>
+                <button onClick={() => cerrarCaja(Number(saldoContado.replace(/[^0-9]/g, "")))} disabled={!saldoContado} style={{ flex: 2, background: C.red, border: "none", color: "#fff", borderRadius: 9, padding: "12px 0", cursor: "pointer", fontWeight: 800 }}>Confirmar Cierre</button>
               </div>
             </div>
           </div>
-        );
-      })()}
+      )}
       {confirmarPrecioModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
