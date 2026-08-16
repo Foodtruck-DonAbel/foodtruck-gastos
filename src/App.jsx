@@ -723,9 +723,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       )}
 
       {/* Modal Cierre de Caja */}
-      {modalCierre && (() => {
+      {modalCierre && turnoActivo && (() => {
         const resumen = calcularResumenTurno();
-        const [saldoContado, setSaldoContado] = React.useState("");
         if (!resumen) return null;
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, overflowY: "auto" }}>
