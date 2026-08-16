@@ -940,9 +940,9 @@ export default function App() {
               const ahora = today();
               const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
               const hace7str = `${hace7.getFullYear()}-${String(hace7.getMonth()+1).padStart(2,"0")}-${String(hace7.getDate()).padStart(2,"0")}`;
-              const ventasPeriodo = dashPeriodo === "hoy" ? ventas.filter((v) => v.fecha === ahora)
+              const ventasPeriodo = (dashPeriodo === "hoy" ? ventas.filter((v) => v.fecha === ahora)
                 : dashPeriodo === "7dias" ? ventas.filter((v) => v.fecha >= hace7str && v.fecha <= ahora)
-                : ventasMesActual;
+                : ventasMesActual).filter((v) => !esComponente(v));
               const totalPeriodo = ventasPeriodo.reduce((s, v) => s + v.total, 0);
               const cantidadPeriodo = ventasPeriodo.length;
               const ticketPromedio = cantidadPeriodo > 0 ? Math.round(totalPeriodo / cantidadPeriodo) : 0;
@@ -954,7 +954,7 @@ export default function App() {
               const diasGrafico = dashPeriodo === "hoy" ? [ahora]
                 : dashPeriodo === "7dias" ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })
                 : Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth(), i + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }).filter((d) => d <= ahora);
-              const ventasDia = diasGrafico.map((d) => ({ dia: d.slice(8), fecha: d, total: ventas.filter((v) => v.fecha === d).reduce((s, v) => s + v.total, 0) }));
+              const ventasDia = diasGrafico.map((d) => ({ dia: d.slice(8), fecha: d, total: ventas.filter((v) => v.fecha === d && !esComponente(v)).reduce((s, v) => s + v.total, 0) }));
               const maxDia = Math.max(...ventasDia.map((d) => d.total), 1);
               const metodosPeriodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({ m, t: ventasPeriodo.filter((v) => v.metodo_pago === m).reduce((s, v) => s + v.total, 0) })).filter((x) => x.t > 0);
               const productosPeriodo = Object.entries(ventasPeriodo.reduce((acc, v) => { acc[v.producto] = acc[v.producto] || { total: 0, cantidad: 0 }; acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad; return acc; }, {})).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total).slice(0, 8);
