@@ -674,7 +674,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   const exportCSV = () => {
-  const resumenTurno = modalCierre && turnoActivo ? calcularResumenTurno() : null;
+  const resumenTurno = turnoActivo ? calcularResumenTurno() : null;
 
     const header = "Fecha,Insumo,Cantidad,Unidad,Fondo,Proveedor,Monto,Persona,Nota\n";
     const rows = gastos.map((g) => [g.fecha, g.insumo, g.cantidad || "", g.unidad || "", g.fondo, g.proveedor || "", g.monto, g.persona, g.nota || ""].join(",")).join("\n");
