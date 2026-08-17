@@ -673,9 +673,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     inp: { background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, color: C.text, padding: "8px 10px", width: "100%", fontSize: 13, boxSizing: "border-box", outline: "none" },
   };
 
-  const exportCSV = () => {
   const resumenTurno = turnoActivo ? calcularResumenTurno() : null;
 
+  const exportCSV = () => {
     const header = "Fecha,Insumo,Cantidad,Unidad,Fondo,Proveedor,Monto,Persona,Nota\n";
     const rows = gastos.map((g) => [g.fecha, g.insumo, g.cantidad || "", g.unidad || "", g.fondo, g.proveedor || "", g.monto, g.persona, g.nota || ""].join(",")).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });
@@ -742,7 +742,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>¿Cuánto efectivo hay en caja?</div>
               <input type="text" inputMode="numeric" placeholder="ej: 45.000"
                 value={saldoContado}
-                onChange={(e) => { const raw = e.target.value.replace(/./g, "").replace(/[^0-9]/g, ""); const display = raw ? Number(raw).toLocaleString("es-CL") : ""; setSaldoContado(display); }}
+                onChange={(e) => { const raw = e.target.value.replace(/[^0-9]/g, ""); const display = raw ? Number(raw).toLocaleString("es-CL") : ""; setSaldoContado(display); }}
                 style={{ ...S.inp, fontSize: 18, fontWeight: 700, textAlign: "center", marginBottom: 8 }} />
               {saldoContado && (
                 <div style={{ color: Number(saldoContado.replace(/[^0-9]/g, "")) < resumenTurno.efectivoEsperado ? C.red : C.green, fontSize: 13, textAlign: "center", marginBottom: 12, fontWeight: 700 }}>
