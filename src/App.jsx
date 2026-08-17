@@ -203,6 +203,7 @@ export default function App() {
   const [modalCierre, setModalCierre] = useState(false);
   const [modalReabrir, setModalReabrir] = useState(false);
   const [saldoApertura, setSaldoApertura] = useState("");
+  const [saldoContado, setSaldoContado] = useState("");
   const [claveSupervisor, setClaveSupervisor] = useState("");
   const [errorSupervisor, setErrorSupervisor] = useState(false);
   const [ultimoCierre, setUltimoCierre] = useState(null);
