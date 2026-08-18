@@ -11,10 +11,14 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
-  "Palta","Tomate","Pan para completo","Mayonesa","Salchichas",
-  "Papas fritas","Tocino","Chucrut","Mostaza","Ketchup",
-  "Salsas / aderezos","Aceite","Envases papas fritas",
-  "Envases completos","Servilletas / bolsas","Gas / combustible","Limpieza","Otro",
+  "Palta","Tomate","Pan para completo","Pan para Sandwich Castaño",
+  "Salchichas 17 cm","Chicken Fingers","Churrascos",
+  "Mayonesa","Mayonesa Casera","Papas fritas","Tocino","Chucrut",
+  "Mostaza","Ketchup","Salsa Americana","Salsa BBQ",
+  "Queso cheddar","Queso Normal","Pepinillo","Cebolla Caramelizada",
+  "Aceite para Freir","Envase para Papas / Sandwich/ PY",
+  "Envases para completos","Servilletas / bolsas",
+  "Gas / combustible","Limpieza","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -244,6 +248,7 @@ export default function App() {
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
   useEffect(() => {
+    if (view === "home") { cargarGastos(); cargarVentas(); }
     if (view === "gastos") { cargarGastos(); cargarVentas(); if (recetas.length === 0) cargarRecetas(); }
     if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); }
@@ -564,6 +569,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
 
   const registrarVenta = async () => {
     if (carrito.length === 0) { showToast("Agrega productos"); return; }
+    if (!turnoActivo) { showToast("⚠️ Debes abrir la caja antes de registrar ventas"); return; }
     setSavingVenta(true);
     const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
     const rows = [];
