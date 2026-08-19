@@ -332,8 +332,8 @@ export default function App() {
   };
 
   const abrirCaja = async () => {
-    if (!saldoApertura || isNaN(Number(saldoApertura.replace(/./g, "")))) { showToast("Ingresa el saldo"); return; }
-    const saldo = Number(saldoApertura.replace(/./g, ""));
+    if (saldoApertura === "") { showToast("Ingresa el saldo"); return; }
+    const saldo = Number(saldoApertura.replace(/[^0-9]/g, ""));
     const diferencia = ultimoCierre ? saldo - ultimoCierre.saldo_final : 0;
     const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
     const { data } = await supabase.from("turnos").insert([{ tipo: "apertura", persona: persona || "Sin nombre", saldo_inicial: saldo, diferencia, nota: diferencia !== 0 ? `Diferencia con cierre anterior: ${fmt(diferencia)}` : null }]).select().single();
@@ -749,7 +749,6 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       )}
 
       {/* Modal Apertura de Caja */}
-      {modalApertura && (
       {modalAjuste && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, overflowY: "auto" }}>
           <div style={{ background: C.card, border: `1px solid ${C.blue}`, borderRadius: 16, padding: 24, maxWidth: 420, width: "90%", margin: "20px auto" }}>
@@ -778,6 +777,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
           </div>
         </div>
       )}
+
+      {/* Modal Apertura de Caja */}
+      {modalApertura && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500 }}>
           <div style={{ background: C.card, border: `1px solid ${C.green}`, borderRadius: 14, padding: 28, maxWidth: 360, width: "90%" }}>
             <div style={{ fontSize: 32, textAlign: "center", marginBottom: 8 }}>🟢</div>
@@ -788,9 +790,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               value={saldoApertura}
               onChange={(e) => { const raw = e.target.value.replace(/[^0-9]/g, ""); const display = raw ? Number(raw).toLocaleString("es-CL") : ""; setSaldoApertura(display); }}
               style={{ ...S.inp, fontSize: 20, fontWeight: 700, textAlign: "center", marginBottom: 16 }} autoFocus />
-            {ultimoCierre && saldoApertura && Number(saldoApertura.replace(/./g, "")) !== ultimoCierre.saldo_final && (
-              <div style={{ color: Number(saldoApertura.replace(/./g, "")) < ultimoCierre.saldo_final ? C.red : C.green, fontSize: 13, textAlign: "center", marginBottom: 12, fontWeight: 700 }}>
-                Diferencia con cierre anterior: {fmt(Number(saldoApertura.replace(/./g, "")) - ultimoCierre.saldo_final)}
+            {ultimoCierre && saldoApertura && Number(saldoApertura.replace(/[^0-9]/g, "")) !== ultimoCierre.saldo_final && (
+              <div style={{ color: Number(saldoApertura.replace(/[^0-9]/g, "")) < ultimoCierre.saldo_final ? C.red : C.green, fontSize: 13, textAlign: "center", marginBottom: 12, fontWeight: 700 }}>
+                Diferencia con cierre anterior: {fmt(Number(saldoApertura.replace(/[^0-9]/g, "")) - ultimoCierre.saldo_final)}
               </div>
             )}
             <button onClick={abrirCaja} style={{ width: "100%", background: C.green, border: "none", color: "#fff", borderRadius: 10, padding: "14px 0", cursor: "pointer", fontWeight: 800, fontSize: 16 }}>Abrir Caja</button>
