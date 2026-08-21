@@ -231,7 +231,7 @@ export default function App() {
 
   const enviarEmail = async (tipo_turno, mensaje) => {
     try {
-      await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+      const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -241,7 +241,17 @@ export default function App() {
           template_params: { tipo_turno, message: mensaje, name: "Don Abel", email: "a.monsalves1981@gmail.com" },
         }),
       });
-    } catch (e) { console.error("Error email:", e); }
+      if (!res.ok) {
+        const txt = await res.text();
+        console.error("EmailJS error:", res.status, txt);
+        setToast("❌ Email falló: " + txt.slice(0, 60));
+        setTimeout(() => setToast(""), 4000);
+      }
+    } catch (e) {
+      console.error("Error email:", e);
+      setToast("❌ Error de red al enviar email");
+      setTimeout(() => setToast(""), 4000);
+    }
   };
   const [adminModal, setAdminModal] = useState(null);
   const [adminClave, setAdminClave] = useState("");
