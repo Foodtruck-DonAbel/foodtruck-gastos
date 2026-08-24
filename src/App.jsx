@@ -11,14 +11,7 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
-  "Palta","Tomate","Pan para completo","Pan para Sandwich Castaño",
-  "Salchichas 17 cm","Chicken Fingers","Churrascos",
-  "Mayonesa","Mayonesa Casera","Papas fritas","Tocino","Chucrut",
-  "Mostaza","Ketchup","Salsa Americana","Salsa BBQ",
-  "Queso cheddar","Queso Normal","Pepinillo","Cebolla Caramelizada",
-  "Aceite para Freir","Envase para Papas / Sandwich/ PY",
-  "Envases para completos","Servilletas / bolsas",
-  "Gas / combustible","Limpieza","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
