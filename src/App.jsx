@@ -675,6 +675,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     cargarRecetas();
   };
 
+  const esComponente = (v) => { try { return JSON.parse(v.nota || "{}").es_componente === true; } catch { return false; } };
   const margenColor = (pct) => pct >= 60 ? C.green : pct >= 40 ? C.mustard : C.red;
 
   const mesActual = today().slice(0, 7);
@@ -707,7 +708,6 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const porPersonaGastos = PERSONAS.map((p) => ({ p, t: gastosResumen.filter((g) => g.persona === p).reduce((s, g) => s + g.monto, 0), c: gastosResumen.filter((g) => g.persona === p).length })).filter((x) => x.t > 0);
   const porInsumo = Object.entries(gastosResumen.reduce((acc, g) => { acc[g.insumo] = (acc[g.insumo] || 0) + g.monto; return acc; }, {})).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 10);
 
-  const esComponente = (v) => { try { return JSON.parse(v.nota || "{}").es_componente === true; } catch { return false; } };
   const ventasMesActual = ventas.filter((v) => v.fecha.startsWith(mesActual) && !esComponente(v));
   const ventasPorProducto = Object.entries(
     ventasMesActual.reduce((acc, v) => {
