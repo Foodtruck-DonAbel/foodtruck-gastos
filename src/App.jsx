@@ -683,7 +683,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const gastosResumen = filtroResumen ? gastos.filter((g) => g.fecha.startsWith(filtroResumen)) : gastos;
   const totalGeneral = gastos.reduce((s, g) => s + g.monto, 0);
   const totalMes = gastos.filter((g) => g.fecha.startsWith(mesActual)).reduce((s, g) => s + g.monto, 0);
-  const totalVentasMes = ventas.filter((v) => v.fecha.startsWith(mesActual)).reduce((s, v) => s + v.total, 0);
+  const totalVentasMes = ventas.filter((v) => v.fecha.startsWith(mesActual) && !esComponente(v)).reduce((s, v) => s + v.total, 0);
+  const totalGastosResumen = gastosResumen.reduce((s, g) => s + g.monto, 0);
+  const totalVentasResumen = ventas.filter((v) => !esComponente(v) && (filtroResumen ? v.fecha.startsWith(filtroResumen) : true)).reduce((s, v) => s + v.total, 0);
+  const utilidadResumen = totalVentasResumen - totalGastosResumen;
   const totalVentasDia = ventas.filter((v) => v.fecha === today()).reduce((s, v) => s + v.total, 0);
   const utilidadMes = totalVentasMes - totalMes;
 
@@ -1584,10 +1587,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <StatCard label="Ventas mes" value={fmt(totalVentasMes)} color={C.green} />
-              <StatCard label="Gastos mes" value={fmt(totalMes)} color={C.mustard} />
-              <StatCard label="Utilidad" value={fmt(utilidadMes)} color={utilidadMes >= 0 ? C.green : C.red} />
-              <StatCard label="Total gastos" value={fmt(totalGeneral)} color={C.muted} />
+              <StatCard label={filtroResumen ? `Ventas ${filtroResumen}` : "Ventas (todo)"} value={fmt(totalVentasResumen)} color={C.green} />
+              <StatCard label={filtroResumen ? `Gastos ${filtroResumen}` : "Gastos (todo)"} value={fmt(totalGastosResumen)} color={C.mustard} />
+              <StatCard label="Utilidad" value={fmt(utilidadResumen)} color={utilidadResumen >= 0 ? C.green : C.red} />
+              <StatCard label="Total histórico" value={fmt(totalGeneral)} color={C.muted} />
             </div>
             <div style={S.card}>
               <STitle>Gastos por persona</STitle>
