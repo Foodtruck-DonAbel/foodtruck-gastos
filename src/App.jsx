@@ -244,7 +244,7 @@ export default function App() {
 
   // EmailJS
   const EMAILJS_SERVICE = "service_v3p46hv";
-  const EMAILJS_TEMPLATE = "gq06j29";
+  const EMAILJS_TEMPLATE = "template_wii0690";
   const EMAILJS_KEY = "0k2rM-U1xXPh43usT";
 
   const enviarEmail = async (tipo_turno, mensaje) => {
