@@ -202,6 +202,7 @@ export default function App() {
   const [cortesiaDueno, setCortesiaDueno] = useState("");
   const [dashPeriodo, setDashPeriodo] = useState("mes");
   const [dashMesElegido, setDashMesElegido] = useState("");
+  const [puntoSeleccionado, setPuntoSeleccionado] = useState(null);
 
   // Recetas
   const [insumosPrecio, setInsumosPrecio] = useState([]);
@@ -1295,11 +1296,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", gap: 6 }}>
                     {[{ id: "hoy", label: "Hoy" }, { id: "7dias", label: "7 días" }, { id: "mes", label: "Mes" }].map((p) => (
-                      <button key={p.id} onClick={() => setDashPeriodo(p.id)} style={{ flex: 1, background: dashPeriodo === p.id ? C.green : C.tag, color: dashPeriodo === p.id ? "#fff" : C.muted, border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: dashPeriodo === p.id ? 700 : 400, fontSize: 13 }}>{p.label}</button>
+                      <button key={p.id} onClick={() => { setDashPeriodo(p.id); setPuntoSeleccionado(null); }} style={{ flex: 1, background: dashPeriodo === p.id ? C.green : C.tag, color: dashPeriodo === p.id ? "#fff" : C.muted, border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: dashPeriodo === p.id ? 700 : 400, fontSize: 13 }}>{p.label}</button>
                     ))}
                   </div>
                   {dashPeriodo === "mes" && (
-                    <select value={dashMesElegido || ventasMeses[0] || mesActual} onChange={(e) => setDashMesElegido(e.target.value)} style={S.inp}>
+                    <select value={dashMesElegido || ventasMeses[0] || mesActual} onChange={(e) => { setDashMesElegido(e.target.value); setPuntoSeleccionado(null); }} style={S.inp}>
                       {ventasMeses.map((m) => <option key={m} value={m}>{m === mesActual ? `${m} (actual)` : m}</option>)}
                     </select>
                   )}
@@ -1326,17 +1327,42 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {dashPeriodo !== "hoy" && (
                     <div style={S.card}>
                       <STitle>Ventas por día</STitle>
-                      <div style={{ display: "flex", alignItems: "flex-end", gap: dashPeriodo === "7dias" ? 8 : 3, height: 100, paddingBottom: 20 }}>
-                        {ventasDia.map((d) => (
-                          <div key={d.fecha} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                            <div style={{ fontSize: 9, color: d.total > 0 ? C.green : C.muted }}>{d.total > 0 ? fmt(d.total).replace("$", "") : ""}</div>
-                            <div style={{ width: "100%", background: d.total > 0 ? C.green : C.border, borderRadius: "3px 3px 0 0", height: `${Math.max(4, Math.round((d.total / maxDia) * 70))}px`, position: "relative" }}>
-                              {d.fecha === ahora && <div style={{ position: "absolute", top: -3, left: "50%", transform: "translateX(-50%)", width: 6, height: 6, borderRadius: "50%", background: C.mustard }} />}
+                      {(() => {
+                        const w = 300, h = 110, padX = 8, padTop = 22, padBottom = 20;
+                        const n = ventasDia.length;
+                        const stepX = n > 1 ? (w - padX * 2) / (n - 1) : 0;
+                        const scaleY = (val) => padTop + (1 - (maxDia > 0 ? val / maxDia : 0)) * (h - padTop - padBottom);
+                        const points = ventasDia.map((d, i) => ({ x: padX + i * stepX, y: scaleY(d.total), ...d }));
+                        const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+                        const sel = puntoSeleccionado !== null ? points[puntoSeleccionado] : null;
+                        const mostrarCadaN = n > 15 ? Math.ceil(n / 10) : 1;
+                        return (
+                          <div style={{ position: "relative", width: "100%" }}>
+                            <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height: 130, display: "block", overflow: "visible" }} preserveAspectRatio="none">
+                              <path d={pathD} fill="none" stroke={C.green} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                              {points.map((p, i) => (
+                                <circle key={i} cx={p.x} cy={p.y} r={sel === p ? 3.5 : 2}
+                                  fill={p.fecha === ahora ? C.mustard : C.green}
+                                  stroke={C.bg} strokeWidth="0.5"
+                                  onClick={() => setPuntoSeleccionado(puntoSeleccionado === i ? null : i)}
+                                  onTouchStart={() => setPuntoSeleccionado(i)}
+                                  style={{ cursor: "pointer" }} />
+                              ))}
+                            </svg>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: -6, padding: "0 4px" }}>
+                              {ventasDia.map((d, i) => (
+                                <div key={d.fecha} style={{ flex: 1, textAlign: "center", fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted, visibility: (i % mostrarCadaN === 0 || i === n - 1) ? "visible" : "hidden" }}>{d.dia}</div>
+                              ))}
                             </div>
-                            <div style={{ fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted }}>{d.dia}</div>
+                            {sel && (
+                              <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
+                                <span style={{ color: C.muted, fontSize: 12 }}>Día {sel.dia}: </span>
+                                <span style={{ color: C.green, fontWeight: 700, fontSize: 14 }}>{fmt(sel.total)}</span>
+                              </div>
+                            )}
                           </div>
-                        ))}
-                      </div>
+                        );
+                      })()}
                     </div>
                   )}
                   <div style={S.card}>
