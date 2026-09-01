@@ -1303,6 +1303,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       {ventasMeses.map((m) => <option key={m} value={m}>{m === mesActual ? `${m} (actual)` : m}</option>)}
                     </select>
                   )}
+                  <div style={{ fontSize: 10, color: C.muted, background: C.bg, padding: 6, borderRadius: 6 }}>
+                    DIAGNÓSTICO: mes calculado = {mesParaCalculo} | ventas totales en memoria = {ventas.length} | ventas que calzan con el mes = {ventasDelMesElegido.length} | primera fecha en memoria = {ventas[0]?.fecha || "ninguna"}
+                  </div>
                   <div style={S.card}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
                       <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Ventas</div><div style={{ fontWeight: 800, fontSize: 20, color: C.green }}>{fmt(totalPeriodo)}</div></div>
