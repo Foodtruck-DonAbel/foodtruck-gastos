@@ -48,6 +48,10 @@ const MAPA_INSUMOS = {
   "ketchup": "Ketchup",
   "mayonesa": "Mayonesa",
   "mayonesa casera": "Mayonesa Casera",
+  "mayonesa en polvo": "Mayonesa en Polvo",
+  "aceite para mayonesa casera": "Aceite para Mayonesa Casera",
+  "ciboulette": "Ciboulette",
+  "cilantro": "Cilantro",
   "mostaza": "Mostaza",
   "queso cheddar": "Queso cheddar",
   "envases para completos": "Envases para completos",
@@ -86,6 +90,14 @@ const CATEGORIAS = [
 ];
 
 const INGREDIENTES_BASE = {
+const RECETA_MAYONESA_CASERA = [
+  { insumo: "Mayonesa en Polvo", gramos: 25 },
+  { insumo: "Aceite para Mayonesa Casera", gramos: 500 },
+  { insumo: "Ciboulette", gramos: 1 },
+  { insumo: "Cilantro", gramos: 1 },
+  { insumo: "Mostaza", gramos: 10 },
+];
+const RENDIMIENTO_MAYONESA_CASERA_G = 600; // rinde 600g
   completos: [{ insumo: "Pan para completo", gramos: 1 },{ insumo: "Salchicha 17 cm", gramos: 1 }],
   pollo: [{ insumo: "Pan para Sandwich Castaño", gramos: 1 },{ insumo: "Chicken Fingers", gramos: 3 }],
   churrasco: [{ insumo: "Pan para Sandwich Castaño", gramos: 1 },{ insumo: "Churrascos", gramos: 3 }],
@@ -219,6 +231,8 @@ export default function App() {
   const [filtroResumen, setFiltroResumen] = useState("");
   const [inventarioInicial, setInventarioInicial] = useState([]);
   const [modalAjuste, setModalAjuste] = useState(false);
+  const [ajusteClave, setAjusteClave] = useState("");
+  const [ajusteError, setAjusteError] = useState(false);
   const [ajusteValues, setAjusteValues] = useState({});
   const [stockData, setStockData] = useState([]);
   const [modalActualizarPrecio, setModalActualizarPrecio] = useState(null);
@@ -320,6 +334,7 @@ export default function App() {
   };
 
   const guardarAjusteInventario = async () => {
+    if (ajusteClave !== ADMIN_CLAVE) { setAjusteError(true); return; }
     const rows = Object.entries(ajusteValues)
       .filter(([_, v]) => v !== "" && !isNaN(Number(v)))
       .map(([insumo, cantidad]) => {
@@ -329,6 +344,8 @@ export default function App() {
     if (rows.length === 0) { showToast("Ingresa al menos un valor"); return; }
     await supabase.from("inventario_inicial").insert(rows);
     setAjusteValues({});
+    setAjusteClave("");
+    setAjusteError(false);
     setModalAjuste(false);
     await cargarInventarioInicial();
     showToast("✓ Inventario actualizado");
@@ -524,9 +541,23 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     }
   };
 
+  const costoPorKgMayonesaCasera = (insumosLista) => {
+    const costoTotal = RECETA_MAYONESA_CASERA.reduce((total, ing) => {
+      const ins = insumosLista.find((i) => i.nombre === ing.insumo);
+      if (!ins) return total;
+      if (ins.unidad === "unidad") return total + ins.precio_por_kg * ing.gramos;
+      return total + (ins.precio_por_kg / 1000) * ing.gramos;
+    }, 0);
+    return (costoTotal / RENDIMIENTO_MAYONESA_CASERA_G) * 1000; // costo por kg
+  };
+
   const calcularCosto = (ingredientes, insumosLista) => {
     if (!ingredientes || !insumosLista) return 0;
     return ingredientes.reduce((total, ing) => {
+      if (ing.insumo === "Mayonesa Casera") {
+        const precioKg = costoPorKgMayonesaCasera(insumosLista);
+        return total + (precioKg / 1000) * ing.gramos;
+      }
       const ins = insumosLista.find((i) => i.nombre === ing.insumo);
       if (!ins) return total;
       if (ins.unidad === "unidad") return total + ins.precio_por_kg * (ing.gramos || 0);
@@ -786,8 +817,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 );
               })}
             </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button onClick={() => setModalAjuste(false)} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 9, padding: "12px 0", cursor: "pointer" }}>Cancelar</button>
+            <div style={{ marginTop: 16 }}>
+              <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>🔐 Clave para confirmar el ajuste</div>
+              <input type="password" placeholder="Clave" value={ajusteClave}
+                onChange={(e) => { setAjusteClave(e.target.value); setAjusteError(false); }}
+                onKeyDown={(e) => e.key === "Enter" && guardarAjusteInventario()}
+                style={{ ...S.inp, fontSize: 16, letterSpacing: 4 }} />
+              {ajusteError && <div style={{ color: C.red, fontSize: 12, marginTop: 4 }}>Clave incorrecta</div>}
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button onClick={() => { setModalAjuste(false); setAjusteClave(""); setAjusteError(false); }} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 9, padding: "12px 0", cursor: "pointer" }}>Cancelar</button>
               <button onClick={guardarAjusteInventario} style={{ flex: 2, background: C.blue, border: "none", color: "#fff", borderRadius: 9, padding: "12px 0", cursor: "pointer", fontWeight: 800 }}>Guardar ajuste</button>
             </div>
           </div>
@@ -1068,11 +1107,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div style={{ color: C.muted, fontSize: 12 }}>
-                      {inventarioInicial.length > 0
+                      {persona !== "Gustavo" && inventarioInicial.length > 0
                         ? `Desde ajuste del ${inventarioInicial[0]?.fecha}`
-                        : "Basado en todas las compras vs ventas"}
+                        : persona !== "Gustavo" ? "Basado en todas las compras vs ventas" : ""}
                     </div>
-                    <button onClick={() => { setAjusteValues({}); setModalAjuste(true); }} style={{ background: C.blue, border: "none", color: "#fff", borderRadius: 7, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>📦 Ajuste inventario</button>
+                    {persona !== "Gustavo" && (
+                      <button onClick={() => { setAjusteValues({}); setModalAjuste(true); }} style={{ background: C.blue, border: "none", color: "#fff", borderRadius: 7, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>📦 Ajuste inventario</button>
+                    )}
                   </div>
                   {stock.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 40 }}>Sin datos suficientes. Registra compras con cantidad y unidad.</div>}
                   {stock.map((s) => {
@@ -1496,13 +1537,28 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     {editInsumoId && <button onClick={() => { setEditInsumoId(null); setFormInsumo({ nombre: "", precio_por_kg: "", unidad: "kg" }); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "9px 16px", cursor: "pointer" }}>Cancelar</button>}
                   </div>
                 </div>
-                {insumosPrecio.map((ins) => (
-                  <div key={ins.id} style={{ ...S.card, display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ flex: 1 }}><div style={{ fontWeight: 600 }}>{ins.nombre}</div><div style={{ color: C.muted, fontSize: 12 }}>{fmt(ins.precio_por_kg)} / {ins.unidad}</div></div>
-                    <button onClick={() => { setFormInsumo({ nombre: ins.nombre, precio_por_kg: ins.precio_por_kg, unidad: ins.unidad }); setEditInsumoId(ins.id); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Editar</button>
-                    <button onClick={() => solicitarEliminacion("insumo", ins)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
-                  </div>
-                ))}
+                {insumosPrecio.map((ins) => {
+                  const esMayonesaCasera = ins.nombre === "Mayonesa Casera";
+                  const costoCalculado = esMayonesaCasera ? costoPorKgMayonesaCasera(insumosPrecio) : null;
+                  return (
+                    <div key={ins.id} style={{ ...S.card, display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600 }}>{ins.nombre}</div>
+                        {esMayonesaCasera ? (
+                          <div style={{ color: C.green, fontSize: 12 }}>
+                            {fmt(Math.round(costoCalculado))} / kg <span style={{ color: C.muted }}>(calculado automáticamente)</span>
+                          </div>
+                        ) : (
+                          <div style={{ color: C.muted, fontSize: 12 }}>{fmt(ins.precio_por_kg)} / {ins.unidad}</div>
+                        )}
+                      </div>
+                      {!esMayonesaCasera && (
+                        <button onClick={() => { setFormInsumo({ nombre: ins.nombre, precio_por_kg: ins.precio_por_kg, unidad: ins.unidad }); setEditInsumoId(ins.id); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Editar</button>
+                      )}
+                      <button onClick={() => solicitarEliminacion("insumo", ins)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
