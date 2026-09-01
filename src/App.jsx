@@ -90,6 +90,12 @@ const CATEGORIAS = [
 ];
 
 const INGREDIENTES_BASE = {
+  completos: [{ insumo: "Pan para completo", gramos: 1 },{ insumo: "Salchicha 17 cm", gramos: 1 }],
+  pollo: [{ insumo: "Pan para Sandwich Castaño", gramos: 1 },{ insumo: "Chicken Fingers", gramos: 3 }],
+  churrasco: [{ insumo: "Pan para Sandwich Castaño", gramos: 1 },{ insumo: "Churrascos", gramos: 3 }],
+  papas: [], bebidas: [], agregados: [], combos: [],
+};
+
 const RECETA_MAYONESA_CASERA = [
   { insumo: "Mayonesa en Polvo", gramos: 25 },
   { insumo: "Aceite para Mayonesa Casera", gramos: 500 },
@@ -98,11 +104,6 @@ const RECETA_MAYONESA_CASERA = [
   { insumo: "Mostaza", gramos: 10 },
 ];
 const RENDIMIENTO_MAYONESA_CASERA_G = 600; // rinde 600g
-  completos: [{ insumo: "Pan para completo", gramos: 1 },{ insumo: "Salchicha 17 cm", gramos: 1 }],
-  pollo: [{ insumo: "Pan para Sandwich Castaño", gramos: 1 },{ insumo: "Chicken Fingers", gramos: 3 }],
-  churrasco: [{ insumo: "Pan para Sandwich Castaño", gramos: 1 },{ insumo: "Churrascos", gramos: 3 }],
-  papas: [], bebidas: [], agregados: [], combos: [],
-};
 
 const RECETAS_EJEMPLO = [
   { nombre_producto: "Italiano", categoria: "completos", precio_venta: 4100, precio_py: 5535, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Mayonesa casera", gramos: 25 }] },
@@ -258,16 +259,16 @@ export default function App() {
           template_params: { tipo_turno, message: mensaje, name: "Don Abel", email: "a.monsalves1981@gmail.com" },
         }),
       });
+      const txt = await res.text();
       if (!res.ok) {
-        const txt = await res.text();
         console.error("EmailJS error:", res.status, txt);
-        setToast("❌ Email falló: " + txt.slice(0, 60));
-        setTimeout(() => setToast(""), 4000);
+        alert("❌ Email falló (" + res.status + "): " + txt.slice(0, 200));
+      } else {
+        console.log("EmailJS OK:", txt);
       }
     } catch (e) {
       console.error("Error email:", e);
-      setToast("❌ Error de red al enviar email");
-      setTimeout(() => setToast(""), 4000);
+      alert("❌ Error de red al enviar email: " + e.message);
     }
   };
   const [adminModal, setAdminModal] = useState(null);
