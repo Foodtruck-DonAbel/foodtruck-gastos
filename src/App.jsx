@@ -289,15 +289,34 @@ export default function App() {
 
   const cargarGastos = async () => {
     setLoading(true);
-    const { data } = await supabase.from("gastos").select("*").order("created_at", { ascending: false });
-    if (data) { setGastos(data); setProveedores([...new Set(data.map((g) => normProv(g.proveedor)).filter(Boolean))].sort()); }
+    let todos = [];
+    let desde = 0;
+    const tamañoPagina = 1000;
+    while (true) {
+      const { data, error } = await supabase.from("gastos").select("*").order("created_at", { ascending: false }).range(desde, desde + tamañoPagina - 1);
+      if (error || !data || data.length === 0) break;
+      todos = todos.concat(data);
+      if (data.length < tamañoPagina) break;
+      desde += tamañoPagina;
+    }
+    setGastos(todos);
+    setProveedores([...new Set(todos.map((g) => normProv(g.proveedor)).filter(Boolean))].sort());
     setLoading(false);
   };
 
   const cargarVentas = async () => {
     setLoadingVentas(true);
-    const { data } = await supabase.from("ventas").select("*").order("created_at", { ascending: false });
-    if (data) setVentas(data);
+    let todas = [];
+    let desde = 0;
+    const tamañoPagina = 1000;
+    while (true) {
+      const { data, error } = await supabase.from("ventas").select("*").order("created_at", { ascending: false }).range(desde, desde + tamañoPagina - 1);
+      if (error || !data || data.length === 0) break;
+      todas = todas.concat(data);
+      if (data.length < tamañoPagina) break;
+      desde += tamañoPagina;
+    }
+    setVentas(todas);
     setLoadingVentas(false);
   };
 
