@@ -1268,7 +1268,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const ahora = today();
               const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
               const hace7str = `${hace7.getFullYear()}-${String(hace7.getMonth()+1).padStart(2,"0")}-${String(hace7.getDate()).padStart(2,"0")}`;
-              const mesParaCalculo = dashPeriodo === "mes" && dashMesElegido ? dashMesElegido : mesActual;
+              const mesParaCalculo = dashPeriodo === "mes" && dashMesElegido ? dashMesElegido : (ventasMeses[0] || mesActual);
               const ventasDelMesElegido = ventas.filter((v) => v.fecha.startsWith(mesParaCalculo) && !esComponente(v));
               const gastosDelMesElegido = gastos.filter((g) => g.fecha.startsWith(mesParaCalculo)).reduce((s, g) => s + g.monto, 0);
               const ventasPeriodo = (dashPeriodo === "hoy" ? ventas.filter((v) => v.fecha === ahora)
@@ -1299,13 +1299,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     ))}
                   </div>
                   {dashPeriodo === "mes" && (
-                    <select value={dashMesElegido || mesActual} onChange={(e) => setDashMesElegido(e.target.value)} style={S.inp}>
+                    <select value={dashMesElegido || ventasMeses[0] || mesActual} onChange={(e) => setDashMesElegido(e.target.value)} style={S.inp}>
                       {ventasMeses.map((m) => <option key={m} value={m}>{m === mesActual ? `${m} (actual)` : m}</option>)}
                     </select>
                   )}
-                  <div style={{ fontSize: 10, color: C.muted, background: C.bg, padding: 6, borderRadius: 6 }}>
-                    DIAGNÓSTICO: mes calculado = {mesParaCalculo} | ventas totales en memoria = {ventas.length} | ventas que calzan con el mes = {ventasDelMesElegido.length} | primera fecha en memoria = {ventas[0]?.fecha || "ninguna"}
-                  </div>
                   <div style={S.card}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
                       <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Ventas</div><div style={{ fontWeight: 800, fontSize: 20, color: C.green }}>{fmt(totalPeriodo)}</div></div>
