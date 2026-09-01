@@ -201,6 +201,7 @@ export default function App() {
   const [descuentoPct, setDescuentoPct] = useState("");
   const [cortesiaDueno, setCortesiaDueno] = useState("");
   const [dashPeriodo, setDashPeriodo] = useState("mes");
+  const [dashMesElegido, setDashMesElegido] = useState("");
 
   // Recetas
   const [insumosPrecio, setInsumosPrecio] = useState([]);
@@ -1248,20 +1249,23 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const ahora = today();
               const hace7 = new Date(); hace7.setDate(hace7.getDate() - 6);
               const hace7str = `${hace7.getFullYear()}-${String(hace7.getMonth()+1).padStart(2,"0")}-${String(hace7.getDate()).padStart(2,"0")}`;
+              const mesParaCalculo = dashPeriodo === "mes" && dashMesElegido ? dashMesElegido : mesActual;
+              const ventasDelMesElegido = ventas.filter((v) => v.fecha.startsWith(mesParaCalculo) && !esComponente(v));
+              const gastosDelMesElegido = gastos.filter((g) => g.fecha.startsWith(mesParaCalculo)).reduce((s, g) => s + g.monto, 0);
               const ventasPeriodo = (dashPeriodo === "hoy" ? ventas.filter((v) => v.fecha === ahora)
                 : dashPeriodo === "7dias" ? ventas.filter((v) => v.fecha >= hace7str && v.fecha <= ahora)
-                : ventasMesActual).filter((v) => !esComponente(v));
+                : ventasDelMesElegido).filter((v) => !esComponente(v));
               const totalPeriodo = ventasPeriodo.reduce((s, v) => s + v.total, 0);
               const cantidadPeriodo = ventasPeriodo.length;
               const ticketPromedio = cantidadPeriodo > 0 ? Math.round(totalPeriodo / cantidadPeriodo) : 0;
               const gastosPeriodo = dashPeriodo === "hoy" ? gastos.filter((g) => g.fecha === ahora).reduce((s, g) => s + g.monto, 0)
                 : dashPeriodo === "7dias" ? gastos.filter((g) => g.fecha >= hace7str && g.fecha <= ahora).reduce((s, g) => s + g.monto, 0)
-                : totalMes;
+                : gastosDelMesElegido;
               const utilidadPeriodo = totalPeriodo - gastosPeriodo;
               const margenOperacional = totalPeriodo > 0 && gastosPeriodo > 0 ? Math.round((utilidadPeriodo / totalPeriodo) * 100) : null;
               const diasGrafico = dashPeriodo === "hoy" ? [ahora]
                 : dashPeriodo === "7dias" ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })
-                : Array.from({ length: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() }, (_, i) => { const d = new Date(new Date().getFullYear(), new Date().getMonth(), i + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }).filter((d) => d <= ahora);
+                : (() => { const [yy, mm] = mesParaCalculo.split("-").map(Number); return Array.from({ length: new Date(yy, mm, 0).getDate() }, (_, i) => { const d = new Date(yy, mm - 1, i + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }).filter((d) => mesParaCalculo !== mesActual || d <= ahora); })();
               const ventasDia = diasGrafico.map((d) => ({ dia: d.slice(8), fecha: d, total: ventas.filter((v) => v.fecha === d && !esComponente(v)).reduce((s, v) => s + v.total, 0) }));
               const maxDia = Math.max(...ventasDia.map((d) => d.total), 1);
               const metodosPeriodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({ m, t: ventasPeriodo.filter((v) => v.metodo_pago === m).reduce((s, v) => s + v.total, 0) })).filter((x) => x.t > 0);
@@ -1271,10 +1275,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {[{ id: "hoy", label: "Hoy" }, { id: "7dias", label: "7 días" }, { id: "mes", label: "Este mes" }].map((p) => (
+                    {[{ id: "hoy", label: "Hoy" }, { id: "7dias", label: "7 días" }, { id: "mes", label: "Mes" }].map((p) => (
                       <button key={p.id} onClick={() => setDashPeriodo(p.id)} style={{ flex: 1, background: dashPeriodo === p.id ? C.green : C.tag, color: dashPeriodo === p.id ? "#fff" : C.muted, border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: dashPeriodo === p.id ? 700 : 400, fontSize: 13 }}>{p.label}</button>
                     ))}
                   </div>
+                  {dashPeriodo === "mes" && (
+                    <select value={dashMesElegido || mesActual} onChange={(e) => setDashMesElegido(e.target.value)} style={S.inp}>
+                      {ventasMeses.map((m) => <option key={m} value={m}>{m === mesActual ? `${m} (actual)` : m}</option>)}
+                    </select>
+                  )}
                   <div style={S.card}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
                       <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Ventas</div><div style={{ fontWeight: 800, fontSize: 20, color: C.green }}>{fmt(totalPeriodo)}</div></div>
