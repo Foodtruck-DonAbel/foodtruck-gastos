@@ -11,7 +11,7 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -178,7 +178,6 @@ export default function App() {
 
   // Gastos
   const [gastos, setGastos] = useState([]);
-  const [insumos, setInsumos] = useState(INSUMOS_BASE);
   const [proveedores, setProveedores] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -737,6 +736,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const mesActual = today().slice(0, 7);
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
   const ventasMeses = [...new Set(ventas.map((v) => v.fecha.slice(0, 7)))].sort().reverse();
+  const insumosUsadosHistoricamente = [...new Set(gastos.map((g) => g.insumo))].filter((i) => i && !INSUMOS_BASE.includes(i));
+  const insumos = [...INSUMOS_BASE.filter((i) => i !== "Otro"), ...insumosUsadosHistoricamente.sort((a, b) => a.localeCompare(b)), "Otro"];
   const gastosResumen = filtroResumen ? gastos.filter((g) => g.fecha.startsWith(filtroResumen)) : gastos;
   const totalGeneral = gastos.reduce((s, g) => s + g.monto, 0);
   const totalMes = gastos.filter((g) => g.fecha.startsWith(mesActual)).reduce((s, g) => s + g.monto, 0);
@@ -1079,12 +1080,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <button onClick={agregarGasto} disabled={saving} style={{ marginTop: 14, background: persona ? C.mustard : C.border, color: persona ? C.bg : C.muted, border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, cursor: persona ? "pointer" : "default", width: "100%" }}>
                     {saving ? "Guardando..." : persona ? `Guardar — ${persona}` : "Selecciona quién registra arriba"}
                   </button>
-                </div>
-                <div style={{ ...S.card, display: "flex", gap: 8, alignItems: "flex-end" }}>
-                  <div style={{ flex: 1 }}><div style={{ color: C.muted, fontSize: 11, marginBottom: 5 }}>Agregar insumo a la lista</div>
-                    <input placeholder="ej: Mermelada" value={form._nuevoInsumo || ""} onChange={(e) => setForm({ ...form, _nuevoInsumo: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") { const n = (form._nuevoInsumo || "").trim(); if (!n || insumos.includes(n)) return; setInsumos([...insumos.slice(0, -1), n, "Otro"]); setForm({ ...form, _nuevoInsumo: "" }); showToast(`"${n}" agregado`); } }} style={S.inp} />
-                  </div>
-                  <button onClick={() => { const n = (form._nuevoInsumo || "").trim(); if (!n || insumos.includes(n)) return; setInsumos([...insumos.slice(0, -1), n, "Otro"]); setForm({ ...form, _nuevoInsumo: "" }); showToast(`"${n}" agregado`); }} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.mustard, borderRadius: 7, padding: "8px 16px", cursor: "pointer", fontWeight: 700, fontSize: 16 }}>+</button>
+                  <div style={{ color: C.muted, fontSize: 11, marginTop: 8 }}>💡 Si el insumo no está en la lista, elige "Otro" y escribe el nombre — quedará guardado y disponible para la próxima vez.</div>
                 </div>
               </div>
             )}
