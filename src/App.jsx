@@ -220,6 +220,7 @@ export default function App() {
   const [editGramos, setEditGramos] = useState({});
   const [porcentajePY, setPorcentajePY] = useState(35);
   const [turnoActivo, setTurnoActivo] = useState(null); // turno abierto actual
+  const [historialTurnos, setHistorialTurnos] = useState([]);
   const [modalApertura, setModalApertura] = useState(false);
   const [modalCierre, setModalCierre] = useState(false);
   const [modalReabrir, setModalReabrir] = useState(false);
@@ -245,7 +246,7 @@ export default function App() {
 
   // EmailJS
   const EMAILJS_SERVICE = "service_v3p46hv";
-  const EMAILJS_TEMPLATE = "template_wii0690";
+  const EMAILJS_TEMPLATE = "template_wii069o";
   const EMAILJS_KEY = "0k2rM-U1xXPh43usT";
 
   const enviarEmail = async (tipo_turno, mensaje) => {
@@ -380,6 +381,11 @@ export default function App() {
       else { setTurnoActivo(null); setUltimoCierre(ultimo); }
       if (data.length > 1 && data[0].tipo === "apertura") setUltimoCierre(data[1]);
     }
+  };
+
+  const cargarHistorialTurnos = async () => {
+    const { data } = await supabase.from("turnos").select("*").order("created_at", { ascending: false }).limit(200);
+    if (data) setHistorialTurnos(data);
   };
 
   const abrirCaja = async () => {
