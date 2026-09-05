@@ -283,7 +283,7 @@ export default function App() {
   useEffect(() => {
     if (view === "home") { cargarGastos(); cargarVentas(); }
     if (view === "gastos") { cargarGastos(); cargarVentas(); cargarInventarioInicial(); if (recetas.length === 0) cargarRecetas(); }
-    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); }
+    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); if (persona === "Alejandro") cargarHistorialTurnos(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
@@ -1175,8 +1175,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         {view === "ventas" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {[{ id: "registrar", label: "🧾 Registrar" }, { id: "dashboard", label: "📊 Dashboard" }, { id: "historial", label: "📋 Historial" }].map((t) => (
-                <button key={t.id} onClick={() => setVentaView(t.id)} style={{ background: ventaView === t.id ? C.mustard : C.tag, color: ventaView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontWeight: ventaView === t.id ? 700 : 400, fontSize: 12 }}>{t.label}</button>
+              {[{ id: "registrar", label: "🧾 Registrar" }, { id: "dashboard", label: "📊 Dashboard" }, { id: "historial", label: "📋 Historial" }, ...(persona === "Alejandro" ? [{ id: "caja", label: "🔐 Caja" }] : [])].map((t) => (
+                <button key={t.id} onClick={() => { setVentaView(t.id); if (t.id === "caja") cargarHistorialTurnos(); }} style={{ background: ventaView === t.id ? C.mustard : C.tag, color: ventaView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontWeight: ventaView === t.id ? 700 : 400, fontSize: 12 }}>{t.label}</button>
               ))}
             </div>
 
@@ -1438,6 +1438,54 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 ))}
               </div>
             )}
+            {ventaView === "caja" && persona === "Alejandro" && (
+              <div>
+                <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>Historial de aperturas y cierres de caja — solo visible para ti.</div>
+                {historialTurnos.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 30 }}>Sin registros aún</div>}
+                {historialTurnos.map((t) => {
+                  const esApertura = t.tipo === "apertura";
+                  const fecha = new Date(t.created_at);
+                  const fechaStr = fecha.toLocaleDateString("es-CL");
+                  const horaStr = fecha.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+                  const diferenciaGrande = Math.abs(t.diferencia || 0) >= 5000;
+                  return (
+                    <div key={t.id} style={{ ...S.card, marginBottom: 8, borderLeft: `4px solid ${esApertura ? C.green : C.red}` }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <div style={{ fontWeight: 700 }}>{esApertura ? "🟢 Apertura" : "🔴 Cierre"} — {t.persona}</div>
+                        <div style={{ color: C.muted, fontSize: 11 }}>{fechaStr} · {horaStr}</div>
+                      </div>
+                      {esApertura ? (
+                        <div style={{ fontSize: 13 }}>
+                          <span style={{ color: C.muted }}>Saldo inicial: </span>
+                          <span style={{ fontWeight: 700, color: C.mustard }}>{fmt(t.saldo_inicial)}</span>
+                          {t.diferencia !== 0 && t.diferencia !== null && (
+                            <span style={{ marginLeft: 10, color: t.diferencia < 0 ? C.red : C.green, fontWeight: 700 }}>
+                              (dif. cierre anterior: {fmt(t.diferencia)})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 12, marginBottom: 6 }}>
+                            <div><span style={{ color: C.muted }}>Efectivo: </span><span style={{ color: C.green, fontWeight: 700 }}>{fmt(t.ventas_efectivo)}</span></div>
+                            <div><span style={{ color: C.muted }}>Tarjeta: </span><span style={{ color: C.blue, fontWeight: 700 }}>{fmt(t.ventas_tarjeta)}</span></div>
+                            <div><span style={{ color: C.muted }}>PY: </span><span style={{ color: C.orange, fontWeight: 700 }}>{fmt(t.ventas_py)}</span></div>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: diferenciaGrande ? (C.red + "22") : C.bg, borderRadius: 8, padding: "8px 10px" }}>
+                            <span style={{ fontSize: 12, color: C.muted }}>Saldo final contado: <span style={{ color: C.text, fontWeight: 700 }}>{fmt(t.saldo_final)}</span></span>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: t.diferencia === 0 ? C.muted : t.diferencia < 0 ? C.red : C.green }}>
+                              {t.diferencia === 0 ? "Sin diferencia" : `${t.diferencia > 0 ? "+" : ""}${fmt(t.diferencia)}`}
+                            </span>
+                          </div>
+                          {diferenciaGrande && <div style={{ color: C.red, fontSize: 11, marginTop: 6, fontWeight: 700 }}>⚠️ Diferencia significativa — revisar</div>}
+                          {t.cortesias > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>🎁 {t.cortesias} cortesía(s) en el turno</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -1696,6 +1744,18 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
 
         {view === "resumen" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {persona === "Alejandro" && (
+              <button onClick={() => { setView("ventas"); setVentaView("caja"); cargarHistorialTurnos(); }} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", border: `1px solid ${C.mustard}`, background: C.mustard + "15" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>🔐</span>
+                  <div>
+                    <div style={{ fontWeight: 700, color: C.mustard }}>Historial de Caja</div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>Aperturas y cierres — solo visible para ti</div>
+                  </div>
+                </div>
+                <span style={{ color: C.mustard, fontSize: 18 }}>→</span>
+              </button>
+            )}
             <div style={S.card}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ color: C.muted, fontSize: 12, whiteSpace: "nowrap" }}>Filtrar mes:</div>
