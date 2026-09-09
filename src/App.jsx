@@ -450,6 +450,22 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     showToast("✓ Caja cerrada");
   };
 
+  const INSUMOS_REPORTE_CONSUMO = ["Papas fritas", "Salchichas 17 cm", "Chicken Fingers", "Tocino", "Churrascos", "Palta", "Tomate"];
+
+  const calcularConsumoInsumosPorRango = (ventasEnRango, recetasData) => {
+    const consumo = {};
+    INSUMOS_REPORTE_CONSUMO.forEach((n) => { consumo[n] = 0; });
+    ventasEnRango.forEach((v) => {
+      const rec = recetasData.find((r) => r.nombre_producto === v.producto);
+      if (!rec || !rec.ingredientes) return;
+      rec.ingredientes.forEach((ing) => {
+        if (!INSUMOS_REPORTE_CONSUMO.includes(ing.insumo)) return;
+        consumo[ing.insumo] += (ing.gramos || 0) * v.cantidad;
+      });
+    });
+    return consumo;
+  };
+
   const calcularStock = (gastosData, ventasData, recetasData, insumosData) => {
     // 1. Inventario inicial por insumo
     const invInicial = {};
@@ -1467,6 +1483,28 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <div style={{ color: C.muted, fontSize: 11, marginBottom: 10 }}>
                     {rangoDesde || rangoHasta ? `Del ${rangoDesde || "inicio"} al ${rangoHasta || "hoy"}` : "Todo el historial"} — incluye ventas sueltas y las que vinieron dentro de combos.
                   </div>
+                  {(() => {
+                    const consumoInsumos = calcularConsumoInsumosPorRango(ventasEnRango, recetas);
+                    const unidadInsumo = { "Papas fritas": "kg", "Salchichas 17 cm": "und", "Chicken Fingers": "und", "Tocino": "kg", "Churrascos": "und", "Palta": "kg", "Tomate": "kg" };
+                    return (
+                      <div style={{ ...S.card, marginBottom: 12 }}>
+                        <STitle>Consumo de insumos clave</STitle>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          {INSUMOS_REPORTE_CONSUMO.map((nombre) => {
+                            const gramos = consumoInsumos[nombre] || 0;
+                            const esKg = unidadInsumo[nombre] === "kg";
+                            const valor = esKg ? (gramos / 1000).toFixed(2) + " kg" : Math.round(gramos) + " und";
+                            return (
+                              <div key={nombre} style={{ background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
+                                <div style={{ color: C.muted, fontSize: 11 }}>{nombre}</div>
+                                <div style={{ fontWeight: 700, fontSize: 15, color: C.mustard }}>{valor}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {filas.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 30 }}>Sin ventas en este rango</div>}
                   {filas.map((f) => (
                     <div key={f.nombre} style={S.card}>
