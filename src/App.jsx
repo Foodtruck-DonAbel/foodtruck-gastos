@@ -195,6 +195,8 @@ export default function App() {
   const [fechaVenta, setFechaVenta] = useState(today());
   const [savingVenta, setSavingVenta] = useState(false);
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
+  const [rangoDesde, setRangoDesde] = useState("");
+  const [rangoHasta, setRangoHasta] = useState("");
   const [descuentoModal, setDescuentoModal] = useState(null);
   const [descuentoTipo, setDescuentoTipo] = useState("");
   const [descuentoPct, setDescuentoPct] = useState("");
@@ -1175,7 +1177,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         {view === "ventas" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {[{ id: "registrar", label: "🧾 Registrar" }, { id: "dashboard", label: "📊 Dashboard" }, { id: "historial", label: "📋 Historial" }, ...(persona === "Alejandro" ? [{ id: "caja", label: "🔐 Caja" }] : [])].map((t) => (
+              {[{ id: "registrar", label: "🧾 Registrar" }, { id: "dashboard", label: "📊 Dashboard" }, { id: "historial", label: "📋 Historial" }, { id: "porproducto", label: "🔍 Por Producto" }, ...(persona === "Alejandro" ? [{ id: "caja", label: "🔐 Caja" }] : [])].map((t) => (
                 <button key={t.id} onClick={() => { setVentaView(t.id); if (t.id === "caja") cargarHistorialTurnos(); }} style={{ background: ventaView === t.id ? C.mustard : C.tag, color: ventaView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontWeight: ventaView === t.id ? 700 : 400, fontSize: 12 }}>{t.label}</button>
               ))}
             </div>
@@ -1438,6 +1440,54 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 ))}
               </div>
             )}
+            {ventaView === "porproducto" && (() => {
+              const desde = rangoDesde || "2000-01-01";
+              const hasta = rangoHasta || "2999-12-31";
+              const ventasEnRango = ventas.filter((v) => v.fecha >= desde && v.fecha <= hasta);
+              const agrupado = {};
+              ventasEnRango.forEach((v) => {
+                if (!agrupado[v.producto]) agrupado[v.producto] = { unidadesSueltas: 0, unidadesCombo: 0, pesosSueltos: 0, pesosCombo: 0 };
+                const g = agrupado[v.producto];
+                if (esComponente(v)) { g.unidadesCombo += v.cantidad; g.pesosCombo += v.total; }
+                else { g.unidadesSueltas += v.cantidad; g.pesosSueltos += v.total; }
+              });
+              const filas = Object.entries(agrupado).map(([nombre, d]) => ({
+                nombre,
+                totalUnidades: d.unidadesSueltas + d.unidadesCombo,
+                totalPesos: d.pesosSueltos + d.pesosCombo,
+                ...d,
+              })).sort((a, b) => b.totalUnidades - a.totalUnidades);
+              return (
+                <div>
+                  <div style={{ ...S.card, marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <Fld label="Desde"><input type="date" value={rangoDesde} onChange={(e) => setRangoDesde(e.target.value)} style={S.inp} /></Fld>
+                    <Fld label="Hasta"><input type="date" value={rangoHasta} onChange={(e) => setRangoHasta(e.target.value)} style={S.inp} /></Fld>
+                    {(rangoDesde || rangoHasta) && <button onClick={() => { setRangoDesde(""); setRangoHasta(""); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "9px 14px", cursor: "pointer", fontSize: 12 }}>Limpiar</button>}
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 11, marginBottom: 10 }}>
+                    {rangoDesde || rangoHasta ? `Del ${rangoDesde || "inicio"} al ${rangoHasta || "hoy"}` : "Todo el historial"} — incluye ventas sueltas y las que vinieron dentro de combos.
+                  </div>
+                  {filas.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 30 }}>Sin ventas en este rango</div>}
+                  {filas.map((f) => (
+                    <div key={f.nombre} style={S.card}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ fontWeight: 700 }}>{f.nombre}</div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontWeight: 800, fontSize: 18, color: C.green }}>{f.totalUnidades} und</div>
+                          <div style={{ color: C.muted, fontSize: 11 }}>{fmt(f.totalPesos)}</div>
+                        </div>
+                      </div>
+                      {f.unidadesCombo > 0 && (
+                        <div style={{ display: "flex", gap: 16, fontSize: 12 }}>
+                          <span style={{ color: C.muted }}>Sueltas: <span style={{ color: C.text, fontWeight: 700 }}>{f.unidadesSueltas}</span></span>
+                          <span style={{ color: C.muted }}>En combo: <span style={{ color: C.purple, fontWeight: 700 }}>{f.unidadesCombo}</span></span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             {ventaView === "caja" && persona === "Alejandro" && (
               <div>
                 <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>Historial de aperturas y cierres de caja — solo visible para ti.</div>
