@@ -12,13 +12,12 @@ const CATEGORIAS = [
 ];
 
 const DESCRIPCIONES = {
-  "Italiano": "Vienesa, palta, tomate y mayonesa casera",
-  "Highway to Hell": "Vienesa, cebolla caramelizada, pepinillos y tocino",
-  "Torn and Frayed": "Vienesa, cebolla caramelizada y papas hilo",
-  "Purple Haze": "Vienesa, chucrut morado, pepinillo y tocino",
-  "Dinámico": "Vienesa, palta, tomate, chucrut, salsa americana y mayonesa",
-  "Paradise City": "Vienesa, palta, tomate, cebolla caramelizada, tocino y ají",
-  "Sweet Child O' Mine": "Vienesa, cebolla caramelizada, queso fundido y tocino",
+  "Completo Italiano": "Vienesa, palta, tomate y mayonesa casera",
+  "Completo Highway to Hell": "Vienesa, cebolla caramelizada, pepinillos y tocino",
+  "Completo Purple Haze": "Vienesa, chucrut morado, pepinillos y tocino",
+  "Completo Dinámico": "Vienesa, palta, tomate, chucrut, salsa americana y mayonesa",
+  "Completo Paradise City": "Vienesa, palta, tomate, cebolla caramelizada, tocino y ají",
+  "Completo Sweet Child O' Mine": "Vienesa, cebolla caramelizada, queso fundido, a elección con tocino o papas hilo",
   "Pollo Highway to Hell": "Fingers de pollo, mayonesa, pepinillos y queso cheddar",
   "Pollo Welcome to the Jungle": "Fingers de pollo, salsa americana, cebolla caramelizada y queso cheddar",
   "Pollo Rock You Like a Hurricane": "Fingers de pollo, chucrut, mostaza y queso cheddar",
