@@ -11,7 +11,7 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanada frita de queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -28,7 +28,7 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Queso cheddar": "unidad", "Nuggets": "unidad", "Nuggets pollo": "unidad",
   "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají en Pasta": "kg",
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
-  "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro",
+  "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro", "Empanada frita de queso": "unidad",
 };
 
 // Mapa de equivalencias: nombre en gastos -> nombre en insumos_precio
@@ -68,6 +68,8 @@ const MAPA_INSUMOS = {
   "salsa bbq": "Salsa BBQ",
   "cebolla caramelizada": "Cebolla Caramelizada",
   "aceite para freir": "Aceite para Freir",
+  "empanada frita de queso": "Empanada frita de queso",
+  "empanadas fritas de queso": "Empanada frita de queso",
 };
 
 // Convierte todo a gramos/unidades para comparar
@@ -739,8 +741,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const guardarInsumo = async () => {
     if (!formInsumo.nombre || !formInsumo.precio_por_kg) { showToast("Completa nombre y precio"); return; }
     const data = { nombre: formInsumo.nombre.trim(), precio_por_kg: Number(formInsumo.precio_por_kg), unidad: formInsumo.unidad };
-    if (editInsumoId) { await supabase.from("insumos_precio").update(data).eq("id", editInsumoId); showToast("✓ Actualizado"); setEditInsumoId(null); }
-    else { await supabase.from("insumos_precio").insert([data]); showToast("✓ Agregado"); }
+    if (editInsumoId) {
+      const { error } = await supabase.from("insumos_precio").update(data).eq("id", editInsumoId);
+      if (error) { console.error("Error al actualizar insumo:", error); showToast("❌ Error: " + error.message); return; }
+      showToast("✓ Actualizado"); setEditInsumoId(null);
+    } else {
+      const { error } = await supabase.from("insumos_precio").insert([data]);
+      if (error) { console.error("Error al agregar insumo:", error); showToast("❌ Error: " + error.message); return; }
+      showToast("✓ Agregado");
+    }
     setFormInsumo({ nombre: "", precio_por_kg: "", unidad: "kg" }); cargarRecetas();
   };
 
@@ -769,6 +778,17 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
 
   const esComponente = (v) => { try { return JSON.parse(v.nota || "{}").es_componente === true; } catch { return false; } };
   const margenColor = (pct) => pct >= 60 ? C.green : pct >= 40 ? C.mustard : C.red;
+  const cmpOrden = (a, b) => {
+    const oa = a.orden, ob = b.orden;
+    if (oa != null && ob != null) return oa - ob;
+    if (oa != null) return -1;
+    if (ob != null) return 1;
+    return a.precio_venta - b.precio_venta;
+  };
+  const guardarOrden = async (recId, valor) => {
+    await supabase.from("recetas").update({ orden: valor === "" ? null : Number(valor) }).eq("id", recId);
+    cargarRecetas();
+  };
 
   const mesActual = today().slice(0, 7);
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
@@ -1273,7 +1293,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (+{porcentajePY}%)</div>}
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    {recetas.filter((r) => r.categoria === catActiva).sort((a, b) => a.precio_venta - b.precio_venta).map((rec) => (
+                    {recetas.filter((r) => r.categoria === catActiva).sort(cmpOrden).map((rec) => (
                       <button key={rec.id} onClick={() => catActiva === "combos" ? agregarCombo(rec) : agregarAlCarrito(rec)}
                         style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px", cursor: "pointer", textAlign: "left" }}
                         onMouseEnter={(e) => e.currentTarget.style.borderColor = catActiva === "combos" ? C.purple : C.mustard}
@@ -1636,7 +1656,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   ))}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {recetas.filter((r) => r.categoria === recetaCatActiva).sort((a, b) => a.precio_venta - b.precio_venta).map((rec) => {
+                  {recetas.filter((r) => r.categoria === recetaCatActiva).sort(cmpOrden).map((rec) => {
                     const esCombo = rec.categoria === "combos";
                     const costo = esCombo
                       ? (rec.productos_combo || []).reduce((s, p) => s + costoProducto(p), 0)
@@ -1650,8 +1670,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     const pyPct = venta > 0 ? Math.round(((pyGuardado - venta) / venta) * 100) : porcentajePY;
                     return (
                       <div key={rec.id} style={S.card}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                          <div style={{ fontWeight: 700 }}>{rec.nombre_producto}</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "center" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input type="number" placeholder="#"
+                              defaultValue={rec.orden ?? ""}
+                              key={rec.id + "_orden_" + rec.orden}
+                              onBlur={async (e) => { const val = e.target.value; if (val !== String(rec.orden ?? "")) await guardarOrden(rec.id, val); }}
+                              title="Orden en el menú (más chico sale primero)"
+                              style={{ width: 36, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, color: C.blue, fontWeight: 700, fontSize: 12, padding: "3px 4px", textAlign: "center", outline: "none" }} />
+                            <div style={{ fontWeight: 700 }}>{rec.nombre_producto}</div>
+                          </div>
                           <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: C.muted }}>Costo</div><div style={{ fontWeight: 700, color: C.red, fontSize: 15 }}>{fmt(Math.round(costo))}</div></div>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
@@ -1711,7 +1739,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   ))}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {recetas.filter((r) => r.categoria === recetaCatActiva).sort((a, b) => a.precio_venta - b.precio_venta).map((rec) => {
+                  {recetas.filter((r) => r.categoria === recetaCatActiva).sort(cmpOrden).map((rec) => {
                     const costo = calcularCosto(rec.ingredientes, insumosPrecio);
                     return (
                       <div key={rec.id} style={S.card}>
