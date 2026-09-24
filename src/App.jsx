@@ -89,7 +89,7 @@ const CATEGORIAS = [
   { id: "completos", label: "Completos", emoji: "🌭" },
   { id: "pollo", label: "Pollo", emoji: "🍗" },
   { id: "churrasco", label: "Churrasco", emoji: "🥩" },
-  { id: "papas", label: "Papas", emoji: "🍟" },
+  { id: "papas", label: "Picoteo", emoji: "🍟" },
   { id: "bebidas", label: "Bebidas", emoji: "🥤" },
   { id: "agregados", label: "Agregados", emoji: "➕" },
   { id: "combos", label: "Combos", emoji: "🎁" },
