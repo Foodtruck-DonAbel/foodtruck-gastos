@@ -11,7 +11,7 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -26,7 +26,7 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Salchichas": "unidad", "Chicken Fingers": "unidad", "Churrascos": "unidad",
   "Pan para completo": "unidad", "Pan Castaño Brioche para Sandwich": "unidad",
   "Queso cheddar": "unidad", "Nuggets": "unidad", "Nuggets pollo": "unidad",
-  "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg",
+  "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají": "kg",
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
   "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro",
 };
@@ -35,6 +35,8 @@ const UNIDAD_DEFAULT_INSUMO = {
 const MERMA_INSUMOS = { "Palta": 0.30 }; // 30% merma
 
 const MAPA_INSUMOS = {
+  "ají": "Ají",
+  "aji": "Ají",
   "palta": "Palta",
   "tomate": "Tomate",
   "pan para completo": "Pan para completo",
@@ -141,6 +143,7 @@ const INSUMOS_EJEMPLO = [
   { nombre: "Aceite para Freir", precio_por_kg: 2460, unidad: "litro" },
   { nombre: "Aceite para Mayonesa Casera", precio_por_kg: 1.61, unidad: "ml" },
   { nombre: "Aji Verde", precio_por_kg: 5000, unidad: "kg" },
+  { nombre: "Ají", precio_por_kg: 5000, unidad: "kg" },
   { nombre: "Bebida lata 350 ml", precio_por_kg: 932, unidad: "unidad" },
   { nombre: "Cebolla Caramelizada", precio_por_kg: 2000, unidad: "kg" },
   { nombre: "Chicken Fingers", precio_por_kg: 233, unidad: "unidad" },
@@ -362,6 +365,7 @@ export default function App() {
   };
 
   const guardarAjusteInventario = async () => {
+    if (!persona) { showToast("Selecciona quién hace el ajuste"); return; }
     if (ajusteClave !== ADMIN_CLAVE) { setAjusteError(true); return; }
     const rows = Object.entries(ajusteValues)
       .map(([insumo, v]) => [insumo, String(v).trim().replace(",", ".")])
@@ -524,8 +528,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       const alerta = esKgLitro
         ? disponible < 500 ? "rojo" : disponible < 1000 ? "naranja" : "verde"
         : disponible < 5 ? "rojo" : disponible < 10 ? "naranja" : "verde";
-      return { nombre, comprado, consumido, disponible, disponibleKg, unidad, alerta, ins };
-    }).filter((x) => x.comprado > 0 || x.consumido > 0).sort((a, b) => {
+      return { nombre, comprado, consumido, disponible, disponibleKg, unidad, alerta, ins, inicial };
+    }).filter((x) => x.comprado > 0 || x.consumido > 0 || x.inicial > 0).sort((a, b) => {
       const ord = { rojo: 0, naranja: 1, verde: 2 };
       return ord[a.alerta] - ord[b.alerta];
     });
@@ -856,6 +860,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
           <div style={{ background: C.card, border: `1px solid ${C.blue}`, borderRadius: 16, padding: 24, maxWidth: 420, width: "90%", margin: "20px auto" }}>
             <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 4 }}>📦 Ajuste de inventario</div>
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Edita cuánto tienes físicamente de cada insumo ahora. El valor que ingreses reemplaza el stock actual (no se suma). Puedes usar coma o punto para decimales, ej: 0,5</div>
+            {!persona && <div style={{ color: C.orange, fontSize: 12, marginBottom: 12, fontWeight: 700 }}>⚠️ Selecciona tu nombre arriba antes de guardar, para identificar quién hizo el ajuste.</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "45vh", overflowY: "auto" }}>
               {[...new Set(Object.values(MAPA_INSUMOS))].sort().map((nombre) => {
                 const ins = insumosPrecio.find((i) => i.nombre === nombre);
