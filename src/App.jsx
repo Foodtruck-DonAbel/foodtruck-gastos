@@ -11,7 +11,7 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Ají","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -26,7 +26,7 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Salchichas": "unidad", "Chicken Fingers": "unidad", "Churrascos": "unidad",
   "Pan para completo": "unidad", "Pan Castaño Brioche para Sandwich": "unidad",
   "Queso cheddar": "unidad", "Nuggets": "unidad", "Nuggets pollo": "unidad",
-  "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají": "kg",
+  "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají en Pasta": "kg",
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
   "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro",
 };
@@ -35,11 +35,12 @@ const UNIDAD_DEFAULT_INSUMO = {
 const MERMA_INSUMOS = { "Palta": 0.30 }; // 30% merma
 
 const MAPA_INSUMOS = {
-  "ají": "Ají",
-  "aji": "Ají",
-  "aji pasta": "Ají",
-  "ají pasta": "Ají",
-  "aji en pasta": "Ají",
+  "ají": "Ají en Pasta",
+  "aji": "Ají en Pasta",
+  "aji pasta": "Ají en Pasta",
+  "ají pasta": "Ají en Pasta",
+  "aji en pasta": "Ají en Pasta",
+  "ají en pasta": "Ají en Pasta",
   "palta": "Palta",
   "tomate": "Tomate",
   "pan para completo": "Pan para completo",
@@ -116,7 +117,7 @@ const RECETAS_EJEMPLO = [
   { nombre_producto: "Torn and Frayed", categoria: "completos", precio_venta: 4600, precio_py: 6210, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Cebolla caramelizada", gramos: 40 },{ insumo: "Papas hilo", gramos: 20 }] },
   { nombre_producto: "Purple Haze", categoria: "completos", precio_venta: 4600, precio_py: 6210, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Chucrut morado", gramos: 30 },{ insumo: "Pepinillos", gramos: 20 },{ insumo: "Tocino", gramos: 30 }] },
   { nombre_producto: "Dinámico", categoria: "completos", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Chucrut", gramos: 20 },{ insumo: "Salsa americana", gramos: 15 },{ insumo: "Mayonesa casera", gramos: 20 }] },
-  { nombre_producto: "Paradise City", categoria: "completos", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Ají", gramos: 10 }] },
+  { nombre_producto: "Paradise City", categoria: "completos", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Tocino", gramos: 30 },{ insumo: "Ají en Pasta", gramos: 10 }] },
   { nombre_producto: "Sweet Child O' Mine", categoria: "completos", precio_venta: 4900, precio_py: 6615, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Cebolla caramelizada", gramos: 40 },{ insumo: "Queso fundido", gramos: 30 }] },
   { nombre_producto: "Pollo Highway to Hell", categoria: "pollo", precio_venta: 4500, precio_py: 6075, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Mayonesa casera", gramos: 20 },{ insumo: "Pepinillos", gramos: 15 },{ insumo: "Queso cheddar", gramos: 25 }] },
   { nombre_producto: "Pollo Welcome to the Jungle", categoria: "pollo", precio_venta: 4500, precio_py: 6075, ingredientes: [{ insumo: "Pan brioche", gramos: 90 },{ insumo: "Fingers de pollo", gramos: 100 },{ insumo: "Salsa americana", gramos: 20 },{ insumo: "Cebolla caramelizada", gramos: 30 },{ insumo: "Queso cheddar", gramos: 25 }] },
@@ -146,7 +147,7 @@ const INSUMOS_EJEMPLO = [
   { nombre: "Aceite para Freir", precio_por_kg: 2460, unidad: "litro" },
   { nombre: "Aceite para Mayonesa Casera", precio_por_kg: 1.61, unidad: "ml" },
   { nombre: "Aji Verde", precio_por_kg: 5000, unidad: "kg" },
-  { nombre: "Ají", precio_por_kg: 5000, unidad: "kg" },
+  { nombre: "Ají en Pasta", precio_por_kg: 5000, unidad: "kg" },
   { nombre: "Bebida lata 350 ml", precio_por_kg: 932, unidad: "unidad" },
   { nombre: "Cebolla Caramelizada", precio_por_kg: 2000, unidad: "kg" },
   { nombre: "Chicken Fingers", precio_por_kg: 233, unidad: "unidad" },
@@ -376,13 +377,10 @@ export default function App() {
       .map(([insumo, v]) => {
         const ins = insumosPrecio.find((i) => i.nombre === insumo);
         return { insumo, cantidad: Number(v), unidad: ins?.unidad || "unidad", fecha: today(), persona: persona || "Sin nombre" };
-      })
-      // Evita crear un registro nuevo si el valor no cambió respecto al actual
-      .filter((row) => {
-        const actual = inventarioInicial.find((i) => i.insumo === row.insumo);
-        return !actual || Number(actual.cantidad) !== row.cantidad;
       });
-    if (rows.length === 0) { showToast("No hay cambios que guardar"); return; }
+      // Nota: siempre se guarda con la fecha de hoy, aunque el valor sea igual al ajuste
+      // anterior — es lo que fija el nuevo punto de partida para compras/consumo.
+    if (rows.length === 0) { showToast("Ingresa al menos un valor"); return; }
     await supabase.from("inventario_inicial").insert(rows);
     setAjusteValues({});
     setAjusteClave("");
