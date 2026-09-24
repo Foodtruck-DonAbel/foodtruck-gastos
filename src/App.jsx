@@ -235,10 +235,12 @@ export default function App() {
   // Resumen
   const [filtroResumen, setFiltroResumen] = useState("");
   const [inventarioInicial, setInventarioInicial] = useState([]);
+  const [historialInventario, setHistorialInventario] = useState([]);
   const [modalAjuste, setModalAjuste] = useState(false);
   const [ajusteClave, setAjusteClave] = useState("");
   const [ajusteError, setAjusteError] = useState(false);
   const [ajusteValues, setAjusteValues] = useState({});
+  const [verHistorialAjuste, setVerHistorialAjuste] = useState(false);
   const [stockData, setStockData] = useState([]);
   const [modalActualizarPrecio, setModalActualizarPrecio] = useState(null);
 
@@ -350,22 +352,30 @@ export default function App() {
   const cargarInventarioInicial = async () => {
     const { data } = await supabase.from("inventario_inicial").select("*").order("created_at", { ascending: false });
     if (data) {
-      // Solo el ultimo ajuste por insumo
+      // Solo el ultimo ajuste por insumo (usado como stock base)
       const ultimoPorInsumo = {};
       data.forEach((d) => { if (!ultimoPorInsumo[d.insumo]) ultimoPorInsumo[d.insumo] = d; });
       setInventarioInicial(Object.values(ultimoPorInsumo));
+      // Historial completo (todas las modificaciones), para mostrar registro
+      setHistorialInventario(data);
     }
   };
 
   const guardarAjusteInventario = async () => {
     if (ajusteClave !== ADMIN_CLAVE) { setAjusteError(true); return; }
     const rows = Object.entries(ajusteValues)
+      .map(([insumo, v]) => [insumo, String(v).trim().replace(",", ".")])
       .filter(([_, v]) => v !== "" && !isNaN(Number(v)))
-      .map(([insumo, cantidad]) => {
+      .map(([insumo, v]) => {
         const ins = insumosPrecio.find((i) => i.nombre === insumo);
-        return { insumo, cantidad: Number(cantidad), unidad: ins?.unidad || "unidad", fecha: today(), persona: persona || "Sin nombre" };
+        return { insumo, cantidad: Number(v), unidad: ins?.unidad || "unidad", fecha: today(), persona: persona || "Sin nombre" };
+      })
+      // Evita crear un registro nuevo si el valor no cambió respecto al actual
+      .filter((row) => {
+        const actual = inventarioInicial.find((i) => i.insumo === row.insumo);
+        return !actual || Number(actual.cantidad) !== row.cantidad;
       });
-    if (rows.length === 0) { showToast("Ingresa al menos un valor"); return; }
+    if (rows.length === 0) { showToast("No hay cambios que guardar"); return; }
     await supabase.from("inventario_inicial").insert(rows);
     setAjusteValues({});
     setAjusteClave("");
@@ -467,35 +477,33 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   const calcularStock = (gastosData, ventasData, recetasData, insumosData) => {
-    // 1. Inventario inicial por insumo
-    const invInicial = {};
+    // 1. Inventario inicial por insumo, con la fecha de SU PROPIO último ajuste
+    const invInicialMap = {};
     inventarioInicial.forEach((inv) => {
-      invInicial[inv.insumo] = aGramos(inv.cantidad, inv.unidad);
+      invInicialMap[inv.insumo] = { valor: aGramos(inv.cantidad, inv.unidad), fecha: inv.fecha };
     });
 
-    // 2. Sumar compras DESDE la fecha del último ajuste
-    const fechaCorte = inventarioInicial.length > 0
-      ? inventarioInicial.reduce((min, inv) => inv.fecha < min ? inv.fecha : min, inventarioInicial[0].fecha)
-      : null;
-
+    // 2. Sumar compras DESDE la fecha del último ajuste DE ESE INSUMO (no de otros)
     const compras = {};
     gastosData.forEach((g) => {
       const insumoRef = resolverInsumo(g.insumo);
       if (!insumoRef) return;
-      if (fechaCorte && g.fecha < fechaCorte) return;
+      const corte = invInicialMap[insumoRef]?.fecha;
+      if (corte && g.fecha < corte) return;
       if (!compras[insumoRef]) compras[insumoRef] = 0;
       compras[insumoRef] += aGramos(g.cantidad, g.unidad);
     });
 
-    // 3. Sumar consumo DESDE la fecha del último ajuste
+    // 3. Sumar consumo DESDE la fecha del último ajuste DE ESE INSUMO
     const consumo = {};
     ventasData.forEach((v) => {
-      if (fechaCorte && v.fecha < fechaCorte) return;
       const rec = recetasData.find((r) => r.nombre_producto === v.producto);
       if (!rec || !rec.ingredientes) return;
       rec.ingredientes.forEach((ing) => {
         const ins = insumosData.find((i) => i.nombre === ing.insumo);
         if (!ins) return;
+        const corte = invInicialMap[ing.insumo]?.fecha;
+        if (corte && v.fecha < corte) return;
         if (!consumo[ing.insumo]) consumo[ing.insumo] = 0;
         consumo[ing.insumo] += ing.gramos * v.cantidad;
       });
@@ -505,7 +513,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const insumosUnicos = [...new Set(Object.values(MAPA_INSUMOS))];
     return insumosUnicos.map((nombre) => {
       const ins = insumosData.find((i) => i.nombre === nombre);
-      const inicial = invInicial[nombre] || 0;
+      const inicial = invInicialMap[nombre]?.valor || 0;
       const comprado = compras[nombre] || 0;
       const consumido = consumo[nombre] || 0;
       const disponible = inicial + comprado - consumido;
@@ -842,28 +850,51 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         </div>
       )}
 
-      {/* Modal Apertura de Caja */}
+      {/* Modal Ajuste de inventario */}
       {modalAjuste && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.9)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, overflowY: "auto" }}>
           <div style={{ background: C.card, border: `1px solid ${C.blue}`, borderRadius: 16, padding: 24, maxWidth: 420, width: "90%", margin: "20px auto" }}>
             <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 4 }}>📦 Ajuste de inventario</div>
-            <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Ingresa cuánto tienes físicamente de cada insumo ahora. Esto será el punto de partida del stock.</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "50vh", overflowY: "auto" }}>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Edita cuánto tienes físicamente de cada insumo ahora. El valor que ingreses reemplaza el stock actual (no se suma). Puedes usar coma o punto para decimales, ej: 0,5</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "45vh", overflowY: "auto" }}>
               {[...new Set(Object.values(MAPA_INSUMOS))].sort().map((nombre) => {
                 const ins = insumosPrecio.find((i) => i.nombre === nombre);
                 const invActual = inventarioInicial.find((i) => i.insumo === nombre);
+                const valorInput = ajusteValues[nombre] !== undefined ? ajusteValues[nombre] : (invActual ? String(invActual.cantidad) : "");
                 return (
                   <div key={nombre} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ flex: 1, fontSize: 13 }}>{nombre}</div>
-                    <input type="number" placeholder={invActual ? `actual: ${invActual.cantidad}` : "0"}
-                      value={ajusteValues[nombre] || ""}
-                      onChange={(e) => setAjusteValues({ ...ajusteValues, [nombre]: e.target.value })}
+                    <input type="text" inputMode="decimal" placeholder="0"
+                      value={valorInput}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^0-9.,]/g, "");
+                        setAjusteValues({ ...ajusteValues, [nombre]: raw });
+                      }}
                       style={{ ...S.inp, width: 80, textAlign: "center" }} />
                     <div style={{ color: C.muted, fontSize: 11, minWidth: 30 }}>{ins?.unidad || "und"}</div>
                   </div>
                 );
               })}
             </div>
+            {persona === "Alejandro" && (
+              <div style={{ marginTop: 12 }}>
+                <button onClick={() => setVerHistorialAjuste(!verHistorialAjuste)} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 12, padding: 0 }}>
+                  {verHistorialAjuste ? "▲ Ocultar historial de ajustes" : "▼ Ver historial de ajustes (solo tú)"}
+                </button>
+                {verHistorialAjuste && (
+                  <div style={{ marginTop: 8, maxHeight: 160, overflowY: "auto", background: C.bg, borderRadius: 8, padding: 8 }}>
+                    {historialInventario.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Sin ajustes registrados aún</div>}
+                    {historialInventario.map((h) => (
+                      <div key={h.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+                        <span style={{ color: C.text }}>{h.insumo}</span>
+                        <span style={{ color: C.mustard, fontWeight: 700 }}>{h.cantidad} {h.unidad}</span>
+                        <span style={{ color: C.muted }}>{h.fecha} · {h.persona}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ marginTop: 16 }}>
               <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>🔐 Clave para confirmar el ajuste</div>
               <input type="password" placeholder="Clave" value={ajusteClave}
@@ -873,7 +904,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               {ajusteError && <div style={{ color: C.red, fontSize: 12, marginTop: 4 }}>Clave incorrecta</div>}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button onClick={() => { setModalAjuste(false); setAjusteClave(""); setAjusteError(false); }} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 9, padding: "12px 0", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={() => { setModalAjuste(false); setAjusteClave(""); setAjusteError(false); setAjusteValues({}); setVerHistorialAjuste(false); }} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 9, padding: "12px 0", cursor: "pointer" }}>Cancelar</button>
               <button onClick={guardarAjusteInventario} style={{ flex: 2, background: C.blue, border: "none", color: "#fff", borderRadius: 9, padding: "12px 0", cursor: "pointer", fontWeight: 800 }}>Guardar ajuste</button>
             </div>
           </div>
