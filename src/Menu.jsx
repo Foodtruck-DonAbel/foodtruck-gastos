@@ -61,9 +61,20 @@ export default function Menu() {
     cargar();
   }, []);
 
+  const grupoPicoteo = (nombre) => (nombre || "").toLowerCase().includes("empanada") ? 1 : 0;
+
   const productosCat = recetas
     .filter((r) => r.categoria === catActiva)
-    .sort((a, b) => a.precio_venta - b.precio_venta);
+    .sort((a, b) => {
+      if (a.orden != null && b.orden != null) return a.orden - b.orden;
+      if (a.orden != null) return -1;
+      if (b.orden != null) return 1;
+      if (catActiva === "papas") {
+        const ga = grupoPicoteo(a.nombre_producto), gb = grupoPicoteo(b.nombre_producto);
+        if (ga !== gb) return ga - gb;
+      }
+      return a.precio_venta - b.precio_venta;
+    });
 
   return (
     <div style={{ minHeight: "100vh", background: "#18161A", color: "#F2EEF8", fontFamily: "'Inter', system-ui, sans-serif" }}>
