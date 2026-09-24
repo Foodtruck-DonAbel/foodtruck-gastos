@@ -477,7 +477,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     ventasEnRango.forEach((v) => {
       const rec = recetasData.find((r) => r.nombre_producto === v.producto);
       if (!rec || !rec.ingredientes) return;
-      rec.ingredientes.forEach((ing) => {
+      const ingredientesUso = ingredientesEfectivos(rec, parseNota(v));
+      ingredientesUso.forEach((ing) => {
         if (!INSUMOS_REPORTE_CONSUMO.includes(ing.insumo)) return;
         consumo[ing.insumo] += (ing.gramos || 0) * v.cantidad;
       });
@@ -508,7 +509,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     ventasData.forEach((v) => {
       const rec = recetasData.find((r) => r.nombre_producto === v.producto);
       if (!rec || !rec.ingredientes) return;
-      rec.ingredientes.forEach((ing) => {
+      const ingredientesUso = ingredientesEfectivos(rec, parseNota(v));
+      ingredientesUso.forEach((ing) => {
         const ins = insumosData.find((i) => i.nombre === ing.insumo);
         if (!ins) return;
         const corte = invInicialMap[ing.insumo]?.fecha;
@@ -641,11 +643,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const nombre = optsExtra?.nombre || rec.nombre_producto;
     const precio = optsExtra?.precio !== undefined ? optsExtra.precio : precioProducto(rec);
     const comboNombre = optsExtra?.combo || null;
-    const idx = carrito.findIndex((c) => c.nombre === nombre && c.metodo_pago === metodoPago && !c.descuento && c.combo === comboNombre);
+    const variante = optsExtra?.variante || null;
+    const idx = carrito.findIndex((c) => c.nombre === nombre && c.metodo_pago === metodoPago && !c.descuento && c.combo === comboNombre && c.variante === variante);
     if (idx >= 0) {
       setCarrito(carrito.map((c, i) => i === idx ? { ...c, cantidad: c.cantidad + 1, total: (c.cantidad + 1) * c.precio_unitario } : c));
     } else {
-      setCarrito([...carrito, { nombre, cantidad: 1, precio_unitario: precio, precio_original: precio, metodo_pago: metodoPago, total: precio, descuento: null, receta_nombre: rec.nombre_producto, combo: comboNombre }]);
+      setCarrito([...carrito, { nombre, cantidad: 1, precio_unitario: precio, precio_original: precio, metodo_pago: metodoPago, total: precio, descuento: null, receta_nombre: rec.nombre_producto, combo: comboNombre, variante }]);
     }
   };
 
@@ -731,7 +734,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
           rows.push({ fecha: fechaVenta, hora, producto: nombreProd, cantidad: c.cantidad, precio_unitario: precioProp, total: precioProp * c.cantidad, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ combo: c.combo, es_componente: true }) });
         });
       } else {
-        rows.push({ fecha: fechaVenta, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}) }) || null });
+        rows.push({ fecha: fechaVenta, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}), ...(c.variante ? { variante: c.variante } : {}) }) || null });
       }
     });
     const { error } = await supabase.from("ventas").insert(rows);
@@ -791,6 +794,28 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     await supabase.from("recetas").update({ orden: valor === "" ? null : Number(valor) }).eq("id", recId);
     cargarRecetas();
   };
+
+  // Variante AS: sustituye un insumo por otro (ej: Salchichas 17 cm -> Churrascos) sin duplicar el producto
+  const toggleVarianteAS = async (rec, sustituir, por) => {
+    if (rec.variante_as) {
+      await supabase.from("recetas").update({ variante_as: null }).eq("id", rec.id);
+    } else {
+      const base = (rec.ingredientes || []).find((i) => i.insumo === sustituir);
+      await supabase.from("recetas").update({ variante_as: { sustituir, por, cantidad: base?.gramos ?? 1, precio_extra: 0 } }).eq("id", rec.id);
+    }
+    cargarRecetas();
+  };
+
+  // Devuelve la lista de ingredientes real a descontar, según si la venta fue variante AS
+  const ingredientesEfectivos = (rec, notaObj) => {
+    if (!rec?.ingredientes) return [];
+    if (notaObj?.variante === "as" && rec.variante_as) {
+      const { sustituir, por, cantidad } = rec.variante_as;
+      return rec.ingredientes.map((ing) => ing.insumo === sustituir ? { insumo: por, gramos: cantidad ?? ing.gramos } : ing);
+    }
+    return rec.ingredientes;
+  };
+  const parseNota = (v) => { try { return JSON.parse(v.nota || "{}"); } catch { return {}; } };
 
   const mesActual = today().slice(0, 7);
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
@@ -1296,6 +1321,21 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {recetas.filter((r) => r.categoria === catActiva).sort(cmpOrden).map((rec) => (
+                      rec.variante_as ? (
+                        <div key={rec.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px" }}>
+                          <div style={{ fontWeight: 600, fontSize: 12, color: C.text, marginBottom: 6, lineHeight: 1.3 }}>{rec.nombre_producto}</div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => agregarAlCarrito(rec)} style={{ flex: 1, background: C.tag, border: `1px solid ${C.border}`, borderRadius: 7, padding: "7px 4px", cursor: "pointer", textAlign: "center" }}>
+                              <div style={{ fontSize: 9, color: C.muted }}>Normal</div>
+                              <div style={{ fontWeight: 800, fontSize: 13, color: metodoPago === "Pedidos Ya" ? C.orange : C.mustard }}>{fmt(precioProducto(rec))}</div>
+                            </button>
+                            <button onClick={() => agregarAlCarrito(rec, { variante: "as", precio: precioProducto(rec) + (rec.variante_as.precio_extra || 0), nombre: rec.nombre_producto })} style={{ flex: 1, background: C.tag, border: `1px solid ${C.blue}`, borderRadius: 7, padding: "7px 4px", cursor: "pointer", textAlign: "center" }}>
+                              <div style={{ fontSize: 9, color: C.blue }}>AS (churrasco)</div>
+                              <div style={{ fontWeight: 800, fontSize: 13, color: C.blue }}>{fmt(precioProducto(rec) + (rec.variante_as.precio_extra || 0))}</div>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
                       <button key={rec.id} onClick={() => catActiva === "combos" ? agregarCombo(rec) : agregarAlCarrito(rec)}
                         style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px", cursor: "pointer", textAlign: "left" }}
                         onMouseEnter={(e) => e.currentTarget.style.borderColor = catActiva === "combos" ? C.purple : C.mustard}
@@ -1306,6 +1346,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         )}
                         <div style={{ fontWeight: 800, fontSize: 15, color: metodoPago === "Pedidos Ya" ? C.orange : catActiva === "combos" ? C.purple : C.mustard }}>{fmt(precioProducto(rec))}</div>
                       </button>
+                      )
                     ))}
                   </div>
                 </div>
@@ -1319,6 +1360,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                           <div style={{ fontSize: 11, color: C.muted, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 2 }}>
                             <Tag text={c.metodo_pago} color={(metodoPagoColors[c.metodo_pago] || C.muted) + "33"} textColor={metodoPagoColors[c.metodo_pago] || C.muted} />
                             {c.combo && <Tag text={`🎁 ${c.combo}`} color={C.purple + "33"} textColor={C.purple} />}
+                            {c.variante === "as" && <Tag text="AS (churrasco)" color={C.blue + "33"} textColor={C.blue} />}
                             {c.descuento && <Tag text={c.descuento.tipo === "cortesia" ? `🎁 ${c.descuento.autorizado_por}` : `${c.descuento.porcentaje}% off`} color={C.green + "33"} textColor={C.green} />}
                             {!c.combo && (c.descuento
                               ? <button onClick={() => quitarDescuento(i)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 10, padding: 0 }}>quitar desc.</button>
@@ -1507,7 +1549,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <span>{v.fecha}{v.hora ? ` · ${v.hora}` : ""}</span>
                         <span>{v.cantidad} und</span>
                         <Tag text={v.metodo_pago} color={(metodoPagoColors[v.metodo_pago] || C.muted) + "33"} textColor={metodoPagoColors[v.metodo_pago] || C.muted} />
-                        {v.nota && (() => { try { const d = JSON.parse(v.nota); if (d.tipo === "cortesia") return <Tag text={`🎁 ${d.autorizado_por}`} color={C.green + "33"} textColor={C.green} />; if (d.tipo === "personal") return <Tag text={`${d.porcentaje}% off`} color={C.blue + "33"} textColor={C.blue} />; if (d.combo) return <Tag text={`🎁 ${d.combo}`} color={C.purple + "33"} textColor={C.purple} />; return null; } catch { return null; } })()}
+                        {v.nota && (() => { try { const d = JSON.parse(v.nota); if (d.tipo === "cortesia") return <Tag text={`🎁 ${d.autorizado_por}`} color={C.green + "33"} textColor={C.green} />; if (d.tipo === "personal") return <Tag text={`${d.porcentaje}% off`} color={C.blue + "33"} textColor={C.blue} />; if (d.combo) return <Tag text={`🎁 ${d.combo}`} color={C.purple + "33"} textColor={C.purple} />; if (d.variante === "as") return <Tag text="AS (churrasco)" color={C.blue + "33"} textColor={C.blue} />; return null; } catch { return null; } })()}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -1681,6 +1723,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                               title="Orden en el menú (más chico sale primero)"
                               style={{ width: 36, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 5, color: C.blue, fontWeight: 700, fontSize: 12, padding: "3px 4px", textAlign: "center", outline: "none" }} />
                             <div style={{ fontWeight: 700 }}>{rec.nombre_producto}</div>
+                            {(rec.ingredientes || []).some((i) => i.insumo === "Salchichas 17 cm") && (
+                              <button onClick={() => toggleVarianteAS(rec, "Salchichas 17 cm", "Churrascos")}
+                                title="Permite vender este completo con churrasco en vez de salchicha (variante AS)"
+                                style={{ background: rec.variante_as ? C.blue : C.tag, color: rec.variante_as ? "#fff" : C.muted, border: "none", borderRadius: 20, padding: "3px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                                {rec.variante_as ? "✓ AS activo" : "+ Variante AS"}
+                              </button>
+                            )}
                           </div>
                           <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: C.muted }}>Costo</div><div style={{ fontWeight: 700, color: C.red, fontSize: 15 }}>{fmt(Math.round(costo))}</div></div>
                         </div>
