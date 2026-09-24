@@ -11,7 +11,7 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanada frita de queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -28,7 +28,7 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Queso cheddar": "unidad", "Nuggets": "unidad", "Nuggets pollo": "unidad",
   "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají en Pasta": "kg",
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
-  "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro", "Empanada frita de queso": "unidad",
+  "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro", "Empanadas de Queso": "unidad",
 };
 
 // Mapa de equivalencias: nombre en gastos -> nombre en insumos_precio
@@ -68,8 +68,10 @@ const MAPA_INSUMOS = {
   "salsa bbq": "Salsa BBQ",
   "cebolla caramelizada": "Cebolla Caramelizada",
   "aceite para freir": "Aceite para Freir",
-  "empanada frita de queso": "Empanada frita de queso",
-  "empanadas fritas de queso": "Empanada frita de queso",
+  "empanadas de queso": "Empanadas de Queso",
+  "empanada de queso": "Empanadas de Queso",
+  "empanada frita de queso": "Empanadas de Queso",
+  "empanadas fritas de queso": "Empanadas de Queso",
 };
 
 // Convierte todo a gramos/unidades para comparar
