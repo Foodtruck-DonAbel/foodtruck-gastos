@@ -37,6 +37,9 @@ const MERMA_INSUMOS = { "Palta": 0.30 }; // 30% merma
 const MAPA_INSUMOS = {
   "ají": "Ají",
   "aji": "Ají",
+  "aji pasta": "Ají",
+  "ají pasta": "Ají",
+  "aji en pasta": "Ají",
   "palta": "Palta",
   "tomate": "Tomate",
   "pan para completo": "Pan para completo",
@@ -1185,11 +1188,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div style={{ color: C.muted, fontSize: 12 }}>
-                      {persona !== "Gustavo" && inventarioInicial.length > 0
+                      {inventarioInicial.length > 0
                         ? `Desde ajuste del ${inventarioInicial[0]?.fecha}`
-                        : persona !== "Gustavo" ? "Basado en todas las compras vs ventas" : ""}
+                        : "Basado en todas las compras vs ventas"}
                     </div>
-                    {persona !== "Gustavo" && (
+                    {(
                       <button onClick={() => { setAjusteValues({}); setModalAjuste(true); }} style={{ background: C.blue, border: "none", color: "#fff", borderRadius: 7, padding: "6px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>📦 Ajuste inventario</button>
                     )}
                   </div>
