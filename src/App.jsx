@@ -774,7 +774,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
   const ventasMeses = [...new Set(ventas.map((v) => v.fecha.slice(0, 7)))].sort().reverse();
   const insumosUsadosHistoricamente = [...new Set(gastos.map((g) => g.insumo))].filter((i) => i && !INSUMOS_BASE.includes(i));
-  const insumos = [...INSUMOS_BASE.filter((i) => i !== "Otro"), ...insumosUsadosHistoricamente.sort((a, b) => a.localeCompare(b)), "Otro"];
+  const insumos = [...INSUMOS_BASE.filter((i) => i !== "Otro"), ...insumosUsadosHistoricamente]
+    .filter((v, i, arr) => arr.indexOf(v) === i)
+    .sort((a, b) => a.localeCompare(b, "es"));
+  insumos.push("Otro");
   const gastosResumen = filtroResumen ? gastos.filter((g) => g.fecha.startsWith(filtroResumen)) : gastos;
   const totalGeneral = gastos.reduce((s, g) => s + g.monto, 0);
   const totalMes = gastos.filter((g) => g.fecha.startsWith(mesActual)).reduce((s, g) => s + g.monto, 0);
