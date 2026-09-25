@@ -796,13 +796,24 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   // Variante AS: sustituye un insumo por otro (ej: Salchichas 17 cm -> Churrascos) sin duplicar el producto
-  const toggleVarianteAS = async (rec, sustituir, por) => {
+  const toggleVarianteAS = async (rec, sustituir, por, cantidadInicial = 3) => {
     if (rec.variante_as) {
       await supabase.from("recetas").update({ variante_as: null }).eq("id", rec.id);
     } else {
-      const base = (rec.ingredientes || []).find((i) => i.insumo === sustituir);
-      await supabase.from("recetas").update({ variante_as: { sustituir, por, cantidad: base?.gramos ?? 1, precio_extra: 0 } }).eq("id", rec.id);
+      await supabase.from("recetas").update({ variante_as: { sustituir, por, cantidad: cantidadInicial, precio_venta: rec.precio_venta } }).eq("id", rec.id);
     }
+    cargarRecetas();
+  };
+  const actualizarCantidadVarianteAS = async (rec, valor) => {
+    const cantidad = Number(valor);
+    if (isNaN(cantidad) || cantidad <= 0) return;
+    await supabase.from("recetas").update({ variante_as: { ...rec.variante_as, cantidad } }).eq("id", rec.id);
+    cargarRecetas();
+  };
+  const actualizarPrecioVarianteAS = async (rec, valor) => {
+    const precio = Number(valor);
+    if (isNaN(precio) || precio <= 0) return;
+    await supabase.from("recetas").update({ variante_as: { ...rec.variante_as, precio_venta: precio } }).eq("id", rec.id);
     cargarRecetas();
   };
 
@@ -1329,10 +1340,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                               <div style={{ fontSize: 9, color: C.muted }}>Normal</div>
                               <div style={{ fontWeight: 800, fontSize: 13, color: metodoPago === "Pedidos Ya" ? C.orange : C.mustard }}>{fmt(precioProducto(rec))}</div>
                             </button>
-                            <button onClick={() => agregarAlCarrito(rec, { variante: "as", precio: precioProducto(rec) + (rec.variante_as.precio_extra || 0), nombre: rec.nombre_producto })} style={{ flex: 1, background: C.tag, border: `1px solid ${C.blue}`, borderRadius: 7, padding: "7px 4px", cursor: "pointer", textAlign: "center" }}>
-                              <div style={{ fontSize: 9, color: C.blue }}>AS (churrasco)</div>
-                              <div style={{ fontWeight: 800, fontSize: 13, color: C.blue }}>{fmt(precioProducto(rec) + (rec.variante_as.precio_extra || 0))}</div>
-                            </button>
+                            {(() => {
+                              const precioAS = metodoPago === "Pedidos Ya" ? Math.round(rec.variante_as.precio_venta * (1 + porcentajePY / 100)) : rec.variante_as.precio_venta;
+                              return (
+                                <button onClick={() => agregarAlCarrito(rec, { variante: "as", precio: precioAS, nombre: rec.nombre_producto })} style={{ flex: 1, background: C.tag, border: `1px solid ${C.blue}`, borderRadius: 7, padding: "7px 4px", cursor: "pointer", textAlign: "center" }}>
+                                  <div style={{ fontSize: 9, color: C.blue }}>AS (churrasco)</div>
+                                  <div style={{ fontWeight: 800, fontSize: 13, color: C.blue }}>{fmt(precioAS)}</div>
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
                       ) : (
@@ -1712,6 +1728,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     const pyDefault = Math.round(venta * (1 + porcentajePY / 100));
                     const pyGuardado = rec.precio_py || pyDefault;
                     const pyPct = venta > 0 ? Math.round(((pyGuardado - venta) / venta) * 100) : porcentajePY;
+                    const costoAS = rec.variante_as ? calcularCosto(ingredientesEfectivos(rec, { variante: "as" }), insumosPrecio) : null;
+                    const ventaAS = rec.variante_as?.precio_venta ?? venta;
+                    const margenAS = costoAS !== null ? ventaAS - costoAS : null;
+                    const margenPctAS = costoAS !== null && ventaAS > 0 ? (margenAS / ventaAS) * 100 : null;
                     return (
                       <div key={rec.id} style={S.card}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "center" }}>
@@ -1729,6 +1749,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                                 style={{ background: rec.variante_as ? C.blue : C.tag, color: rec.variante_as ? "#fff" : C.muted, border: "none", borderRadius: 20, padding: "3px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
                                 {rec.variante_as ? "✓ AS activo" : "+ Variante AS"}
                               </button>
+                            )}
+                            {rec.variante_as && (
+                              <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <input type="number" defaultValue={rec.variante_as.cantidad}
+                                  key={rec.id + "_cantAS_" + rec.variante_as.cantidad}
+                                  onBlur={(e) => { if (Number(e.target.value) !== rec.variante_as.cantidad) actualizarCantidadVarianteAS(rec, e.target.value); }}
+                                  title="Cantidad de churrasco por completo AS"
+                                  style={{ width: 30, background: C.bg, border: `1px solid ${C.blue}`, borderRadius: 5, color: C.blue, fontWeight: 700, fontSize: 11, padding: "2px 3px", textAlign: "center", outline: "none" }} />
+                                <span style={{ fontSize: 9, color: C.muted }}>u. churrasco</span>
+                              </span>
                             )}
                           </div>
                           <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: C.muted }}>Costo</div><div style={{ fontWeight: 700, color: C.red, fontSize: 15 }}>{fmt(Math.round(costo))}</div></div>
@@ -1773,6 +1803,24 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
                           <div style={{ background: margenColor(margenPct), width: `${Math.min(100, Math.max(0, margenPct))}%`, height: "100%", borderRadius: 4 }} />
                         </div>
+                        {rec.variante_as && (
+                          <div style={{ marginTop: 8, background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                              <span style={{ fontSize: 10, color: C.blue, fontWeight: 700 }}>🔁 Versión AS ({rec.variante_as.cantidad}u churrasco)</span>
+                              <span style={{ fontSize: 11 }}>
+                                <span style={{ color: C.muted }}>Costo </span><span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costoAS))}</span>
+                                <span style={{ color: C.muted }}> · Margen </span><span style={{ color: margenColor(margenPctAS), fontWeight: 700 }}>{Math.round(margenPctAS)}%</span>
+                              </span>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ fontSize: 10, color: C.muted }}>Precio venta AS ($)</span>
+                              <input type="number" defaultValue={rec.variante_as.precio_venta}
+                                key={rec.id + "_precioAS_" + rec.variante_as.precio_venta}
+                                onBlur={(e) => { if (Number(e.target.value) !== rec.variante_as.precio_venta) actualizarPrecioVarianteAS(rec, e.target.value); }}
+                                style={{ width: 80, background: C.surface, border: `1px solid ${C.blue}`, borderRadius: 5, color: C.blue, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
