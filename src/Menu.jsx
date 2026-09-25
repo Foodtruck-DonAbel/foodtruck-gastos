@@ -113,7 +113,7 @@ export default function Menu() {
         {!loading && productosCat.length === 0 && <div style={{ textAlign: "center", color: "#8A8496", padding: 40 }}>Sin productos en esta categoría</div>}
         {productosCat.map((rec, idx) => {
           const descripcionBase = rec.descripcion_menu || DESCRIPCIONES[rec.nombre_producto] || "";
-          const descripcion = rec.variante_as ? descripcionBase.replace(/^vienesa,?\s*/i, "") : descripcionBase;
+          const descripcion = rec.variante_as?.activo ? descripcionBase.replace(/^vienesa,?\s*/i, "") : descripcionBase;
           const esCombo = rec.categoria === "combos";
           return (
             <div key={idx} style={{ background: "#2A2730", border: "1px solid #3A3640", borderRadius: 14, padding: "14px 16px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -126,7 +126,7 @@ export default function Menu() {
                 )}
                 {descripcion && <div style={{ color: "#8A8496", fontSize: 12, lineHeight: 1.6 }}>{descripcion}</div>}
               </div>
-              {rec.variante_as ? (
+              {rec.variante_as?.activo ? (
                 <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                     <div style={{ fontSize: 10, color: "#8A8496", paddingRight: 12, whiteSpace: "nowrap" }}>Vienesa</div>
