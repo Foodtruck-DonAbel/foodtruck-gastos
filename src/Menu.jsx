@@ -124,10 +124,18 @@ export default function Menu() {
                   </div>
                 )}
                 {descripcion && <div style={{ color: "#8A8496", fontSize: 12, lineHeight: 1.6 }}>{descripcion}</div>}
-                {rec.variante_as && <div style={{ color: "#6B9FD4", fontSize: 11, marginTop: 3, fontWeight: 600 }}>🔁 También puedes pedirlo estilo AS, con churrasco en vez de vienesa</div>}
               </div>
-              <div style={{ fontWeight: 800, fontSize: 18, color: esCombo ? "#C97DDB" : "#E8B84B", whiteSpace: "nowrap" }}>
-                {fmt(rec.precio_venta)}
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 18, color: esCombo ? "#C97DDB" : "#E8B84B", whiteSpace: "nowrap" }}>
+                  {fmt(rec.precio_venta)}
+                </div>
+                {rec.variante_as && (
+                  <div style={{ marginTop: 3, whiteSpace: "nowrap" }}>
+                    <span style={{ background: "#6B9FD433", color: "#6B9FD4", fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "2px 6px" }}>
+                      AS {fmt(rec.variante_as.precio_venta)}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           );
