@@ -125,18 +125,23 @@ export default function Menu() {
                 )}
                 {descripcion && <div style={{ color: "#8A8496", fontSize: 12, lineHeight: 1.6 }}>{descripcion}</div>}
               </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontWeight: 800, fontSize: 18, color: esCombo ? "#C97DDB" : "#E8B84B", whiteSpace: "nowrap" }}>
+              {rec.variante_as ? (
+                <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ fontSize: 10, color: "#8A8496", paddingRight: 12, whiteSpace: "nowrap" }}>Vienesa</div>
+                    <div style={{ fontWeight: 800, fontSize: 17, color: "#E8B84B", paddingRight: 12, whiteSpace: "nowrap" }}>{fmt(rec.precio_venta)}</div>
+                  </div>
+                  <div style={{ width: 1, alignSelf: "stretch", background: "#3A3640" }} />
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ fontSize: 10, color: "#6B9FD4", fontWeight: 600, paddingLeft: 12, whiteSpace: "nowrap" }}>Churrasco (AS)</div>
+                    <div style={{ fontWeight: 800, fontSize: 17, color: "#6B9FD4", paddingLeft: 12, whiteSpace: "nowrap" }}>{fmt(rec.variante_as.precio_venta)}</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontWeight: 800, fontSize: 18, color: esCombo ? "#C97DDB" : "#E8B84B", whiteSpace: "nowrap", flexShrink: 0 }}>
                   {fmt(rec.precio_venta)}
                 </div>
-                {rec.variante_as && (
-                  <div style={{ marginTop: 3, whiteSpace: "nowrap" }}>
-                    <span style={{ background: "#6B9FD433", color: "#6B9FD4", fontSize: 10, fontWeight: 700, borderRadius: 4, padding: "2px 6px" }}>
-                      AS {fmt(rec.variante_as.precio_venta)}
-                    </span>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           );
         })}
