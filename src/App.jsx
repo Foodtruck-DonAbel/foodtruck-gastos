@@ -816,6 +816,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     await supabase.from("recetas").update({ variante_as: { ...rec.variante_as, precio_venta: precio } }).eq("id", rec.id);
     cargarRecetas();
   };
+  const actualizarPrecioPYVarianteAS = async (rec, valor) => {
+    const precio = Number(valor);
+    if (isNaN(precio) || precio <= 0) return;
+    await supabase.from("recetas").update({ variante_as: { ...rec.variante_as, precio_py: precio } }).eq("id", rec.id);
+    cargarRecetas();
+  };
 
   // Devuelve la lista de ingredientes real a descontar, según si la venta fue variante AS
   const ingredientesEfectivos = (rec, notaObj) => {
@@ -1341,7 +1347,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                               <div style={{ fontWeight: 800, fontSize: 13, color: metodoPago === "Pedidos Ya" ? C.orange : C.mustard }}>{fmt(precioProducto(rec))}</div>
                             </button>
                             {(() => {
-                              const precioAS = metodoPago === "Pedidos Ya" ? Math.round(rec.variante_as.precio_venta * (1 + porcentajePY / 100)) : rec.variante_as.precio_venta;
+                              const precioAS = metodoPago === "Pedidos Ya"
+                                ? (rec.variante_as.precio_py || Math.round(rec.variante_as.precio_venta * (1 + porcentajePY / 100)))
+                                : rec.variante_as.precio_venta;
                               return (
                                 <button onClick={() => agregarAlCarrito(rec, { variante: "as", precio: precioAS, nombre: rec.nombre_producto })} style={{ flex: 1, background: C.tag, border: `1px solid ${C.blue}`, borderRadius: 7, padding: "7px 4px", cursor: "pointer", textAlign: "center" }}>
                                   <div style={{ fontSize: 9, color: C.blue }}>AS (churrasco)</div>
@@ -1812,12 +1820,21 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                                 <span style={{ color: C.muted }}> · Margen </span><span style={{ color: margenColor(margenPctAS), fontWeight: 700 }}>{Math.round(margenPctAS)}%</span>
                               </span>
                             </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <span style={{ fontSize: 10, color: C.muted }}>Precio venta AS ($)</span>
-                              <input type="number" defaultValue={rec.variante_as.precio_venta}
-                                key={rec.id + "_precioAS_" + rec.variante_as.precio_venta}
-                                onBlur={(e) => { if (Number(e.target.value) !== rec.variante_as.precio_venta) actualizarPrecioVarianteAS(rec, e.target.value); }}
-                                style={{ width: 80, background: C.surface, border: `1px solid ${C.blue}`, borderRadius: 5, color: C.blue, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
+                            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 10, color: C.muted }}>Precio venta AS ($)</span>
+                                <input type="number" defaultValue={rec.variante_as.precio_venta}
+                                  key={rec.id + "_precioAS_" + rec.variante_as.precio_venta}
+                                  onBlur={(e) => { if (Number(e.target.value) !== rec.variante_as.precio_venta) actualizarPrecioVarianteAS(rec, e.target.value); }}
+                                  style={{ width: 80, background: C.surface, border: `1px solid ${C.blue}`, borderRadius: 5, color: C.blue, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
+                              </span>
+                              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 10, color: C.orange }}>PY AS ($)</span>
+                                <input type="number" defaultValue={rec.variante_as.precio_py || Math.round(ventaAS * (1 + porcentajePY / 100))}
+                                  key={rec.id + "_pyAS_" + rec.variante_as.precio_py + "_" + rec.variante_as.precio_venta}
+                                  onBlur={(e) => { const val = Number(e.target.value); const actual = rec.variante_as.precio_py || Math.round(ventaAS * (1 + porcentajePY / 100)); if (val !== actual) actualizarPrecioPYVarianteAS(rec, e.target.value); }}
+                                  style={{ width: 80, background: C.surface, border: `1px solid ${C.orange}`, borderRadius: 5, color: C.orange, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
+                              </span>
                             </div>
                           </div>
                         )}
