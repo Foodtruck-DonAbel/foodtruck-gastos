@@ -53,7 +53,7 @@ export default function Menu() {
     const cargar = async () => {
       const { data } = await supabase
         .from("recetas")
-        .select("nombre_producto, categoria, precio_venta, descripcion_menu, productos_combo")
+        .select("nombre_producto, categoria, precio_venta, descripcion_menu, productos_combo, variante_as")
         .order("precio_venta");
       if (data) setRecetas(data);
       setLoading(false);
@@ -124,6 +124,7 @@ export default function Menu() {
                   </div>
                 )}
                 {descripcion && <div style={{ color: "#8A8496", fontSize: 12, lineHeight: 1.6 }}>{descripcion}</div>}
+                {rec.variante_as && <div style={{ color: "#6B9FD4", fontSize: 11, marginTop: 3, fontWeight: 600 }}>🔁 También puedes pedirlo estilo AS, con churrasco en vez de vienesa</div>}
               </div>
               <div style={{ fontWeight: 800, fontSize: 18, color: esCombo ? "#C97DDB" : "#E8B84B", whiteSpace: "nowrap" }}>
                 {fmt(rec.precio_venta)}
