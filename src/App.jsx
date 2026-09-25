@@ -223,6 +223,7 @@ export default function App() {
   const [recetaView, setRecetaView] = useState("margenes");
   const [recetaCatActiva, setRecetaCatActiva] = useState("completos");
   const [precioVentaEdit, setPrecioVentaEdit] = useState({}); // { recetaId: valor }
+  const [precioASEdit, setPrecioASEdit] = useState({}); // { recetaId: valor }
   const [confirmarPrecioModal, setConfirmarPrecioModal] = useState(null);
   const [formInsumo, setFormInsumo] = useState({ nombre: "", precio_por_kg: "", unidad: "kg" });
   const [editInsumoId, setEditInsumoId] = useState(null);
@@ -560,12 +561,18 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   // Precio normal con clave
-  const solicitarCambioPrecio = (rec, valor) => { setConfirmarPrecioModal({ rec, valor }); setAdminClave(""); setAdminError(false); };
+  const solicitarCambioPrecio = (rec, valor) => { setConfirmarPrecioModal({ rec, valor, tipo: "normal" }); setAdminClave(""); setAdminError(false); };
+  const solicitarCambioPrecioAS = (rec, valor) => { setConfirmarPrecioModal({ rec, valor, tipo: "as" }); setAdminClave(""); setAdminError(false); };
   const confirmarCambioPrecio = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
-    const { rec, valor } = confirmarPrecioModal;
-    await supabase.from("recetas").update({ precio_venta: Number(valor) }).eq("id", rec.id);
-    setPrecioVentaEdit((p) => { const n = { ...p }; delete n[rec.id]; return n; });
+    const { rec, valor, tipo } = confirmarPrecioModal;
+    if (tipo === "as") {
+      await supabase.from("recetas").update({ variante_as: { ...rec.variante_as, precio_venta: Number(valor) } }).eq("id", rec.id);
+      setPrecioASEdit((p) => { const n = { ...p }; delete n[rec.id]; return n; });
+    } else {
+      await supabase.from("recetas").update({ precio_venta: Number(valor) }).eq("id", rec.id);
+      setPrecioVentaEdit((p) => { const n = { ...p }; delete n[rec.id]; return n; });
+    }
     setConfirmarPrecioModal(null); setAdminClave("");
     showToast("✓ Precio actualizado"); cargarRecetas();
   };
@@ -798,9 +805,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   // Variante AS: sustituye un insumo por otro (ej: Salchichas 17 cm -> Churrascos) sin duplicar el producto
   const toggleVarianteAS = async (rec, sustituir, por, cantidadInicial = 3) => {
     if (rec.variante_as) {
-      await supabase.from("recetas").update({ variante_as: null }).eq("id", rec.id);
+      // Mantiene cantidad y precios guardados; solo cambia si está activa o no
+      await supabase.from("recetas").update({ variante_as: { ...rec.variante_as, activo: !rec.variante_as.activo } }).eq("id", rec.id);
     } else {
-      await supabase.from("recetas").update({ variante_as: { sustituir, por, cantidad: cantidadInicial, precio_venta: rec.precio_venta } }).eq("id", rec.id);
+      await supabase.from("recetas").update({ variante_as: { sustituir, por, cantidad: cantidadInicial, precio_venta: rec.precio_venta, activo: true } }).eq("id", rec.id);
     }
     cargarRecetas();
   };
@@ -808,12 +816,6 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const cantidad = Number(valor);
     if (isNaN(cantidad) || cantidad <= 0) return;
     await supabase.from("recetas").update({ variante_as: { ...rec.variante_as, cantidad } }).eq("id", rec.id);
-    cargarRecetas();
-  };
-  const actualizarPrecioVarianteAS = async (rec, valor) => {
-    const precio = Number(valor);
-    if (isNaN(precio) || precio <= 0) return;
-    await supabase.from("recetas").update({ variante_as: { ...rec.variante_as, precio_venta: precio } }).eq("id", rec.id);
     cargarRecetas();
   };
   const actualizarPrecioPYVarianteAS = async (rec, valor) => {
@@ -1041,13 +1043,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       {confirmarPrecioModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 320, width: "90%" }}>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔐 Confirmar cambio de precio</div>
-            <div style={{ color: C.muted, fontSize: 12, marginBottom: 4 }}>{confirmarPrecioModal.rec.nombre_producto}</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🔐 Confirmar cambio de precio{confirmarPrecioModal.tipo === "as" ? " AS" : ""}</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 4 }}>{confirmarPrecioModal.rec.nombre_producto}{confirmarPrecioModal.tipo === "as" ? " (churrasco)" : ""}</div>
             <div style={{ color: C.mustard, fontWeight: 700, fontSize: 18, marginBottom: 16 }}>Nuevo precio: {fmt(confirmarPrecioModal.valor)}</div>
             <input type="password" placeholder="Clave" value={adminClave} onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }} onKeyDown={(e) => e.key === "Enter" && confirmarCambioPrecio()} style={{ ...S.inp, fontSize: 18, letterSpacing: 6, marginBottom: 8 }} autoFocus />
             {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setConfirmarPrecioModal(null); setAdminClave(""); setPrecioVentaEdit((p) => { const n={...p}; delete n[confirmarPrecioModal.rec.id]; return n; }); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Descartar</button>
+              <button onClick={() => { const { rec, tipo } = confirmarPrecioModal; setConfirmarPrecioModal(null); setAdminClave(""); if (tipo === "as") setPrecioASEdit((p) => { const n={...p}; delete n[rec.id]; return n; }); else setPrecioVentaEdit((p) => { const n={...p}; delete n[rec.id]; return n; }); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Descartar</button>
               <button onClick={confirmarCambioPrecio} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
             </div>
           </div>
@@ -1338,7 +1340,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {recetas.filter((r) => r.categoria === catActiva).sort(cmpOrden).map((rec) => (
-                      rec.variante_as ? (
+                      rec.variante_as?.activo ? (
                         <div key={rec.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px" }}>
                           <div style={{ fontWeight: 600, fontSize: 12, color: C.text, marginBottom: 6, lineHeight: 1.3 }}>{rec.nombre_producto}</div>
                           <div style={{ display: "flex", gap: 6 }}>
@@ -1754,11 +1756,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                             {(rec.ingredientes || []).some((i) => i.insumo === "Salchichas 17 cm") && (
                               <button onClick={() => toggleVarianteAS(rec, "Salchichas 17 cm", "Churrascos")}
                                 title="Permite vender este completo con churrasco en vez de salchicha (variante AS)"
-                                style={{ background: rec.variante_as ? C.blue : C.tag, color: rec.variante_as ? "#fff" : C.muted, border: "none", borderRadius: 20, padding: "3px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
-                                {rec.variante_as ? "✓ AS activo" : "+ Variante AS"}
+                                style={{ background: rec.variante_as?.activo ? C.blue : C.tag, color: rec.variante_as?.activo ? "#fff" : C.muted, border: "none", borderRadius: 20, padding: "3px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                                {rec.variante_as?.activo ? "✓ AS activo" : "+ Variante AS"}
                               </button>
                             )}
-                            {rec.variante_as && (
+                            {rec.variante_as?.activo && (
                               <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                                 <input type="number" defaultValue={rec.variante_as.cantidad}
                                   key={rec.id + "_cantAS_" + rec.variante_as.cantidad}
@@ -1811,7 +1813,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <div style={{ marginTop: 8, background: C.border, borderRadius: 4, height: 6 }}>
                           <div style={{ background: margenColor(margenPct), width: `${Math.min(100, Math.max(0, margenPct))}%`, height: "100%", borderRadius: 4 }} />
                         </div>
-                        {rec.variante_as && (
+                        {rec.variante_as?.activo && (
                           <div style={{ marginTop: 8, background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                               <span style={{ fontSize: 10, color: C.blue, fontWeight: 700 }}>🔁 Versión AS ({rec.variante_as.cantidad}u churrasco)</span>
@@ -1820,13 +1822,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                                 <span style={{ color: C.muted }}> · Margen </span><span style={{ color: margenColor(margenPctAS), fontWeight: 700 }}>{Math.round(margenPctAS)}%</span>
                               </span>
                             </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ fontSize: 10, color: C.muted }}>Precio venta AS ($)</span>
-                                <input type="number" defaultValue={rec.variante_as.precio_venta}
-                                  key={rec.id + "_precioAS_" + rec.variante_as.precio_venta}
-                                  onBlur={(e) => { if (Number(e.target.value) !== rec.variante_as.precio_venta) actualizarPrecioVarianteAS(rec, e.target.value); }}
-                                  style={{ width: 80, background: C.surface, border: `1px solid ${C.blue}`, borderRadius: 5, color: C.blue, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
+                                <span style={{ fontSize: 10, color: precioASEdit[rec.id] !== undefined ? C.orange : C.muted }}>Precio venta AS ($)</span>
+                                <input type="number"
+                                  value={precioASEdit[rec.id] !== undefined ? precioASEdit[rec.id] : rec.variante_as.precio_venta}
+                                  onChange={(e) => setPrecioASEdit({ ...precioASEdit, [rec.id]: e.target.value })}
+                                  style={{ width: 80, background: C.surface, border: `1px solid ${precioASEdit[rec.id] !== undefined ? C.orange : C.blue}`, borderRadius: 5, color: precioASEdit[rec.id] !== undefined ? C.orange : C.blue, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
                               </span>
                               <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <span style={{ fontSize: 10, color: C.orange }}>PY AS ($)</span>
@@ -1836,6 +1838,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                                   style={{ width: 80, background: C.surface, border: `1px solid ${C.orange}`, borderRadius: 5, color: C.orange, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
                               </span>
                             </div>
+                            {precioASEdit[rec.id] !== undefined && (
+                              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                                <button onClick={() => setPrecioASEdit((p) => { const n = { ...p }; delete n[rec.id]; return n; })} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "6px 0", cursor: "pointer", fontSize: 11 }}>Descartar</button>
+                                <button onClick={() => solicitarCambioPrecioAS(rec, Number(precioASEdit[rec.id]))} style={{ flex: 2, background: C.orange, border: "none", color: "#fff", borderRadius: 7, padding: "6px 0", cursor: "pointer", fontWeight: 700, fontSize: 11 }}>🔐 Guardar precio AS</button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
