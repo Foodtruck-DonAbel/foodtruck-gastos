@@ -488,24 +488,24 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   const calcularStock = (gastosData, ventasData, recetasData, insumosData) => {
-    // 1. Inventario inicial por insumo, con la fecha de SU PROPIO último ajuste
+    // 1. Inventario inicial por insumo, con el MOMENTO EXACTO (fecha+hora) de SU PROPIO último ajuste
     const invInicialMap = {};
     inventarioInicial.forEach((inv) => {
-      invInicialMap[inv.insumo] = { valor: aGramos(inv.cantidad, inv.unidad), fecha: inv.fecha };
+      invInicialMap[inv.insumo] = { valor: aGramos(inv.cantidad, inv.unidad), corte: inv.created_at };
     });
 
-    // 2. Sumar compras DESDE la fecha del último ajuste DE ESE INSUMO (no de otros)
+    // 2. Sumar compras DESDE el momento exacto del último ajuste DE ESE INSUMO (no de otros)
     const compras = {};
     gastosData.forEach((g) => {
       const insumoRef = resolverInsumo(g.insumo);
       if (!insumoRef) return;
-      const corte = invInicialMap[insumoRef]?.fecha;
-      if (corte && g.fecha < corte) return;
+      const corte = invInicialMap[insumoRef]?.corte;
+      if (corte && g.created_at < corte) return;
       if (!compras[insumoRef]) compras[insumoRef] = 0;
       compras[insumoRef] += aGramos(g.cantidad, g.unidad);
     });
 
-    // 3. Sumar consumo DESDE la fecha del último ajuste DE ESE INSUMO
+    // 3. Sumar consumo DESDE el momento exacto del último ajuste DE ESE INSUMO
     const consumo = {};
     ventasData.forEach((v) => {
       const rec = recetasData.find((r) => r.nombre_producto === v.producto);
@@ -514,8 +514,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       ingredientesUso.forEach((ing) => {
         const ins = insumosData.find((i) => i.nombre === ing.insumo);
         if (!ins) return;
-        const corte = invInicialMap[ing.insumo]?.fecha;
-        if (corte && v.fecha < corte) return;
+        const corte = invInicialMap[ing.insumo]?.corte;
+        if (corte && v.created_at < corte) return;
         if (!consumo[ing.insumo]) consumo[ing.insumo] = 0;
         consumo[ing.insumo] += ing.gramos * v.cantidad;
       });
