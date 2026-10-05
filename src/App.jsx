@@ -208,6 +208,8 @@ export default function App() {
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
+  const [filtroConsumoProd, setFiltroConsumoProd] = useState([]); // productos seleccionados para el consumo de insumos clave (vacío = todos)
+  const [mostrarFiltroConsumo, setMostrarFiltroConsumo] = useState(false);
   const [descuentoModal, setDescuentoModal] = useState(null);
   const [descuentoTipo, setDescuentoTipo] = useState("");
   const [descuentoPct, setDescuentoPct] = useState("");
@@ -666,6 +668,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     // Verificar que existen los productos
     const productosEncontrados = productos.filter((p) => recetas.find((r) => r.nombre_producto === p));
     if (productosEncontrados.length === 0) { showToast("No se encontraron productos del combo"); return; }
+    const faltantes = productos.filter((p) => !recetas.find((r) => r.nombre_producto === p));
+    if (faltantes.length > 0) { showToast("⚠️ Falta en Recetas: " + faltantes.join(", ") + " (no descontará stock)"); }
     // Agregar como una sola línea — los productos internos van en nota
     const item = {
       nombre: comboRec.nombre_producto,
@@ -1614,11 +1618,48 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     {rangoDesde || rangoHasta ? `Del ${rangoDesde || "inicio"} al ${rangoHasta || "hoy"}` : "Todo el historial"} — incluye ventas sueltas y las que vinieron dentro de combos.
                   </div>
                   {(() => {
-                    const consumoInsumos = calcularConsumoInsumosPorRango(ventasEnRango, recetas);
+                    // Productos vendidos en el rango (sin los combos "padre", que no llevan ingredientes propios)
+                    const nombresVendidos = [...new Set(ventasEnRango.map((v) => v.producto))];
+                    const opcionesPorCat = CATEGORIAS.filter((c) => c.id !== "combos").map((cat) => ({
+                      cat,
+                      nombres: nombresVendidos.filter((n) => recetas.find((r) => r.nombre_producto === n && r.categoria === cat.id)).sort((a, b) => a.localeCompare(b, "es")),
+                    })).filter((g) => g.nombres.length > 0);
+                    const ventasParaConsumo = filtroConsumoProd.length > 0 ? ventasEnRango.filter((v) => filtroConsumoProd.includes(v.producto)) : ventasEnRango;
+                    const toggleProd = (n) => setFiltroConsumoProd((prev) => prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]);
+                    const consumoInsumos = calcularConsumoInsumosPorRango(ventasParaConsumo, recetas);
                     const unidadInsumo = { "Papas fritas": "kg", "Salchichas 17 cm": "und", "Chicken Fingers": "und", "Tocino": "kg", "Churrascos": "und", "Palta": "kg", "Tomate": "kg" };
                     return (
                       <div style={{ ...S.card, marginBottom: 12 }}>
-                        <STitle>Consumo de insumos clave</STitle>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>Consumo de insumos clave</div>
+                          <button onClick={() => setMostrarFiltroConsumo(!mostrarFiltroConsumo)} style={{ background: filtroConsumoProd.length > 0 ? C.blue : C.tag, color: filtroConsumoProd.length > 0 ? "#fff" : C.muted, border: "none", borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            🔎 Filtrar productos{filtroConsumoProd.length > 0 ? ` (${filtroConsumoProd.length})` : ""}
+                          </button>
+                        </div>
+                        {filtroConsumoProd.length > 0 && !mostrarFiltroConsumo && (
+                          <div style={{ color: C.blue, fontSize: 11, marginBottom: 10 }}>Solo: {filtroConsumoProd.join(", ")}</div>
+                        )}
+                        {mostrarFiltroConsumo && (
+                          <div style={{ background: C.bg, borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                              <span style={{ color: C.muted, fontSize: 11 }}>{filtroConsumoProd.length === 0 ? "Mostrando todos los productos" : `${filtroConsumoProd.length} seleccionado(s)`}</span>
+                              {filtroConsumoProd.length > 0 && <button onClick={() => setFiltroConsumoProd([])} style={{ background: "none", border: "none", color: C.orange, fontSize: 11, cursor: "pointer", padding: 0, fontWeight: 700 }}>Quitar filtro</button>}
+                            </div>
+                            {opcionesPorCat.map((g) => (
+                              <div key={g.cat.id} style={{ marginBottom: 8 }}>
+                                <div style={{ color: C.muted, fontSize: 10, marginBottom: 4 }}>{g.cat.emoji} {g.cat.label}</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                  {g.nombres.map((n) => {
+                                    const activo = filtroConsumoProd.includes(n);
+                                    return (
+                                      <button key={n} onClick={() => toggleProd(n)} style={{ background: activo ? C.blue : C.tag, color: activo ? "#fff" : C.muted, border: "none", borderRadius: 14, padding: "4px 10px", fontSize: 11, fontWeight: activo ? 700 : 400, cursor: "pointer" }}>{n}</button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                           {INSUMOS_REPORTE_CONSUMO.map((nombre) => {
                             const gramos = consumoInsumos[nombre] || 0;
