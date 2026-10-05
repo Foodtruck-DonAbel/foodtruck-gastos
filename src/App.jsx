@@ -208,8 +208,7 @@ export default function App() {
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
-  const [filtroConsumoProd, setFiltroConsumoProd] = useState([]); // productos seleccionados para el consumo de insumos clave (vacío = todos)
-  const [mostrarFiltroConsumo, setMostrarFiltroConsumo] = useState(false);
+  const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
   const [descuentoModal, setDescuentoModal] = useState(null);
   const [descuentoTipo, setDescuentoTipo] = useState("");
   const [descuentoPct, setDescuentoPct] = useState("");
@@ -1618,61 +1617,68 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     {rangoDesde || rangoHasta ? `Del ${rangoDesde || "inicio"} al ${rangoHasta || "hoy"}` : "Todo el historial"} — incluye ventas sueltas y las que vinieron dentro de combos.
                   </div>
                   {(() => {
-                    // Productos vendidos en el rango (sin los combos "padre", que no llevan ingredientes propios)
-                    const nombresVendidos = [...new Set(ventasEnRango.map((v) => v.producto))];
-                    const opcionesPorCat = CATEGORIAS.filter((c) => c.id !== "combos").map((cat) => ({
-                      cat,
-                      nombres: nombresVendidos.filter((n) => recetas.find((r) => r.nombre_producto === n && r.categoria === cat.id)).sort((a, b) => a.localeCompare(b, "es")),
-                    })).filter((g) => g.nombres.length > 0);
-                    const ventasParaConsumo = filtroConsumoProd.length > 0 ? ventasEnRango.filter((v) => filtroConsumoProd.includes(v.producto)) : ventasEnRango;
-                    const toggleProd = (n) => setFiltroConsumoProd((prev) => prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]);
-                    const consumoInsumos = calcularConsumoInsumosPorRango(ventasParaConsumo, recetas);
+                    const consumoInsumos = calcularConsumoInsumosPorRango(ventasEnRango, recetas);
                     const unidadInsumo = { "Papas fritas": "kg", "Salchichas 17 cm": "und", "Chicken Fingers": "und", "Tocino": "kg", "Churrascos": "und", "Palta": "kg", "Tomate": "kg" };
+                    const fmtCant = (gramos, nombre) => unidadInsumo[nombre] === "kg" ? (gramos / 1000).toFixed(2) + " kg" : Math.round(gramos) + " und";
+                    // Detalle: de qué productos sale el consumo del insumo seleccionado
+                    let detalleFilas = [];
+                    if (insumoDetalle) {
+                      const det = {};
+                      ventasEnRango.forEach((v) => {
+                        const rec = recetas.find((r) => r.nombre_producto === v.producto);
+                        if (!rec || !rec.ingredientes) return;
+                        const nota = parseNota(v);
+                        ingredientesEfectivos(rec, nota).forEach((ing) => {
+                          if (ing.insumo !== insumoDetalle) return;
+                          const nombre = v.producto + (nota.variante === "as" ? " (AS)" : "");
+                          if (!det[nombre]) det[nombre] = { sueltas: 0, combo: 0, porUnidad: ing.gramos || 0, total: 0 };
+                          if (esComponente(v)) det[nombre].combo += v.cantidad; else det[nombre].sueltas += v.cantidad;
+                          det[nombre].total += (ing.gramos || 0) * v.cantidad;
+                        });
+                      });
+                      detalleFilas = Object.entries(det).map(([nombre, d]) => ({ nombre, ...d })).sort((a, b) => b.total - a.total);
+                    }
+                    const totalDetalle = detalleFilas.reduce((acc, f) => acc + f.total, 0);
                     return (
                       <div style={{ ...S.card, marginBottom: 12 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: C.text }}>Consumo de insumos clave</div>
-                          <button onClick={() => setMostrarFiltroConsumo(!mostrarFiltroConsumo)} style={{ background: filtroConsumoProd.length > 0 ? C.blue : C.tag, color: filtroConsumoProd.length > 0 ? "#fff" : C.muted, border: "none", borderRadius: 20, padding: "4px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                            🔎 Filtrar productos{filtroConsumoProd.length > 0 ? ` (${filtroConsumoProd.length})` : ""}
-                          </button>
-                        </div>
-                        {filtroConsumoProd.length > 0 && !mostrarFiltroConsumo && (
-                          <div style={{ color: C.blue, fontSize: 11, marginBottom: 10 }}>Solo: {filtroConsumoProd.join(", ")}</div>
-                        )}
-                        {mostrarFiltroConsumo && (
-                          <div style={{ background: C.bg, borderRadius: 8, padding: 10, marginBottom: 12 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                              <span style={{ color: C.muted, fontSize: 11 }}>{filtroConsumoProd.length === 0 ? "Mostrando todos los productos" : `${filtroConsumoProd.length} seleccionado(s)`}</span>
-                              {filtroConsumoProd.length > 0 && <button onClick={() => setFiltroConsumoProd([])} style={{ background: "none", border: "none", color: C.orange, fontSize: 11, cursor: "pointer", padding: 0, fontWeight: 700 }}>Quitar filtro</button>}
-                            </div>
-                            {opcionesPorCat.map((g) => (
-                              <div key={g.cat.id} style={{ marginBottom: 8 }}>
-                                <div style={{ color: C.muted, fontSize: 10, marginBottom: 4 }}>{g.cat.emoji} {g.cat.label}</div>
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                  {g.nombres.map((n) => {
-                                    const activo = filtroConsumoProd.includes(n);
-                                    return (
-                                      <button key={n} onClick={() => toggleProd(n)} style={{ background: activo ? C.blue : C.tag, color: activo ? "#fff" : C.muted, border: "none", borderRadius: 14, padding: "4px 10px", fontSize: 11, fontWeight: activo ? 700 : 400, cursor: "pointer" }}>{n}</button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        <STitle>Consumo de insumos clave</STitle>
+                        <div style={{ color: C.muted, fontSize: 10, marginBottom: 8 }}>Toca un insumo para ver de qué productos sale.</div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                           {INSUMOS_REPORTE_CONSUMO.map((nombre) => {
                             const gramos = consumoInsumos[nombre] || 0;
-                            const esKg = unidadInsumo[nombre] === "kg";
-                            const valor = esKg ? (gramos / 1000).toFixed(2) + " kg" : Math.round(gramos) + " und";
+                            const activo = insumoDetalle === nombre;
                             return (
-                              <div key={nombre} style={{ background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
-                                <div style={{ color: C.muted, fontSize: 11 }}>{nombre}</div>
-                                <div style={{ fontWeight: 700, fontSize: 15, color: C.mustard }}>{valor}</div>
-                              </div>
+                              <button key={nombre} onClick={() => setInsumoDetalle(activo ? null : nombre)} style={{ background: C.bg, border: `1px solid ${activo ? C.blue : "transparent"}`, borderRadius: 8, padding: "8px 10px", textAlign: "left", cursor: "pointer" }}>
+                                <div style={{ color: activo ? C.blue : C.muted, fontSize: 11 }}>{nombre}</div>
+                                <div style={{ fontWeight: 700, fontSize: 15, color: C.mustard }}>{fmtCant(gramos, nombre)}</div>
+                              </button>
                             );
                           })}
                         </div>
+                        {insumoDetalle && (
+                          <div style={{ marginTop: 12, background: C.bg, borderRadius: 10, padding: "10px 12px", border: `1px solid ${C.blue}55` }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                              <span style={{ fontWeight: 700, fontSize: 13, color: C.blue }}>Detalle: {insumoDetalle}</span>
+                              <span style={{ fontWeight: 800, fontSize: 14, color: C.mustard }}>{fmtCant(totalDetalle, insumoDetalle)}</span>
+                            </div>
+                            {detalleFilas.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Sin consumo de este insumo en el rango.</div>}
+                            {detalleFilas.map((f) => {
+                              const esKg = unidadInsumo[insumoDetalle] === "kg";
+                              const pct = totalDetalle > 0 ? Math.round((f.total / totalDetalle) * 100) : 0;
+                              return (
+                                <div key={f.nombre} style={{ padding: "6px 0", borderTop: `1px solid ${C.border}` }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                                    <span style={{ fontSize: 12, fontWeight: 600 }}>{f.nombre}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: C.mustard, whiteSpace: "nowrap" }}>{fmtCant(f.total, insumoDetalle)} <span style={{ color: C.muted, fontWeight: 400, fontSize: 10 }}>({pct}%)</span></span>
+                                  </div>
+                                  <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+                                    {f.sueltas + f.combo} und{f.combo > 0 ? ` (${f.sueltas} sueltas + ${f.combo} en combo)` : ""} × {f.porUnidad}{esKg ? " g" : " und"} c/u
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
