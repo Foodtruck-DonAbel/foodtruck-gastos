@@ -193,7 +193,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [gastosView, setGastosView] = useState("nuevo");
-  const [form, setForm] = useState({ fecha: today(), insumo: INSUMOS_BASE[0], insumoCustom: "", cantidad: "", unidad: "unidad", fondo: FONDOS[0], proveedor: "", proveedorCustom: "", monto: "", nota: "" });
+  const [form, setForm] = useState({ fecha: today(), insumo: INSUMOS_BASE[0], insumoCustom: "", cantidad: "", unidad: UNIDAD_DEFAULT_INSUMO[INSUMOS_BASE[0]] || "unidad", fondo: FONDOS[0], proveedor: "", proveedorCustom: "", monto: "", nota: "" });
   const [filtro, setFiltro] = useState({ mes: "", insumo: "", persona: "" });
 
   // Ventas
@@ -592,7 +592,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     if (!form.monto || isNaN(Number(form.monto))) { setForm({ ...form, _errorMonto: true }); showToast("Completa el monto"); return; }
     if (!form.cantidad || isNaN(Number(form.cantidad)) || Number(form.cantidad) <= 0) { setForm({ ...form, _errorCantidad: true }); showToast("Completa la cantidad"); return; }
     setSaving(true);
-    await supabase.from("gastos").insert([{ fecha: form.fecha, insumo: insumofinal, cantidad: form.cantidad || null, unidad: form.unidad, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: form.nota || null }]);
+    const unidadFinal = UNIDAD_DEFAULT_INSUMO[form.insumo] || form.unidad;
+    await supabase.from("gastos").insert([{ fecha: form.fecha, insumo: insumofinal, cantidad: form.cantidad || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: form.nota || null }]);
     showToast("✓ Gasto guardado");
     setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", _errorMonto: false, _errorCantidad: false });
     cargarGastos(); setSaving(false);
