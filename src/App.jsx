@@ -222,6 +222,9 @@ export default function App() {
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
+  const [dashDesde, setDashDesde] = useState("");
+  const [dashHasta, setDashHasta] = useState("");
+  const [dashVerTodosProd, setDashVerTodosProd] = useState(false);
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -1455,30 +1458,45 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const mesParaCalculo = dashPeriodo === "mes" && dashMesElegido ? dashMesElegido : (ventasMeses[0] || mesActual);
               const ventasDelMesElegido = ventas.filter((v) => v.fecha.startsWith(mesParaCalculo) && !esComponente(v));
               const gastosDelMesElegido = gastos.filter((g) => g.fecha.startsWith(mesParaCalculo)).reduce((s, g) => s + g.monto, 0);
-              const ventasPeriodo = (dashPeriodo === "hoy" ? ventas.filter((v) => v.fecha === ahora)
-                : dashPeriodo === "7dias" ? ventas.filter((v) => v.fecha >= hace7str && v.fecha <= ahora)
-                : ventasDelMesElegido).filter((v) => !esComponente(v));
+              const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+              const diasEntre = (d1, d2) => { const out = []; const a = new Date(d1 + "T00:00:00"); const b = new Date(d2 + "T00:00:00"); for (let d = new Date(a); d <= b && out.length < 93; d.setDate(d.getDate() + 1)) out.push(ymd(d)); return out; };
+              const rDesde = dashDesde || `${mesActual}-01`;
+              const rHasta = dashHasta || ahora;
+              const [fDesde, fHasta] = dashPeriodo === "hoy" ? [ahora, ahora]
+                : dashPeriodo === "7dias" ? [hace7str, ahora]
+                : dashPeriodo === "rango" ? [rDesde, rHasta]
+                : [`${mesParaCalculo}-01`, `${mesParaCalculo}-31`];
+              const diasGrafico = dashPeriodo === "hoy" ? [ahora]
+                : dashPeriodo === "7dias" ? diasEntre(hace7str, ahora)
+                : dashPeriodo === "rango" ? diasEntre(rDesde, rHasta)
+                : (() => { const [yy, mm] = mesParaCalculo.split("-").map(Number); return Array.from({ length: new Date(yy, mm, 0).getDate() }, (_, i) => ymd(new Date(yy, mm - 1, i + 1))).filter((d) => mesParaCalculo !== mesActual || d <= ahora); })();
+              // Si se tocó un día en el gráfico, todo el panel pasa a mostrar solo ese día
+              const fechaSel = puntoSeleccionado !== null && dashPeriodo !== "hoy" ? (diasGrafico[puntoSeleccionado] || null) : null;
+              const enPeriodo = (f) => fechaSel ? f === fechaSel : (f >= fDesde && f <= fHasta);
+              const ventasPeriodo = ventas.filter((v) => enPeriodo(v.fecha) && !esComponente(v));
               const totalPeriodo = ventasPeriodo.reduce((s, v) => s + v.total, 0);
               const cantidadPeriodo = ventasPeriodo.length;
               const ticketPromedio = cantidadPeriodo > 0 ? Math.round(totalPeriodo / cantidadPeriodo) : 0;
-              const gastosPeriodo = dashPeriodo === "hoy" ? gastos.filter((g) => g.fecha === ahora).reduce((s, g) => s + g.monto, 0)
-                : dashPeriodo === "7dias" ? gastos.filter((g) => g.fecha >= hace7str && g.fecha <= ahora).reduce((s, g) => s + g.monto, 0)
-                : gastosDelMesElegido;
+              const gastosPeriodo = gastos.filter((g) => enPeriodo(g.fecha)).reduce((s, g) => s + g.monto, 0);
+              const dmy = (f) => f.split("-").reverse().join("-");
+              const etiquetaPeriodo = fechaSel ? `Día ${dmy(fechaSel)}`
+                : dashPeriodo === "hoy" ? `Hoy ${dmy(ahora)}`
+                : dashPeriodo === "7dias" ? `Últimos 7 días (${dmy(hace7str)} → ${dmy(ahora)})`
+                : dashPeriodo === "rango" ? `${dmy(rDesde)} → ${dmy(rHasta)}`
+                : `Mes ${mesParaCalculo}`;
               const utilidadPeriodo = totalPeriodo - gastosPeriodo;
               const margenOperacional = totalPeriodo > 0 && gastosPeriodo > 0 ? Math.round((utilidadPeriodo / totalPeriodo) * 100) : null;
-              const diasGrafico = dashPeriodo === "hoy" ? [ahora]
-                : dashPeriodo === "7dias" ? Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })
-                : (() => { const [yy, mm] = mesParaCalculo.split("-").map(Number); return Array.from({ length: new Date(yy, mm, 0).getDate() }, (_, i) => { const d = new Date(yy, mm - 1, i + 1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }).filter((d) => mesParaCalculo !== mesActual || d <= ahora); })();
               const ventasDia = diasGrafico.map((d) => ({ dia: d.slice(8), fecha: d, total: ventas.filter((v) => v.fecha === d && !esComponente(v)).reduce((s, v) => s + v.total, 0) }));
               const maxDia = Math.max(...ventasDia.map((d) => d.total), 1);
               const metodosPeriodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({ m, t: ventasPeriodo.filter((v) => v.metodo_pago === m).reduce((s, v) => s + v.total, 0) })).filter((x) => x.t > 0);
-              const productosPeriodo = Object.entries(ventasPeriodo.reduce((acc, v) => { acc[v.producto] = acc[v.producto] || { total: 0, cantidad: 0 }; acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad; return acc; }, {})).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total).slice(0, 8);
+              const productosTodos = Object.entries(ventasPeriodo.reduce((acc, v) => { acc[v.producto] = acc[v.producto] || { total: 0, cantidad: 0, as: 0 }; acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad; if (parseNota(v).variante === "as") acc[v.producto].as += v.cantidad; return acc; }, {})).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total);
+              const productosPeriodo = dashVerTodosProd ? productosTodos : productosTodos.slice(0, 8);
               const cortesiasPeriodo = ventasPeriodo.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "cortesia"; } catch { return false; } });
               const descuentosPeriodo = ventasPeriodo.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "personal"; } catch { return false; } });
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {[{ id: "hoy", label: "Hoy" }, { id: "7dias", label: "7 días" }, { id: "mes", label: "Mes" }].map((p) => (
+                    {[{ id: "hoy", label: "Hoy" }, { id: "7dias", label: "7 días" }, { id: "mes", label: "Mes" }, { id: "rango", label: "Rango" }].map((p) => (
                       <button key={p.id} onClick={() => { setDashPeriodo(p.id); setPuntoSeleccionado(null); }} style={{ flex: 1, background: dashPeriodo === p.id ? C.green : C.tag, color: dashPeriodo === p.id ? "#fff" : C.muted, border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: dashPeriodo === p.id ? 700 : 400, fontSize: 13 }}>{p.label}</button>
                     ))}
                   </div>
@@ -1487,6 +1505,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       {ventasMeses.map((m) => <option key={m} value={m}>{m === mesActual ? `${m} (actual)` : m}</option>)}
                     </select>
                   )}
+                  {dashPeriodo === "rango" && (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input type="date" value={rDesde} max={rHasta} onChange={(e) => { setDashDesde(e.target.value); setPuntoSeleccionado(null); }} style={S.inp} />
+                      <input type="date" value={rHasta} min={rDesde} onChange={(e) => { setDashHasta(e.target.value); setPuntoSeleccionado(null); }} style={S.inp} />
+                    </div>
+                  )}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                    <span style={{ color: fechaSel ? C.blue : C.muted, fontWeight: fechaSel ? 700 : 400 }}>Mostrando: {etiquetaPeriodo}</span>
+                    {fechaSel && <button onClick={() => setPuntoSeleccionado(null)} style={{ background: C.tag, border: "none", color: C.blue, borderRadius: 14, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Ver período completo</button>}
+                  </div>
                   <div style={S.card}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
                       <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Ventas</div><div style={{ fontWeight: 800, fontSize: 20, color: C.green }}>{fmt(totalPeriodo)}</div></div>
@@ -1537,56 +1565,20 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                                 <div key={d.fecha} style={{ flex: 1, textAlign: "center", fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted, visibility: (i % mostrarCadaN === 0 || i === n - 1) ? "visible" : "hidden" }}>{d.dia}</div>
                               ))}
                             </div>
-                            {sel && (() => {
-                              const vDia = ventas.filter((v) => v.fecha === sel.fecha && !esComponente(v));
-                              const porMetodoDia = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({ m, t: vDia.filter((v) => v.metodo_pago === m).reduce((acc, v) => acc + v.total, 0) })).filter((x) => x.t > 0);
-                              const prodDia = {};
-                              vDia.forEach((v) => {
-                                if (!prodDia[v.producto]) prodDia[v.producto] = { cantidad: 0, total: 0, as: 0 };
-                                prodDia[v.producto].cantidad += v.cantidad;
-                                prodDia[v.producto].total += v.total;
-                                if (parseNota(v).variante === "as") prodDia[v.producto].as += v.cantidad;
-                              });
-                              const filasDia = Object.entries(prodDia).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.cantidad - a.cantidad || b.total - a.total);
-                              const cortesiasDia = vDia.filter((v) => parseNota(v).tipo === "cortesia");
-                              const descuentosDia = vDia.filter((v) => parseNota(v).tipo === "personal");
-                              return (
-                                <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-                                    <span style={{ color: C.muted, fontSize: 12 }}>Detalle del {sel.fecha.split("-").reverse().join("-")}</span>
-                                    <span style={{ color: C.green, fontWeight: 800, fontSize: 15 }}>{fmt(sel.total)}</span>
-                                  </div>
-                                  {vDia.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Sin ventas ese día.</div>}
-                                  {porMetodoDia.length > 0 && (
-                                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 8, fontSize: 11 }}>
-                                      {porMetodoDia.map((x) => (
-                                        <span key={x.m} style={{ color: C.muted }}>
-                                          <span style={{ color: metodoPagoColors[x.m], fontWeight: 700 }}>●</span> {x.m} <span style={{ color: C.text, fontWeight: 700 }}>{fmt(x.t)}</span>
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {filasDia.map((f) => (
-                                    <div key={f.n} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "4px 0", borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
-                                      <span>{f.n} <span style={{ color: C.muted, fontSize: 11 }}>× {f.cantidad}</span>{f.as > 0 && <span style={{ color: C.blue, fontSize: 10, marginLeft: 4 }}>({f.as} AS)</span>}</span>
-                                      <span style={{ fontWeight: 700, color: C.mustard }}>{fmt(f.total)}</span>
-                                    </div>
-                                  ))}
-                                  {(cortesiasDia.length > 0 || descuentosDia.length > 0) && (
-                                    <div style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>
-                                      {cortesiasDia.length > 0 && `🎁 ${cortesiasDia.length} cortesía(s)`}{cortesiasDia.length > 0 && descuentosDia.length > 0 && " · "}{descuentosDia.length > 0 && `% ${descuentosDia.length} con descuento`}
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
+                            {sel && (
+                              <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
+                                <span style={{ color: C.muted, fontSize: 12 }}>Día {sel.fecha.split("-").reverse().join("-")}: </span>
+                                <span style={{ color: C.green, fontWeight: 700, fontSize: 14 }}>{fmt(sel.total)}</span>
+                                <div style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>Todo lo de abajo muestra solo este día</div>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
                     </div>
                   )}
                   <div style={S.card}>
-                    <STitle>Por método de pago</STitle>
+                    <STitle>Por método de pago · {etiquetaPeriodo}</STitle>
                     {metodosPeriodo.length === 0 && <Empty />}
                     {metodosPeriodo.map((x) => (
                       <div key={x.m} style={{ marginBottom: 10 }}>
@@ -1599,17 +1591,20 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     ))}
                   </div>
                   <div style={S.card}>
-                    <STitle>Por producto</STitle>
+                    <STitle>Por producto · {etiquetaPeriodo}</STitle>
                     {productosPeriodo.length === 0 && <Empty />}
                     {productosPeriodo.map((x) => (
                       <div key={x.n} style={{ marginBottom: 10 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                          <span>{x.n} <span style={{ color: C.muted, fontSize: 11 }}>({x.cantidad})</span></span>
+                          <span>{x.n} <span style={{ color: C.muted, fontSize: 11 }}>({x.cantidad})</span>{x.as > 0 && <span style={{ color: C.blue, fontSize: 10, marginLeft: 4 }}>({x.as} AS)</span>}</span>
                           <span style={{ fontWeight: 700, color: C.green }}>{fmt(x.total)}</span>
                         </div>
                         <Bar value={x.total} max={productosPeriodo[0]?.total || 1} color={C.green} />
                       </div>
                     ))}
+                    {productosTodos.length > 8 && (
+                      <button onClick={() => setDashVerTodosProd(!dashVerTodosProd)} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 8, padding: "6px 0", width: "100%", fontSize: 12, cursor: "pointer" }}>{dashVerTodosProd ? "Ver solo los 8 principales" : `Ver los ${productosTodos.length} productos`}</button>
+                    )}
                   </div>
                   {(cortesiasPeriodo.length > 0 || descuentosPeriodo.length > 0) && (
                     <div style={S.card}>
