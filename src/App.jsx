@@ -11,7 +11,7 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -29,6 +29,7 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají en Pasta": "kg",
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
   "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro", "Empanadas de Queso": "unidad",
+  "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad",
 };
 
 // Mapa de equivalencias: nombre en gastos -> nombre en insumos_precio
@@ -88,6 +89,19 @@ const aGramos = (cantidad, unidad) => {
 const resolverInsumo = (nombreGasto) => {
   const norm = (nombreGasto || "").trim().toLowerCase();
   return MAPA_INSUMOS[norm] || null;
+};
+// Categoría contable de cada gasto (para el estado de resultados)
+const GASTOS_OPERACIONALES = ["Gas / combustible", "Limpieza"];
+const GASTOS_FIJOS = ["Patente y permisos", "Contador", "Publicidad", "Internet y celular", "Seguros", "Mantención camión", "Arriendo lugar"];
+const GASTOS_INVERSION = ["Inversión / equipamiento"];
+const GASTOS_RETIRO = ["Retiro de Caja"];
+const categoriaGasto = (insumo) => {
+  if (GASTOS_RETIRO.includes(insumo)) return "retiro";
+  if (GASTOS_INVERSION.includes(insumo)) return "inversion";
+  if (GASTOS_FIJOS.includes(insumo)) return "fijo";
+  if (GASTOS_OPERACIONALES.includes(insumo)) return "operacional";
+  if ((INSUMOS_BASE.includes(insumo) && insumo !== "Otro") || resolverInsumo(insumo)) return "costo_ventas";
+  return "sin_clasificar";
 };
 const CATEGORIAS = [
   { id: "completos", label: "Completos", emoji: "🌭" },
@@ -228,7 +242,7 @@ export default function App() {
   const [precioVentaEdit, setPrecioVentaEdit] = useState({}); // { recetaId: valor }
   const [precioASEdit, setPrecioASEdit] = useState({}); // { recetaId: valor }
   const [confirmarPrecioModal, setConfirmarPrecioModal] = useState(null);
-  const [formInsumo, setFormInsumo] = useState({ nombre: "", precio_por_kg: "", unidad: "kg" });
+  const [formInsumo, setFormInsumo] = useState({ nombre: "", precio_por_kg: "", unidad: "kg", alerta_bajo: "", alerta_critico: "" });
   const [editInsumoId, setEditInsumoId] = useState(null);
   const [formReceta, setFormReceta] = useState({ nombre_producto: "", categoria: "completos", precio_venta: "", precio_py: "", descripcion_menu: "", ingredientes: [], productos_combo: [] });
   const [editRecetaId, setEditRecetaId] = useState(null);
@@ -536,10 +550,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       // Convertir disponible a unidad legible
       const esKgLitro = unidad === "kg" || unidad === "litro";
       const disponibleKg = esKgLitro ? disponible / 1000 : disponible;
-      const alerta = esKgLitro
-        ? disponible < 500 ? "rojo" : disponible < 1000 ? "naranja" : "verde"
-        : disponible < 5 ? "rojo" : disponible < 10 ? "naranja" : "verde";
-      return { nombre, comprado, consumido, disponible, disponibleKg, unidad, alerta, ins, inicial };
+      // Límites propios del insumo (en kg/litro/unidades) o por defecto
+      const aGramosUmbral = (v) => esKgLitro ? Number(v) * 1000 : Number(v);
+      const umbralCritico = ins?.alerta_critico != null ? aGramosUmbral(ins.alerta_critico) : (esKgLitro ? 500 : 5);
+      const umbralBajo = Math.max(ins?.alerta_bajo != null ? aGramosUmbral(ins.alerta_bajo) : (esKgLitro ? 1000 : 10), umbralCritico);
+      const alerta = disponible < umbralCritico ? "rojo" : disponible < umbralBajo ? "naranja" : "verde";
+      return { nombre, comprado, consumido, disponible, disponibleKg, unidad, alerta, ins, inicial, umbralBajo, umbralCritico, esKgLitro };
     }).filter((x) => x.comprado > 0 || x.consumido > 0 || x.inicial > 0).sort((a, b) => {
       const ord = { rojo: 0, naranja: 1, verde: 2 };
       return ord[a.alerta] - ord[b.alerta];
@@ -759,6 +775,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const guardarInsumo = async () => {
     if (!formInsumo.nombre || !formInsumo.precio_por_kg) { showToast("Completa nombre y precio"); return; }
     const data = { nombre: formInsumo.nombre.trim(), precio_por_kg: Number(formInsumo.precio_por_kg), unidad: formInsumo.unidad };
+    const original = editInsumoId ? insumosPrecio.find((i) => i.id === editInsumoId) : null;
+    for (const k of ["alerta_bajo", "alerta_critico"]) {
+      const raw = String(formInsumo[k] ?? "").trim().replace(",", ".");
+      if (raw !== "" && !isNaN(Number(raw))) data[k] = Number(raw);
+      else if (original && original[k] != null) data[k] = null; // lo vació: volver a los límites por defecto
+    }
     if (editInsumoId) {
       const { error } = await supabase.from("insumos_precio").update(data).eq("id", editInsumoId);
       if (error) { console.error("Error al actualizar insumo:", error); showToast("❌ Error: " + error.message); return; }
@@ -768,7 +790,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       if (error) { console.error("Error al agregar insumo:", error); showToast("❌ Error: " + error.message); return; }
       showToast("✓ Agregado");
     }
-    setFormInsumo({ nombre: "", precio_por_kg: "", unidad: "kg" }); cargarRecetas();
+    setFormInsumo({ nombre: "", precio_por_kg: "", unidad: "kg", alerta_bajo: "", alerta_critico: "" }); cargarRecetas();
   };
 
   const guardarReceta = async () => {
@@ -1293,6 +1315,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         </div>
                         {s.alerta === "rojo" && <div style={{ color: C.red, fontSize: 11, marginTop: 6, fontWeight: 700 }}>⚠️ Stock crítico — comprar urgente</div>}
                         {s.alerta === "naranja" && <div style={{ color: C.orange, fontSize: 11, marginTop: 6 }}>⚡ Stock bajo — considerar compra</div>}
+                        {(s.ins?.alerta_bajo != null || s.ins?.alerta_critico != null) && (
+                          <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>
+                            Límites: 🟡 {s.esKgLitro ? `${s.umbralBajo / 1000} ${s.unidad}` : `${s.umbralBajo} und`} · 🔴 {s.esKgLitro ? `${s.umbralCritico / 1000} ${s.unidad}` : `${s.umbralCritico} und`}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1510,12 +1537,49 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                                 <div key={d.fecha} style={{ flex: 1, textAlign: "center", fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted, visibility: (i % mostrarCadaN === 0 || i === n - 1) ? "visible" : "hidden" }}>{d.dia}</div>
                               ))}
                             </div>
-                            {sel && (
-                              <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
-                                <span style={{ color: C.muted, fontSize: 12 }}>Día {sel.dia}: </span>
-                                <span style={{ color: C.green, fontWeight: 700, fontSize: 14 }}>{fmt(sel.total)}</span>
-                              </div>
-                            )}
+                            {sel && (() => {
+                              const vDia = ventas.filter((v) => v.fecha === sel.fecha && !esComponente(v));
+                              const porMetodoDia = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({ m, t: vDia.filter((v) => v.metodo_pago === m).reduce((acc, v) => acc + v.total, 0) })).filter((x) => x.t > 0);
+                              const prodDia = {};
+                              vDia.forEach((v) => {
+                                if (!prodDia[v.producto]) prodDia[v.producto] = { cantidad: 0, total: 0, as: 0 };
+                                prodDia[v.producto].cantidad += v.cantidad;
+                                prodDia[v.producto].total += v.total;
+                                if (parseNota(v).variante === "as") prodDia[v.producto].as += v.cantidad;
+                              });
+                              const filasDia = Object.entries(prodDia).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.cantidad - a.cantidad || b.total - a.total);
+                              const cortesiasDia = vDia.filter((v) => parseNota(v).tipo === "cortesia");
+                              const descuentosDia = vDia.filter((v) => parseNota(v).tipo === "personal");
+                              return (
+                                <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                                    <span style={{ color: C.muted, fontSize: 12 }}>Detalle del {sel.fecha.split("-").reverse().join("-")}</span>
+                                    <span style={{ color: C.green, fontWeight: 800, fontSize: 15 }}>{fmt(sel.total)}</span>
+                                  </div>
+                                  {vDia.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Sin ventas ese día.</div>}
+                                  {porMetodoDia.length > 0 && (
+                                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 8, fontSize: 11 }}>
+                                      {porMetodoDia.map((x) => (
+                                        <span key={x.m} style={{ color: C.muted }}>
+                                          <span style={{ color: metodoPagoColors[x.m], fontWeight: 700 }}>●</span> {x.m} <span style={{ color: C.text, fontWeight: 700 }}>{fmt(x.t)}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {filasDia.map((f) => (
+                                    <div key={f.n} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "4px 0", borderTop: `1px solid ${C.border}`, fontSize: 12 }}>
+                                      <span>{f.n} <span style={{ color: C.muted, fontSize: 11 }}>× {f.cantidad}</span>{f.as > 0 && <span style={{ color: C.blue, fontSize: 10, marginLeft: 4 }}>({f.as} AS)</span>}</span>
+                                      <span style={{ fontWeight: 700, color: C.mustard }}>{fmt(f.total)}</span>
+                                    </div>
+                                  ))}
+                                  {(cortesiasDia.length > 0 || descuentosDia.length > 0) && (
+                                    <div style={{ color: C.muted, fontSize: 11, marginTop: 6 }}>
+                                      {cortesiasDia.length > 0 && `🎁 ${cortesiasDia.length} cortesía(s)`}{cortesiasDia.length > 0 && descuentosDia.length > 0 && " · "}{descuentosDia.length > 0 && `% ${descuentosDia.length} con descuento`}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })()}
@@ -1967,9 +2031,14 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     <Fld label="Precio / kg ($)"><input type="number" value={formInsumo.precio_por_kg} onChange={(e) => setFormInsumo({ ...formInsumo, precio_por_kg: e.target.value })} style={S.inp} /></Fld>
                     <Fld label="Unidad"><select value={formInsumo.unidad} onChange={(e) => setFormInsumo({ ...formInsumo, unidad: e.target.value })} style={S.inp}>{["kg","litro","unidad"].map((u) => <option key={u}>{u}</option>)}</select></Fld>
                   </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 6 }}>
+                    <Fld label={`🟡 Alerta bajo (${formInsumo.unidad === "unidad" ? "unidades" : formInsumo.unidad})`}><input type="text" inputMode="decimal" placeholder="opcional" value={formInsumo.alerta_bajo} onChange={(e) => setFormInsumo({ ...formInsumo, alerta_bajo: e.target.value.replace(/[^0-9.,]/g, "") })} style={S.inp} /></Fld>
+                    <Fld label={`🔴 Alerta crítico (${formInsumo.unidad === "unidad" ? "unidades" : formInsumo.unidad})`}><input type="text" inputMode="decimal" placeholder="opcional" value={formInsumo.alerta_critico} onChange={(e) => setFormInsumo({ ...formInsumo, alerta_critico: e.target.value.replace(/[^0-9.,]/g, "") })} style={S.inp} /></Fld>
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 10, marginBottom: 10 }}>Si los dejas vacíos, el stock usa los límites por defecto (bajo: 1 kg o 10 und · crítico: 500 g o 5 und).</div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={guardarInsumo} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "9px 0", fontWeight: 700, cursor: "pointer" }}>{editInsumoId ? "Actualizar" : "Agregar"}</button>
-                    {editInsumoId && <button onClick={() => { setEditInsumoId(null); setFormInsumo({ nombre: "", precio_por_kg: "", unidad: "kg" }); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "9px 16px", cursor: "pointer" }}>Cancelar</button>}
+                    {editInsumoId && <button onClick={() => { setEditInsumoId(null); setFormInsumo({ nombre: "", precio_por_kg: "", unidad: "kg", alerta_bajo: "", alerta_critico: "" }); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 7, padding: "9px 16px", cursor: "pointer" }}>Cancelar</button>}
                   </div>
                 </div>
                 {insumosPrecio.map((ins) => {
@@ -1986,9 +2055,14 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         ) : (
                           <div style={{ color: C.muted, fontSize: 12 }}>{fmt(ins.precio_por_kg)} / {ins.unidad}</div>
                         )}
+                        {(ins.alerta_bajo != null || ins.alerta_critico != null) && (
+                          <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
+                            Alertas: {ins.alerta_bajo != null && <span>🟡 {ins.alerta_bajo}</span>}{ins.alerta_bajo != null && ins.alerta_critico != null && " · "}{ins.alerta_critico != null && <span>🔴 {ins.alerta_critico}</span>} {ins.unidad === "unidad" ? "und" : ins.unidad}
+                          </div>
+                        )}
                       </div>
                       {!esMayonesaCasera && (
-                        <button onClick={() => { setFormInsumo({ nombre: ins.nombre, precio_por_kg: ins.precio_por_kg, unidad: ins.unidad }); setEditInsumoId(ins.id); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Editar</button>
+                        <button onClick={() => { setFormInsumo({ nombre: ins.nombre, precio_por_kg: ins.precio_por_kg, unidad: ins.unidad, alerta_bajo: ins.alerta_bajo ?? "", alerta_critico: ins.alerta_critico ?? "" }); setEditInsumoId(ins.id); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Editar</button>
                       )}
                       <button onClick={() => solicitarEliminacion("insumo", ins)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
                     </div>
@@ -2105,9 +2179,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const porMetodoER = (m) => vMes.filter((v) => v.metodo_pago === m).reduce((acc, v) => acc + v.total, 0);
               const totalVentasER = vMes.reduce((acc, v) => acc + v.total, 0);
               const gMes = gastos.filter((g) => g.fecha.startsWith(mesSel));
-              const retirosER = gMes.filter((g) => g.insumo === "Retiro de Caja").reduce((acc, g) => acc + g.monto, 0);
-              const gastosER = gMes.filter((g) => g.insumo !== "Retiro de Caja").reduce((acc, g) => acc + g.monto, 0);
-              const resultadoER = totalVentasER - gastosER;
+              const sumCat = (c) => gMes.filter((g) => categoriaGasto(g.insumo) === c).reduce((acc, g) => acc + g.monto, 0);
+              const costoVentasER = sumCat("costo_ventas");
+              const operacionalER = sumCat("operacional");
+              const fijosER = sumCat("fijo");
+              const sinClasER = sumCat("sin_clasificar");
+              const inversionER = sumCat("inversion");
+              const retirosER = sumCat("retiro");
+              const margenBrutoER = totalVentasER - costoVentasER;
+              const resultadoER = margenBrutoER - operacionalER - fijosER - sinClasER;
+              const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo) === "sin_clasificar").map((g) => g.insumo))];
               const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
               const esCompleto = (v) => recetas.find((r) => r.nombre_producto === v.producto && r.categoria === "completos");
               const completosSueltos = vMes.filter(esCompleto).reduce((acc, v) => acc + v.cantidad, 0);
@@ -2139,7 +2220,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
                     Efectivo {fmt(porMetodoER("Efectivo"))} · Tarjeta {fmt(porMetodoER("Tarjeta"))} · Pedidos Ya {fmt(porMetodoER("Pedidos Ya"))}
                   </div>
-                  {filaER(`(−) Compras y gastos${pctER(gastosER)}`, fmt(gastosER), { color: C.red })}
+                  {filaER(`(−) Costo de ventas (insumos)${pctER(costoVentasER)}`, fmt(costoVentasER), { color: C.red })}
+                  {filaER(`= Margen bruto${pctER(margenBrutoER)}`, fmt(margenBrutoER), { color: margenBrutoER >= 0 ? C.green : C.red })}
+                  {filaER(`(−) Operacionales (gas, limpieza)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red })}
+                  {filaER(`(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red })}
+                  {sinClasER > 0 && (
+                    <div>
+                      {filaER(`(−) Sin clasificar${pctER(sinClasER)}`, fmt(sinClasER), { color: C.orange })}
+                      <div style={{ color: C.orange, fontSize: 10, margin: "2px 0 4px" }}>Revisar: {sinClasNombres.join(", ")}</div>
+                    </div>
+                  )}
                   {filaER(`= Resultado preliminar${pctER(resultadoER)}`, fmt(resultadoER), { color: resultadoER >= 0 ? C.green : C.red })}
                   <div style={{ color: C.muted, fontSize: 10, margin: "4px 0 10px" }}>Sin las líneas pendientes (P): el resultado real será menor.</div>
 
@@ -2148,7 +2238,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {filaP("Comisión Pedidos Ya", `Ventas Pedidos Ya del mes: ${fmt(porMetodoER("Pedidos Ya"))}`)}
                   {filaP("Gustavo: $600.000 fijo + $225 por completo", `Completos vendidos: ${completosSueltos + completosCombo} (${completosSueltos} sueltos + ${completosCombo} en combo)`)}
                   {filaP("Otros costos (patente, contador, publicidad, mantención…)")}
-                  {retirosER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>Retiros de caja del mes (no incluidos en gastos): {fmt(retirosER)}</div>}
+                  {inversionER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>Inversiones del mes (no restan del resultado): {fmt(inversionER)}</div>}
+                  {retirosER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Retiros de caja del mes (no restan del resultado): {fmt(retirosER)}</div>}
                 </div>
               );
             })()}
