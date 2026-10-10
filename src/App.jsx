@@ -208,6 +208,8 @@ export default function App() {
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
+  const [verEstadoResultados, setVerEstadoResultados] = useState(false);
+  const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
   const [descuentoModal, setDescuentoModal] = useState(null);
   const [descuentoTipo, setDescuentoTipo] = useState("");
@@ -2084,6 +2086,72 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <span style={{ color: C.mustard, fontSize: 18 }}>→</span>
               </button>
             )}
+            {persona === "Alejandro" && (
+              <button onClick={() => setVerEstadoResultados(!verEstadoResultados)} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", border: `1px solid ${C.blue}`, background: C.blue + "15", width: "100%", textAlign: "left" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>📈</span>
+                  <div>
+                    <div style={{ fontWeight: 700, color: C.blue }}>Estado de resultados <span style={{ background: C.orange, color: "#fff", borderRadius: 4, padding: "1px 6px", fontSize: 10, marginLeft: 6 }}>P</span></div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>Pendiente — solo visible para ti</div>
+                  </div>
+                </div>
+                <span style={{ color: C.blue, fontSize: 14 }}>{verEstadoResultados ? "▲" : "▼"}</span>
+              </button>
+            )}
+            {persona === "Alejandro" && verEstadoResultados && (() => {
+              const mesesER = [...new Set([...meses, ...ventasMeses, mesActual])].sort().reverse();
+              const mesSel = estadoMes || mesActual;
+              const vMes = ventas.filter((v) => v.fecha.startsWith(mesSel) && !esComponente(v));
+              const porMetodoER = (m) => vMes.filter((v) => v.metodo_pago === m).reduce((acc, v) => acc + v.total, 0);
+              const totalVentasER = vMes.reduce((acc, v) => acc + v.total, 0);
+              const gMes = gastos.filter((g) => g.fecha.startsWith(mesSel));
+              const retirosER = gMes.filter((g) => g.insumo === "Retiro de Caja").reduce((acc, g) => acc + g.monto, 0);
+              const gastosER = gMes.filter((g) => g.insumo !== "Retiro de Caja").reduce((acc, g) => acc + g.monto, 0);
+              const resultadoER = totalVentasER - gastosER;
+              const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
+              const esCompleto = (v) => recetas.find((r) => r.nombre_producto === v.producto && r.categoria === "completos");
+              const completosSueltos = vMes.filter(esCompleto).reduce((acc, v) => acc + v.cantidad, 0);
+              const completosCombo = ventas.filter((v) => v.fecha.startsWith(mesSel) && esComponente(v) && esCompleto(v)).reduce((acc, v) => acc + v.cantidad, 0);
+              const filaER = (label, valor, extra) => (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <span style={{ fontSize: 13 }}>{label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: extra?.color || C.text }}>{valor}</span>
+                </div>
+              );
+              const filaP = (label, nota) => (
+                <div style={{ padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13 }}>{label}</span>
+                    <span style={{ background: C.orange, color: "#fff", borderRadius: 4, padding: "1px 8px", fontSize: 11, fontWeight: 700 }}>P</span>
+                  </div>
+                  {nota && <div style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>{nota}</div>}
+                </div>
+              );
+              return (
+                <div style={S.card}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                    <STitle>Estado de resultados</STitle>
+                    <select value={mesSel} onChange={(e) => setEstadoMes(e.target.value)} style={{ ...S.inp, width: "auto", marginBottom: 12 }}>
+                      {mesesER.map((m) => <option key={m} value={m}>{m === mesActual ? `${m} (parcial)` : m}</option>)}
+                    </select>
+                  </div>
+                  {filaER("Ventas brutas", fmt(totalVentasER), { color: C.green })}
+                  <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
+                    Efectivo {fmt(porMetodoER("Efectivo"))} · Tarjeta {fmt(porMetodoER("Tarjeta"))} · Pedidos Ya {fmt(porMetodoER("Pedidos Ya"))}
+                  </div>
+                  {filaER(`(−) Compras y gastos${pctER(gastosER)}`, fmt(gastosER), { color: C.red })}
+                  {filaER(`= Resultado preliminar${pctER(resultadoER)}`, fmt(resultadoER), { color: resultadoER >= 0 ? C.green : C.red })}
+                  <div style={{ color: C.muted, fontSize: 10, margin: "4px 0 10px" }}>Sin las líneas pendientes (P): el resultado real será menor.</div>
+
+                  <div style={{ fontWeight: 700, fontSize: 12, color: C.orange, margin: "8px 0 2px" }}>Pendientes</div>
+                  {filaP("Comisión tarjeta", `Ventas con tarjeta del mes: ${fmt(porMetodoER("Tarjeta"))}`)}
+                  {filaP("Comisión Pedidos Ya", `Ventas Pedidos Ya del mes: ${fmt(porMetodoER("Pedidos Ya"))}`)}
+                  {filaP("Gustavo: $600.000 fijo + $225 por completo", `Completos vendidos: ${completosSueltos + completosCombo} (${completosSueltos} sueltos + ${completosCombo} en combo)`)}
+                  {filaP("Otros costos (patente, contador, publicidad, mantención…)")}
+                  {retirosER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>Retiros de caja del mes (no incluidos en gastos): {fmt(retirosER)}</div>}
+                </div>
+              );
+            })()}
             <div style={S.card}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ color: C.muted, fontSize: 12, whiteSpace: "nowrap" }}>Filtrar mes:</div>
