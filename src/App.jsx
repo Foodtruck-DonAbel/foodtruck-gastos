@@ -90,6 +90,19 @@ const resolverInsumo = (nombreGasto) => {
   const norm = (nombreGasto || "").trim().toLowerCase();
   return MAPA_INSUMOS[norm] || null;
 };
+// Comisión efectiva de Pedidos Ya: $142.931 sobre $509.920 de ventas (liquidación a oct-2026) = 28,0%
+// Gustavo: fijo mensual + comisión por cada completo vendido (cuentan los AS y los que van dentro de combos)
+const GUSTAVO_FIJO = 600000;
+const GUSTAVO_POR_COMPLETO = 225;
+const COMISION_PEDIDOS_YA = 0.28;
+// Comisión Mercado Pago por tarjeta (con IVA 19% incluido): débito/prepago 2,19% + IVA, crédito 2,60% + IVA.
+// La app no separa débito de crédito, así que se usa un promedio con la mezcla real del portal
+// (14-sep a 14-oct-2026): débito $443.980 + prepago $70.660 + crédito $103.080 = $617.720 → 16,69% crédito.
+const COMISION_TARJETA_DEBITO = 0.0219 * 1.19;
+const COMISION_TARJETA_CREDITO = 0.026 * 1.19;
+const PCT_CREDITO_ESTIMADO = 0.1669; // proporción de crédito en las ventas con tarjeta (revisar cada tanto con el portal)
+const COMISION_TARJETA = COMISION_TARJETA_DEBITO * (1 - PCT_CREDITO_ESTIMADO) + COMISION_TARJETA_CREDITO * PCT_CREDITO_ESTIMADO;
+
 // Categoría contable de cada gasto (para el estado de resultados)
 const GASTOS_OPERACIONALES = ["Gas / combustible", "Limpieza"];
 const GASTOS_FIJOS = ["Patente y permisos", "Contador", "Publicidad", "Internet y celular", "Seguros", "Mantención camión", "Arriendo lugar"];
@@ -2282,12 +2295,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const costoCortER = cortesiasER.reduce((acc, v) => acc + costoVenta(v), 0);
               const valorCortER = cortesiasER.reduce((acc, v) => acc + valorListaVenta(v), 0);
               const margenBrutoER = totalVentasER - costoVentasER;
-              const resultadoER = margenBrutoER - operacionalER - fijosER - sinClasER;
-              const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo) === "sin_clasificar").map((g) => g.insumo))];
-              const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
               const esCompleto = (v) => recetas.find((r) => r.nombre_producto === v.producto && r.categoria === "completos");
               const completosSueltos = vMes.filter(esCompleto).reduce((acc, v) => acc + v.cantidad, 0);
               const completosCombo = ventas.filter((v) => v.fecha.startsWith(mesSel) && esComponente(v) && esCompleto(v)).reduce((acc, v) => acc + v.cantidad, 0);
+              const completosMes = completosSueltos + completosCombo;
+              const gustavoER = GUSTAVO_FIJO + GUSTAVO_POR_COMPLETO * completosMes;
+              const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * COMISION_PEDIDOS_YA);
+              const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
+              const resultadoER = margenBrutoER - operacionalER - fijosER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
+              const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo) === "sin_clasificar").map((g) => g.insumo))];
+              const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
               const filaER = (label, valor, extra) => (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 13 }}>{label}</span>
@@ -2319,6 +2336,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {filaER(`= Margen bruto${pctER(margenBrutoER)}`, fmt(margenBrutoER), { color: margenBrutoER >= 0 ? C.green : C.red })}
                   {filaER(`(−) Operacionales (gas, limpieza)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red })}
                   {filaER(`(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red })}
+                  {filaER(`(−) Comisión tarjeta (${(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
+                  {filaER(`(−) Comisión Pedidos Ya (${Math.round(COMISION_PEDIDOS_YA * 100)}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
+                  {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
+                  <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
+                    {fmt(GUSTAVO_FIJO)} fijo + {fmt(GUSTAVO_POR_COMPLETO)} × {completosMes} completos ({completosSueltos} sueltos + {completosCombo} en combo) = {fmt(GUSTAVO_POR_COMPLETO * completosMes)} variable
+                  </div>
                   {sinClasER > 0 && (
                     <div>
                       {filaER(`(−) Sin clasificar${pctER(sinClasER)}`, fmt(sinClasER), { color: C.orange })}
@@ -2326,13 +2349,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                   )}
                   {filaER(`= Resultado preliminar${pctER(resultadoER)}`, fmt(resultadoER), { color: resultadoER >= 0 ? C.green : C.red })}
-                  <div style={{ color: C.muted, fontSize: 10, margin: "4px 0 10px" }}>Sin las líneas pendientes (P): el resultado real será menor.</div>
-
-                  <div style={{ fontWeight: 700, fontSize: 12, color: C.orange, margin: "8px 0 2px" }}>Pendientes</div>
-                  {filaP("Comisión tarjeta", `Ventas con tarjeta del mes: ${fmt(porMetodoER("Tarjeta"))}`)}
-                  {filaP("Comisión Pedidos Ya", `Ventas Pedidos Ya del mes: ${fmt(porMetodoER("Pedidos Ya"))}`)}
-                  {filaP("Gustavo: $600.000 fijo + $225 por completo", `Completos vendidos: ${completosSueltos + completosCombo} (${completosSueltos} sueltos + ${completosCombo} en combo)`)}
-                  {filaP("Otros costos (patente, contador, publicidad, mantención…)")}
+                  <div style={{ color: C.muted, fontSize: 10, margin: "6px 0 4px" }}>Incluye comisiones y Gustavo. Los costos fijos (patente, contador, publicidad, etc.) entran a medida que los ingresas en Gastos.</div>
                   {cortesiasER.length > 0 && (
                     <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>
                       🎁 Cortesías del mes: {cortesiasER.reduce((acc, v) => acc + v.cantidad, 0)} und · costo en insumos <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costoCortER))}</span> (ya incluido en el costo de ventas) · a precio de lista {fmt(Math.round(valorCortER))}
