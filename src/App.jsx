@@ -9,13 +9,13 @@ const C = {
 };
 
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
-const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel"];
+const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel", "Pago personal"];
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Pago sueldo Gustavo","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
-  "Tarjeta foodtruck": "#C97DDB", "Tarjeta Don Abel": "#E8B84B",
+  "Tarjeta foodtruck": "#C97DDB", "Tarjeta Don Abel": "#E8B84B", "Pago personal": "#FF6B35",
 };
 const metodoPagoColors = { "Efectivo": "#5BAD7F", "Tarjeta": "#6B9FD4", "Pedidos Ya": "#FF6B35" };
 const personColor = (n) => ({ Raul: "#6B9FD4", Pepe: "#E8B84B", Alejandro: "#5BAD7F", Gustavo: "#C97DDB" }[n] || C.muted);
@@ -29,7 +29,7 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají en Pasta": "kg",
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
   "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro", "Empanadas de Queso": "unidad",
-  "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad",
+  "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad", "Pago sueldo Gustavo": "unidad",
 };
 
 // Mapa de equivalencias: nombre en gastos -> nombre en insumos_precio
@@ -108,8 +108,10 @@ const GASTOS_OPERACIONALES = ["Gas / combustible", "Limpieza"];
 const GASTOS_FIJOS = ["Patente y permisos", "Contador", "Publicidad", "Internet y celular", "Seguros", "Mantención camión", "Arriendo lugar"];
 const GASTOS_INVERSION = ["Inversión / equipamiento"];
 const GASTOS_RETIRO = ["Retiro de Caja"];
+const GASTOS_PAGO_GUSTAVO = ["Pago sueldo Gustavo"];
 const categoriaGasto = (insumo) => {
   if (GASTOS_RETIRO.includes(insumo)) return "retiro";
+  if (GASTOS_PAGO_GUSTAVO.includes(insumo)) return "pago_gustavo";
   if (GASTOS_INVERSION.includes(insumo)) return "inversion";
   if (GASTOS_FIJOS.includes(insumo)) return "fijo";
   if (GASTOS_OPERACIONALES.includes(insumo)) return "operacional";
@@ -2300,6 +2302,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const completosCombo = ventas.filter((v) => v.fecha.startsWith(mesSel) && esComponente(v) && esCompleto(v)).reduce((acc, v) => acc + v.cantidad, 0);
               const completosMes = completosSueltos + completosCombo;
               const gustavoER = GUSTAVO_FIJO + GUSTAVO_POR_COMPLETO * completosMes;
+              const pagadoGustavoER = sumCat("pago_gustavo");
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * COMISION_PEDIDOS_YA);
               const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
               const resultadoER = margenBrutoER - operacionalER - fijosER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
@@ -2341,6 +2344,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
                     {fmt(GUSTAVO_FIJO)} fijo + {fmt(GUSTAVO_POR_COMPLETO)} × {completosMes} completos ({completosSueltos} sueltos + {completosCombo} en combo) = {fmt(GUSTAVO_POR_COMPLETO * completosMes)} variable
+                    <div style={{ marginTop: 2 }}>
+                      Pagado en el mes: <span style={{ color: C.text, fontWeight: 700 }}>{fmt(pagadoGustavoER)}</span> · {gustavoER - pagadoGustavoER >= 0 ? "Saldo por pagar" : "Pagado de más"}: <span style={{ color: gustavoER - pagadoGustavoER > 0 ? C.orange : C.green, fontWeight: 700 }}>{fmt(Math.abs(gustavoER - pagadoGustavoER))}</span>
+                    </div>
                   </div>
                   {sinClasER > 0 && (
                     <div>
