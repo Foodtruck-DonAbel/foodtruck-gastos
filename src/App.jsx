@@ -32,6 +32,17 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad", "Pago sueldo Gustavo": "unidad",
 };
 
+// Unidad de respaldo para todos los insumos de la lista de gastos (se usa si Recetas → Insumos no la tiene)
+const UNIDAD_RESPALDO = {
+  "Aceite para Freir": "litro", "Aceite para Mayonesa Casera": "ml", "Ají en Pasta": "kg", "Cebolla Caramelizada": "kg",
+  "Chicken Fingers": "unidad", "Chucrut": "kg", "Churrascos": "unidad", "Ciboulette": "unidad", "Cilantro": "unidad",
+  "Empanadas de Queso": "unidad", "Envase para Papas / Sandwich/ PY": "unidad", "Envases para completos": "unidad",
+  "Gas / combustible": "unidad", "Ketchup": "kg", "Limpieza": "unidad", "Mayonesa": "kg", "Mayonesa Casera": "kg",
+  "Mayonesa en Polvo": "kg", "Mostaza": "kg", "Palta": "kg", "Pan para completo": "unidad", "Pan para Sandwich Castaño": "unidad",
+  "Papas fritas": "kg", "Pepinillo": "kg", "Queso cheddar": "unidad", "Queso Normal": "kg", "Retiro de Caja": "unidad",
+  "Salchichas 17 cm": "unidad", "Salsa Americana": "kg", "Salsa BBQ": "kg", "Servilletas / bolsas": "unidad", "Tocino": "kg", "Tomate": "kg",
+};
+
 // Mapa de equivalencias: nombre en gastos -> nombre en insumos_precio
 const MERMA_INSUMOS = { "Palta": 0.30 }; // 30% merma
 
@@ -123,6 +134,17 @@ const categoriaGasto = (insumo) => {
   if ((INSUMOS_BASE.includes(insumo) && insumo !== "Otro") || resolverInsumo(insumo)) return "costo_ventas";
   return "sin_clasificar";
 };
+// Normaliza nombres de insumos (mayúsculas, espacios y acentos) para no mostrar duplicados
+const normNombre = (s) => (s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+const nombreCanonico = (insumo) => {
+  const n = normNombre(insumo);
+  const base = INSUMOS_BASE.find((b) => b !== "Otro" && normNombre(b) === n);
+  if (base) return base;
+  return resolverInsumo(insumo) || (insumo || "").trim();
+};
+// Nombres antiguos que no deben ofrecerse más en el desplegable (sus gastos siguen contando)
+const EXCLUIR_DEL_DESPLEGABLE = ["ciboulette y cilantro"];
+
 const CATEGORIAS = [
   { id: "completos", label: "Completos", emoji: "🌭" },
   { id: "pollo", label: "Pollo", emoji: "🍗" },
@@ -896,7 +918,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const unidadFijaDe = (nombre) => {
     if (UNIDAD_DEFAULT_INSUMO[nombre]) return UNIDAD_DEFAULT_INSUMO[nombre];
     const ref = resolverInsumo(nombre) || nombre;
-    return insumosPrecio.find((i) => i.nombre === ref)?.unidad || null;
+    return insumosPrecio.find((i) => i.nombre === ref)?.unidad || UNIDAD_RESPALDO[nombreCanonico(nombre)] || null;
   };
   // Costo en insumos de una venta (según receta y variante AS) y su valor a precio de lista
   const costoVenta = (v) => {
@@ -915,7 +937,19 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const mesActual = today().slice(0, 7);
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
   const ventasMeses = [...new Set(ventas.map((v) => v.fecha.slice(0, 7)))].sort().reverse();
-  const insumosUsadosHistoricamente = [...new Set(gastos.map((g) => g.insumo))].filter((i) => i && !INSUMOS_BASE.includes(i));
+  const insumosUsadosHistoricamente = (() => {
+    const vistos = new Set(INSUMOS_BASE.map(normNombre));
+    const out = [];
+    gastos.forEach((g) => {
+      const i = (g.insumo || "").trim();
+      if (!i) return;
+      const n = normNombre(i);
+      if (vistos.has(n) || resolverInsumo(i) || EXCLUIR_DEL_DESPLEGABLE.includes(n)) return;
+      vistos.add(n);
+      out.push(i);
+    });
+    return out;
+  })();
   const insumos = [...INSUMOS_BASE.filter((i) => i !== "Otro"), ...insumosUsadosHistoricamente]
     .filter((v, i, arr) => arr.indexOf(v) === i)
     .sort((a, b) => a.localeCompare(b, "es"));
@@ -932,7 +966,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
 
   const gastosFiltrados = gastos.filter((g) => {
     if (filtro.mes && !g.fecha.startsWith(filtro.mes)) return false;
-    if (filtro.insumo && g.insumo !== filtro.insumo) return false;
+    if (filtro.insumo && nombreCanonico(g.insumo) !== filtro.insumo) return false;
     if (filtro.persona && g.persona !== filtro.persona) return false;
     return true;
   });
@@ -945,7 +979,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   });
 
   const porPersonaGastos = PERSONAS.map((p) => ({ p, t: gastosResumen.filter((g) => g.persona === p).reduce((s, g) => s + g.monto, 0), c: gastosResumen.filter((g) => g.persona === p).length })).filter((x) => x.t > 0);
-  const porInsumo = Object.entries(gastosResumen.reduce((acc, g) => { acc[g.insumo] = (acc[g.insumo] || 0) + g.monto; return acc; }, {})).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 10);
+  const porInsumo = Object.entries(gastosResumen.reduce((acc, g) => { const k = nombreCanonico(g.insumo); acc[k] = (acc[k] || 0) + g.monto; return acc; }, {})).map(([n, t]) => ({ n, t })).sort((a, b) => b.t - a.t).slice(0, 10);
 
   const ventasMesActual = ventas.filter((v) => v.fecha.startsWith(mesActual) && !esComponente(v));
   const ventasPorProducto = Object.entries(
@@ -1306,7 +1340,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               <div>
                 <div style={{ ...S.card, marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <select value={filtro.mes} onChange={(e) => setFiltro({ ...filtro, mes: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 110 }}><option value="">Todos los meses</option>{meses.map((m) => <option key={m}>{m}</option>)}</select>
-                  <select value={filtro.insumo} onChange={(e) => setFiltro({ ...filtro, insumo: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 120 }}><option value="">Todos los insumos</option>{[...new Set(gastos.map((g) => g.insumo))].sort().map((i) => <option key={i}>{i}</option>)}</select>
+                  <select value={filtro.insumo} onChange={(e) => setFiltro({ ...filtro, insumo: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 120 }}><option value="">Todos los insumos</option>{[...new Set(gastos.map((g) => nombreCanonico(g.insumo)))].sort((a, b) => a.localeCompare(b, "es")).map((i) => <option key={i}>{i}</option>)}</select>
                   <select value={filtro.persona} onChange={(e) => setFiltro({ ...filtro, persona: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 100 }}><option value="">Todos</option>{PERSONAS.map((p) => <option key={p}>{p}</option>)}</select>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, color: C.muted, fontSize: 12 }}>
