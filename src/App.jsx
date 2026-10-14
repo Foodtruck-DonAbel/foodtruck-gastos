@@ -103,6 +103,10 @@ const COMISION_TARJETA_CREDITO = 0.026 * 1.19;
 const PCT_CREDITO_ESTIMADO = 0.1669; // proporción de crédito en las ventas con tarjeta (revisar cada tanto con el portal)
 const COMISION_TARJETA = COMISION_TARJETA_DEBITO * (1 - PCT_CREDITO_ESTIMADO) + COMISION_TARJETA_CREDITO * PCT_CREDITO_ESTIMADO;
 
+// Meses recientes (YYYY-MM) y nombre legible, para elegir a qué mes corresponde un gasto
+const mesesRecientes = (n = 12) => { const out = []; const d = new Date(); for (let i = 0; i < n; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`); } return out; };
+const nombreMes = (ym) => { const [y, m] = ym.split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("es-CL", { month: "long", year: "numeric" }); };
+
 // Categoría contable de cada gasto (para el estado de resultados)
 const GASTOS_OPERACIONALES = ["Gas / combustible", "Limpieza"];
 const GASTOS_FIJOS = ["Patente y permisos", "Contador", "Publicidad", "Internet y celular", "Seguros", "Mantención camión", "Arriendo lugar"];
@@ -223,7 +227,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [gastosView, setGastosView] = useState("nuevo");
-  const [form, setForm] = useState({ fecha: today(), insumo: INSUMOS_BASE[0], insumoCustom: "", cantidad: "", unidad: UNIDAD_DEFAULT_INSUMO[INSUMOS_BASE[0]] || "unidad", fondo: FONDOS[0], proveedor: "", proveedorCustom: "", monto: "", nota: "" });
+  const [form, setForm] = useState({ fecha: today(), insumo: INSUMOS_BASE[0], insumoCustom: "", mesCorresponde: "", cantidad: "", unidad: UNIDAD_DEFAULT_INSUMO[INSUMOS_BASE[0]] || "unidad", fondo: FONDOS[0], proveedor: "", proveedorCustom: "", monto: "", nota: "" });
   const [filtro, setFiltro] = useState({ mes: "", insumo: "", persona: "" });
 
   // Ventas
@@ -632,9 +636,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     if (!form.cantidad || isNaN(Number(form.cantidad)) || Number(form.cantidad) <= 0) { setForm({ ...form, _errorCantidad: true }); showToast("Completa la cantidad"); return; }
     setSaving(true);
     const unidadFinal = UNIDAD_DEFAULT_INSUMO[form.insumo] || form.unidad;
-    await supabase.from("gastos").insert([{ fecha: form.fecha, insumo: insumofinal, cantidad: form.cantidad || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: form.nota || null }]);
+    const filaGasto = { fecha: form.fecha, insumo: insumofinal, cantidad: form.cantidad || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: form.nota || null };
+    if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) filaGasto.mes_corresponde = form.mesCorresponde;
+    const { error: errGasto } = await supabase.from("gastos").insert([filaGasto]);
+    if (errGasto) { console.error("Error al guardar gasto:", errGasto); showToast("❌ Error: " + errGasto.message); setSaving(false); return; }
     showToast("✓ Gasto guardado");
-    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", _errorMonto: false, _errorCantidad: false });
+    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false });
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
     const insumoRef = resolverInsumo(insumofinal);
@@ -1246,7 +1253,19 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <div style={S.card}>
                   <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Registrar gasto</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <Fld label="Fecha"><input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value })} style={S.inp} /></Fld>
+                    <Fld label="Fecha"><input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value, mesCorresponde: "" })} style={S.inp} /></Fld>
+                    <Fld label="Corresponde al mes">
+                      {(() => {
+                        const mesFecha = (form.fecha || today()).slice(0, 7);
+                        const opciones = mesesRecientes(12);
+                        if (!opciones.includes(mesFecha)) opciones.push(mesFecha);
+                        return (
+                          <select value={form.mesCorresponde || mesFecha} onChange={(e) => setForm({ ...form, mesCorresponde: e.target.value === mesFecha ? "" : e.target.value })} style={S.inp}>
+                            {opciones.map((m) => <option key={m} value={m}>{nombreMes(m)}{m === today().slice(0, 7) ? " (en curso)" : ""}</option>)}
+                          </select>
+                        );
+                      })()}
+                    </Fld>
                     <Fld label="Total que pagaste por este insumo ($)" full>
                       <input type="text" inputMode="numeric" placeholder="ej: 12.790" value={form.montoDisplay || ""}
                         onChange={(e) => {
@@ -1298,6 +1317,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <Tag color={personColor(g.persona) + "33"} text={g.persona} textColor={personColor(g.persona)} />
                         <Tag text={g.fondo} />
                         {g.proveedor && <Tag text={normProv(g.proveedor)} color="#2A3530" textColor={C.green} />}
+                        {g.mes_corresponde && g.mes_corresponde !== g.fecha.slice(0, 7) && <Tag text={`↪ ${nombreMes(g.mes_corresponde)}`} color={C.blue + "33"} textColor={C.blue} />}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -2286,7 +2306,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const vMes = ventas.filter((v) => v.fecha.startsWith(mesSel) && !esComponente(v));
               const porMetodoER = (m) => vMes.filter((v) => v.metodo_pago === m).reduce((acc, v) => acc + v.total, 0);
               const totalVentasER = vMes.reduce((acc, v) => acc + v.total, 0);
-              const gMes = gastos.filter((g) => g.fecha.startsWith(mesSel));
+              const gMes = gastos.filter((g) => (g.mes_corresponde || g.fecha.slice(0, 7)) === mesSel);
               const sumCat = (c) => gMes.filter((g) => categoriaGasto(g.insumo) === c).reduce((acc, g) => acc + g.monto, 0);
               const costoVentasER = sumCat("costo_ventas");
               const operacionalER = sumCat("operacional");
@@ -2346,7 +2366,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
                     {fmt(GUSTAVO_FIJO)} fijo + {fmt(GUSTAVO_POR_COMPLETO)} × {completosMes} completos ({completosSueltos} sueltos + {completosCombo} en combo) = {fmt(GUSTAVO_POR_COMPLETO * completosMes)} variable
                     <div style={{ marginTop: 2 }}>
-                      Pagado en el mes: <span style={{ color: C.text, fontWeight: 700 }}>{fmt(pagadoGustavoER)}</span> · {gustavoER - pagadoGustavoER >= 0 ? "Saldo por pagar" : "Pagado de más"}: <span style={{ color: gustavoER - pagadoGustavoER > 0 ? C.orange : C.green, fontWeight: 700 }}>{fmt(Math.abs(gustavoER - pagadoGustavoER))}</span>
+                      Pagado a este mes: <span style={{ color: C.text, fontWeight: 700 }}>{fmt(pagadoGustavoER)}</span> · {gustavoER - pagadoGustavoER >= 0 ? "Saldo por pagar" : "Pagado de más"}: <span style={{ color: gustavoER - pagadoGustavoER > 0 ? C.orange : C.green, fontWeight: 700 }}>{fmt(Math.abs(gustavoER - pagadoGustavoER))}</span>
                     </div>
                   </div>
                   {sinClasER > 0 && (
