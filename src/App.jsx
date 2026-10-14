@@ -635,7 +635,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     if (!form.monto || isNaN(Number(form.monto))) { setForm({ ...form, _errorMonto: true }); showToast("Completa el monto"); return; }
     if (!form.cantidad || isNaN(Number(form.cantidad)) || Number(form.cantidad) <= 0) { setForm({ ...form, _errorCantidad: true }); showToast("Completa la cantidad"); return; }
     setSaving(true);
-    const unidadFinal = UNIDAD_DEFAULT_INSUMO[form.insumo] || form.unidad;
+    const unidadFinal = unidadFijaDe(form.insumo) || form.unidad;
     const filaGasto = { fecha: form.fecha, insumo: insumofinal, cantidad: form.cantidad || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: form.nota || null };
     if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) filaGasto.mes_corresponde = form.mesCorresponde;
     const { error: errGasto } = await supabase.from("gastos").insert([filaGasto]);
@@ -891,6 +891,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     return rec.ingredientes;
   };
   const parseNota = (v) => { try { return JSON.parse(v.nota || "{}"); } catch { return {}; } };
+  // Unidad fija de un insumo en el formulario de gastos: primero la lista del código, luego la unidad
+  // registrada en Recetas → Insumos. Si no se encuentra, devuelve null (el formulario deja elegir).
+  const unidadFijaDe = (nombre) => {
+    if (UNIDAD_DEFAULT_INSUMO[nombre]) return UNIDAD_DEFAULT_INSUMO[nombre];
+    const ref = resolverInsumo(nombre) || nombre;
+    return insumosPrecio.find((i) => i.nombre === ref)?.unidad || null;
+  };
   // Costo en insumos de una venta (según receta y variante AS) y su valor a precio de lista
   const costoVenta = (v) => {
     const rec = recetas.find((r) => r.nombre_producto === v.producto);
@@ -1276,13 +1283,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         style={{ ...S.inp, borderColor: form._errorMonto ? C.red : C.border }} />
                       {form._errorMonto && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa el monto</div>}
                     </Fld>
-                    <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => { const unidadAuto = UNIDAD_DEFAULT_INSUMO[e.target.value]; setForm({ ...form, insumo: e.target.value, unidad: unidadAuto || form.unidad }); }} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
+                    <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => { const unidadAuto = unidadFijaDe(e.target.value); setForm({ ...form, insumo: e.target.value, unidad: unidadAuto || form.unidad }); }} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
                     {form.insumo === "Otro" && <Fld label="¿Cuál?" full><input value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value })} style={S.inp} /></Fld>}
                     <Fld label="Cantidad *">
                       <input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value, _errorCantidad: false })} style={{ ...S.inp, borderColor: form._errorCantidad ? C.red : C.border }} />
                       {form._errorCantidad && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa la cantidad</div>}
                     </Fld>
-                    <Fld label="Unidad">{ UNIDAD_DEFAULT_INSUMO[form.insumo] ? (<div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, color: C.mustard, padding: "8px 10px", fontSize: 13, fontWeight: 700 }}>{UNIDAD_DEFAULT_INSUMO[form.insumo]} <span style={{ color: C.muted, fontWeight: 400, fontSize: 11 }}>(fijo por receta)</span></div>) : (<select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>{["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}</select>) }</Fld>
+                    <Fld label="Unidad">{ unidadFijaDe(form.insumo) ? (<div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, color: C.mustard, padding: "8px 10px", fontSize: 13, fontWeight: 700 }}>{unidadFijaDe(form.insumo)} <span style={{ color: C.muted, fontWeight: 400, fontSize: 11 }}>(fija según el insumo)</span></div>) : (<select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>{["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}</select>) }</Fld>
                     <Fld label="Fondo"><select value={form.fondo} onChange={(e) => setForm({ ...form, fondo: e.target.value })} style={S.inp}>{FONDOS.map((f) => <option key={f}>{f}</option>)}</select></Fld>
                     <Fld label="Proveedor"><select value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value, proveedorCustom: "" })} style={S.inp}><option value="">Sin proveedor</option>{proveedores.map((p) => <option key={p}>{p}</option>)}<option value="__nuevo__">+ Nuevo…</option></select></Fld>
                     {form.proveedor === "__nuevo__" && <Fld label="Nombre" full><input value={form.proveedorCustom} onChange={(e) => setForm({ ...form, proveedorCustom: e.target.value })} style={S.inp} /></Fld>}
