@@ -115,6 +115,7 @@ const categoriaGasto = (insumo) => {
   if (GASTOS_INVERSION.includes(insumo)) return "inversion";
   if (GASTOS_FIJOS.includes(insumo)) return "fijo";
   if (GASTOS_OPERACIONALES.includes(insumo)) return "operacional";
+  if (["ciboulette y cilantro"].includes((insumo || "").trim().toLowerCase())) return "costo_ventas";
   if ((INSUMOS_BASE.includes(insumo) && insumo !== "Otro") || resolverInsumo(insumo)) return "costo_ventas";
   return "sin_clasificar";
 };
@@ -2337,8 +2338,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   </div>
                   {filaER(`(−) Costo de ventas (insumos)${pctER(costoVentasER)}`, fmt(costoVentasER), { color: C.red })}
                   {filaER(`= Margen bruto${pctER(margenBrutoER)}`, fmt(margenBrutoER), { color: margenBrutoER >= 0 ? C.green : C.red })}
-                  {filaER(`(−) Operacionales (gas, limpieza)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red })}
-                  {filaER(`(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red })}
+                  {operacionalER > 0 && filaER(`(−) Operacionales (gas, limpieza)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red })}
+                  {fijosER > 0 && filaER(`(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red })}
                   {filaER(`(−) Comisión tarjeta (${(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
                   {filaER(`(−) Comisión Pedidos Ya (${Math.round(COMISION_PEDIDOS_YA * 100)}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
                   {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
@@ -2355,7 +2356,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                   )}
                   {filaER(`= Resultado preliminar${pctER(resultadoER)}`, fmt(resultadoER), { color: resultadoER >= 0 ? C.green : C.red })}
-                  <div style={{ color: C.muted, fontSize: 10, margin: "6px 0 4px" }}>Incluye comisiones y Gustavo. Los costos fijos (patente, contador, publicidad, etc.) entran a medida que los ingresas en Gastos.</div>
+                  <div style={{ color: C.muted, fontSize: 10, margin: "6px 0 4px" }}>Los % de cada línea son sobre las ventas brutas del mes. Incluye comisiones y Gustavo. Los costos fijos (patente, contador, publicidad, etc.) entran a medida que los ingresas en Gastos.</div>
                   {cortesiasER.length > 0 && (
                     <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>
                       🎁 Cortesías del mes: {cortesiasER.reduce((acc, v) => acc + v.cantidad, 0)} und · costo en insumos <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costoCortER))}</span> (ya incluido en el costo de ventas) · a precio de lista {fmt(Math.round(valorCortER))}
