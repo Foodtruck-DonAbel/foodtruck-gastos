@@ -222,6 +222,8 @@ export default function App() {
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
   const [rangoDesde, setRangoDesde] = useState("");
   const [rangoHasta, setRangoHasta] = useState("");
+  const [porProdModo, setPorProdModo] = useState("producto"); // "producto" | "categoria"
+  const [catAbierta, setCatAbierta] = useState(null);
   const [dashDesde, setDashDesde] = useState("");
   const [dashHasta, setDashHasta] = useState("");
   const [dashVerTodosProd, setDashVerTodosProd] = useState(false);
@@ -866,6 +868,19 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     return rec.ingredientes;
   };
   const parseNota = (v) => { try { return JSON.parse(v.nota || "{}"); } catch { return {}; } };
+  // Costo en insumos de una venta (según receta y variante AS) y su valor a precio de lista
+  const costoVenta = (v) => {
+    const rec = recetas.find((r) => r.nombre_producto === v.producto);
+    if (!rec) return 0;
+    if (rec.categoria === "combos") return (rec.productos_combo || []).reduce((acc, pn) => acc + costoProducto(pn), 0) * v.cantidad;
+    return calcularCosto(ingredientesEfectivos(rec, parseNota(v)), insumosPrecio) * v.cantidad;
+  };
+  const valorListaVenta = (v) => {
+    const rec = recetas.find((r) => r.nombre_producto === v.producto);
+    if (!rec) return 0;
+    const unit = parseNota(v).variante === "as" && rec.variante_as?.precio_venta ? rec.variante_as.precio_venta : rec.precio_venta;
+    return (unit || 0) * v.cantidad;
+  };
 
   const mesActual = today().slice(0, 7);
   const meses = [...new Set(gastos.map((g) => g.fecha.slice(0, 7)))].sort().reverse();
@@ -1613,7 +1628,18 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}><div style={{ color: C.muted, fontSize: 11 }}>🎁 Cortesías</div><div style={{ fontWeight: 700, fontSize: 18, color: C.orange }}>{cortesiasPeriodo.length}</div></div>
                         <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}><div style={{ color: C.muted, fontSize: 11 }}>% Descuentos</div><div style={{ fontWeight: 700, fontSize: 18, color: C.blue }}>{descuentosPeriodo.length}</div></div>
                       </div>
-                      {cortesiasPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (<div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}><span>{v.producto} <span style={{ color: personColor(d.autorizado_por) }}>({d.autorizado_por})</span></span><span style={{ color: C.muted }}>{v.fecha}</span></div>); })}
+                      {cortesiasPeriodo.length > 0 && (() => {
+                        const costoCort = cortesiasPeriodo.reduce((acc, v) => acc + costoVenta(v), 0);
+                        const valorCort = cortesiasPeriodo.reduce((acc, v) => acc + valorListaVenta(v), 0);
+                        return (
+                          <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Costo en insumos</span><span style={{ fontWeight: 800, color: C.red }}>{fmt(Math.round(costoCort))}</span></div>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 4 }}><span style={{ color: C.muted }}>Valor a precio de lista</span><span style={{ fontWeight: 700, color: C.orange }}>{fmt(Math.round(valorCort))}</span></div>
+                            <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>Informativo: ese costo ya está incluido en las compras, no se resta otra vez.</div>
+                          </div>
+                        );
+                      })()}
+                      {cortesiasPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (<div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}><span>{v.producto}{v.cantidad > 1 ? ` ×${v.cantidad}` : ""} <span style={{ color: personColor(d.autorizado_por) }}>({d.autorizado_por})</span></span><span style={{ color: C.muted }}>{v.fecha} · <span style={{ color: C.red }}>{fmt(Math.round(costoVenta(v)))}</span></span></div>); })}
                       {descuentosPeriodo.map((v) => { const d = JSON.parse(v.nota || "{}"); return (<div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}22` }}><span>{v.producto} <span style={{ color: C.blue }}>{d.porcentaje}% off</span></span><span style={{ color: C.muted }}>{v.fecha}</span></div>); })}
                     </div>
                   )}
@@ -1668,6 +1694,23 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 totalPesos: d.pesosSueltos + d.pesosCombo,
                 ...d,
               })).sort((a, b) => b.totalUnidades - a.totalUnidades);
+              // ---- Vista por categoría ----
+              // Los pesos de las filas "en combo" no se suman (ya están en el total del combo), solo sus unidades.
+              const catsInfo = [...CATEGORIAS, { id: "sin_categoria", label: "Sin categoría", emoji: "❓" }];
+              const porCat = {};
+              catsInfo.forEach((c) => { porCat[c.id] = { und: 0, undCombo: 0, pesos: 0, productos: {} }; });
+              ventasEnRango.forEach((v) => {
+                const cid = recetas.find((r) => r.nombre_producto === v.producto)?.categoria || "sin_categoria";
+                const c = porCat[cid] || porCat["sin_categoria"];
+                if (!c.productos[v.producto]) c.productos[v.producto] = { sueltas: 0, combo: 0, pesos: 0, as: 0 };
+                const pr = c.productos[v.producto];
+                if (esComponente(v)) { pr.combo += v.cantidad; c.undCombo += v.cantidad; }
+                else { pr.sueltas += v.cantidad; pr.pesos += v.total; c.pesos += v.total; if (parseNota(v).variante === "as") pr.as += v.cantidad; }
+                c.und += v.cantidad;
+              });
+              const catsOrdenadas = catsInfo.filter((c) => porCat[c.id].und > 0).sort((a, b) => porCat[b.id].pesos - porCat[a.id].pesos);
+              const totalPesosCats = catsOrdenadas.reduce((acc, c) => acc + porCat[c.id].pesos, 0);
+              const maxPesosCat = Math.max(...catsOrdenadas.map((c) => porCat[c.id].pesos), 1);
               return (
                 <div>
                   <div style={{ ...S.card, marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -1744,6 +1787,59 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       </div>
                     );
                   })()}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                    {[{ id: "producto", label: "🔍 Por producto" }, { id: "categoria", label: "🗂️ Por categoría" }].map((t) => (
+                      <button key={t.id} onClick={() => setPorProdModo(t.id)} style={{ flex: 1, background: porProdModo === t.id ? C.mustard : C.tag, color: porProdModo === t.id ? C.bg : C.muted, border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: porProdModo === t.id ? 700 : 400, fontSize: 13 }}>{t.label}</button>
+                    ))}
+                  </div>
+                  {porProdModo === "categoria" ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {catsOrdenadas.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 30 }}>Sin ventas en este rango</div>}
+                      {catsOrdenadas.length > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.muted }}>
+                          <span>Total vendido en el rango</span>
+                          <span style={{ color: C.green, fontWeight: 800, fontSize: 14 }}>{fmt(totalPesosCats)}</span>
+                        </div>
+                      )}
+                      {catsOrdenadas.map((c) => {
+                        const d = porCat[c.id];
+                        const abierta = catAbierta === c.id;
+                        const pct = totalPesosCats > 0 ? Math.round((d.pesos / totalPesosCats) * 100) : 0;
+                        const prods = Object.entries(d.productos).map(([nombre, x]) => ({ nombre, ...x, und: x.sueltas + x.combo })).sort((a, b) => b.und - a.und || b.pesos - a.pesos);
+                        return (
+                          <div key={c.id} style={{ ...S.card, padding: 0, overflow: "hidden" }}>
+                            <button onClick={() => setCatAbierta(abierta ? null : c.id)} style={{ background: "none", border: "none", width: "100%", textAlign: "left", cursor: "pointer", padding: "14px 16px", color: C.text }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                <div style={{ fontWeight: 700, fontSize: 15 }}>{c.emoji} {c.label} <span style={{ color: C.muted, fontSize: 11, fontWeight: 400 }}>{abierta ? "▲" : "▼"}</span></div>
+                                <div style={{ textAlign: "right" }}>
+                                  <div style={{ fontWeight: 800, fontSize: 16, color: C.green }}>{fmt(d.pesos)} <span style={{ color: C.muted, fontSize: 11, fontWeight: 400 }}>({pct}%)</span></div>
+                                  <div style={{ color: C.muted, fontSize: 11 }}>{d.und} und{d.undCombo > 0 ? ` (${d.undCombo} en combos)` : ""}</div>
+                                </div>
+                              </div>
+                              <Bar value={d.pesos} max={maxPesosCat} color={C.mustard} />
+                            </button>
+                            {abierta && (
+                              <div style={{ padding: "0 16px 12px", borderTop: `1px solid ${C.border}` }}>
+                                {prods.map((f) => (
+                                  <div key={f.nombre} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "7px 0", borderBottom: `1px solid ${C.border}33` }}>
+                                    <div>
+                                      <div style={{ fontSize: 13, fontWeight: 600 }}>{f.nombre}{f.as > 0 && <span style={{ color: C.blue, fontSize: 10, marginLeft: 6 }}>({f.as} AS)</span>}</div>
+                                      {f.combo > 0 && <div style={{ fontSize: 10, color: C.muted }}>{f.sueltas} sueltas + <span style={{ color: C.purple }}>{f.combo} en combo</span></div>}
+                                    </div>
+                                    <div style={{ textAlign: "right" }}>
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: C.mustard }}>{f.und} und</div>
+                                      <div style={{ fontSize: 11, color: C.muted }}>{fmt(f.pesos)}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {catsOrdenadas.length > 0 && <div style={{ color: C.muted, fontSize: 10 }}>Los pesos suman las ventas del rango. Los productos que salieron dentro de un combo cuentan como unidades de su categoría, pero su valor está en la categoría Combos.</div>}
+                    </div>
+                  ) : (<>
                   {filas.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 30 }}>Sin ventas en este rango</div>}
                   {filas.map((f) => (
                     <div key={f.nombre} style={S.card}>
@@ -1762,6 +1858,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       )}
                     </div>
                   ))}
+                  </>)}
                 </div>
               );
             })()}
@@ -2181,6 +2278,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const sinClasER = sumCat("sin_clasificar");
               const inversionER = sumCat("inversion");
               const retirosER = sumCat("retiro");
+              const cortesiasER = vMes.filter((v) => parseNota(v).tipo === "cortesia");
+              const costoCortER = cortesiasER.reduce((acc, v) => acc + costoVenta(v), 0);
+              const valorCortER = cortesiasER.reduce((acc, v) => acc + valorListaVenta(v), 0);
               const margenBrutoER = totalVentasER - costoVentasER;
               const resultadoER = margenBrutoER - operacionalER - fijosER - sinClasER;
               const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo) === "sin_clasificar").map((g) => g.insumo))];
@@ -2233,6 +2333,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {filaP("Comisión Pedidos Ya", `Ventas Pedidos Ya del mes: ${fmt(porMetodoER("Pedidos Ya"))}`)}
                   {filaP("Gustavo: $600.000 fijo + $225 por completo", `Completos vendidos: ${completosSueltos + completosCombo} (${completosSueltos} sueltos + ${completosCombo} en combo)`)}
                   {filaP("Otros costos (patente, contador, publicidad, mantención…)")}
+                  {cortesiasER.length > 0 && (
+                    <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>
+                      🎁 Cortesías del mes: {cortesiasER.reduce((acc, v) => acc + v.cantidad, 0)} und · costo en insumos <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costoCortER))}</span> (ya incluido en el costo de ventas) · a precio de lista {fmt(Math.round(valorCortER))}
+                    </div>
+                  )}
                   {inversionER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>Inversiones del mes (no restan del resultado): {fmt(inversionER)}</div>}
                   {retirosER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Retiros de caja del mes (no restan del resultado): {fmt(retirosER)}</div>}
                 </div>
