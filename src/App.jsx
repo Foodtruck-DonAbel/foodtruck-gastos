@@ -961,7 +961,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const totalGastosResumen = gastosResumen.reduce((s, g) => s + g.monto, 0);
   const totalVentasResumen = ventas.filter((v) => !esComponente(v) && (filtroResumen ? v.fecha.startsWith(filtroResumen) : true)).reduce((s, v) => s + v.total, 0);
   const utilidadResumen = totalVentasResumen - totalGastosResumen;
-  const totalVentasDia = ventas.filter((v) => v.fecha === today()).reduce((s, v) => s + v.total, 0);
+  const totalVentasDia = ventas.filter((v) => v.fecha === today() && !esComponente(v)).reduce((s, v) => s + v.total, 0);
   const utilidadMes = totalVentasMes - totalMes;
 
   const gastosFiltrados = gastos.filter((g) => {
