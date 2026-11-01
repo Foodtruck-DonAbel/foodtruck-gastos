@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { supabase } from "./supabase";
 
 const C = {
@@ -269,6 +269,8 @@ export default function App() {
   const [dashDesde, setDashDesde] = useState("");
   const [dashHasta, setDashHasta] = useState("");
   const [dashVerTodosProd, setDashVerTodosProd] = useState(false);
+  const [dashModoGrafico, setDashModoGrafico] = useState("diario"); // "diario" | "acumulado"
+  const [insightTab, setInsightTab] = useState("horas"); // "horas" | "dias" | "mapa"
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -1263,7 +1265,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 { id: "ventas", emoji: "💰", label: "Ventas", sub: `Hoy ${fmt(totalVentasDia)}`, color: C.green },
                 { id: "gastos", emoji: "🧾", label: "Gastos", sub: `Mes ${fmt(totalMes)}`, color: C.mustard },
                 { id: "recetas", emoji: "🍽️", label: "Recetas", sub: "Costos y márgenes", color: C.purple },
-                { id: "resumen", emoji: "📊", label: "Resumen", sub: `Utilidad ${fmt(utilidadMes)}`, color: utilidadMes >= 0 ? C.green : C.red },
+                { id: "resumen", emoji: "📊", label: "Resumen", sub: `Ventas mes ${fmt(totalVentasMes)}`, color: C.green },
               ].map((item) => (
                 <button key={item.id} onClick={() => setView(item.id)} style={{ background: C.card, border: `2px solid ${C.border}`, borderRadius: 14, padding: "20px 16px", cursor: "pointer", textAlign: "left" }}
                   onMouseEnter={(e) => e.currentTarget.style.borderColor = item.color}
@@ -1277,7 +1279,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             <div style={{ ...S.card, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, textAlign: "center" }}>
               <div><div style={{ color: C.muted, fontSize: 10 }}>Ventas hoy</div><div style={{ fontWeight: 800, fontSize: 17, color: C.green }}>{fmt(totalVentasDia)}</div></div>
               <div><div style={{ color: C.muted, fontSize: 10 }}>Gastos mes</div><div style={{ fontWeight: 800, fontSize: 17, color: C.mustard }}>{fmt(totalMes)}</div></div>
-              <div><div style={{ color: C.muted, fontSize: 10 }}>Utilidad</div><div style={{ fontWeight: 800, fontSize: 17, color: utilidadMes >= 0 ? C.green : C.red }}>{fmt(utilidadMes)}</div></div>
+              <div><div style={{ color: C.muted, fontSize: 10 }}>Ventas mes</div><div style={{ fontWeight: 800, fontSize: 17, color: C.green }}>{fmt(totalVentasMes)}</div></div>
             </div>
           </div>
         )}
@@ -1613,62 +1615,97 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Ticket prom.</div><div style={{ fontWeight: 800, fontSize: 20, color: C.mustard }}>{fmt(ticketPromedio)}</div></div>
                       <div style={{ textAlign: "center" }}><div style={{ color: C.muted, fontSize: 11 }}>Transacciones</div><div style={{ fontWeight: 800, fontSize: 20, color: C.blue }}>{cantidadPeriodo}</div></div>
                     </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}><div style={{ color: C.muted, fontSize: 11 }}>Gastos</div><div style={{ fontWeight: 700, fontSize: 16, color: C.red }}>{fmt(gastosPeriodo)}</div></div>
-                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px" }}><div style={{ color: C.muted, fontSize: 11 }}>Utilidad</div><div style={{ fontWeight: 700, fontSize: 16, color: utilidadPeriodo >= 0 ? C.green : C.red }}>{fmt(utilidadPeriodo)}</div></div>
-                    </div>
-                    {margenOperacional !== null && (
-                      <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-                        <span style={{ color: C.muted }}>Margen operacional</span>
-                        <span style={{ fontWeight: 700, color: margenOperacional >= 0 ? C.green : C.red }}>{margenOperacional}%</span>
-                      </div>
-                    )}
-                    {gastosPeriodo === 0 && totalPeriodo > 0 && (
-                      <div style={{ color: C.muted, fontSize: 11, marginTop: 8 }}>Registra gastos del período para ver el margen operacional</div>
-                    )}
                   </div>
-                  {dashPeriodo !== "hoy" && (
-                    <div style={S.card}>
-                      <STitle>Ventas por día</STitle>
-                      {(() => {
-                        const w = 300, h = 110, padX = 8, padTop = 22, padBottom = 20;
-                        const n = ventasDia.length;
-                        const stepX = n > 1 ? (w - padX * 2) / (n - 1) : 0;
-                        const scaleY = (val) => padTop + (1 - (maxDia > 0 ? val / maxDia : 0)) * (h - padTop - padBottom);
-                        const points = ventasDia.map((d, i) => ({ x: padX + i * stepX, y: scaleY(d.total), ...d }));
-                        const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
-                        const sel = puntoSeleccionado !== null ? points[puntoSeleccionado] : null;
-                        const mostrarCadaN = n > 15 ? Math.ceil(n / 10) : 1;
-                        return (
-                          <div style={{ position: "relative", width: "100%" }}>
-                            <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height: 130, display: "block", overflow: "visible" }} preserveAspectRatio="none">
-                              <path d={pathD} fill="none" stroke={C.green} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-                              {points.map((p, i) => (
-                                <circle key={i} cx={p.x} cy={p.y} r={sel === p ? 3.5 : 2}
-                                  fill={p.fecha === ahora ? C.mustard : C.green}
-                                  stroke={C.bg} strokeWidth="0.5"
-                                  onClick={() => setPuntoSeleccionado(puntoSeleccionado === i ? null : i)}
-                                  onTouchStart={() => setPuntoSeleccionado(i)}
-                                  style={{ cursor: "pointer" }} />
-                              ))}
-                            </svg>
-                            <div style={{ display: "flex", justifyContent: "space-between", marginTop: -6, padding: "0 4px" }}>
-                              {ventasDia.map((d, i) => (
-                                <div key={d.fecha} style={{ flex: 1, textAlign: "center", fontSize: 9, color: d.fecha === ahora ? C.mustard : C.muted, visibility: (i % mostrarCadaN === 0 || i === n - 1) ? "visible" : "hidden" }}>{d.dia}</div>
-                              ))}
-                            </div>
-                            {sel && (
-                              <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
-                                <span style={{ color: C.muted, fontSize: 12 }}>Día {sel.fecha.split("-").reverse().join("-")}: </span>
-                                <span style={{ color: C.green, fontWeight: 700, fontSize: 14 }}>{fmt(sel.total)}</span>
-                                <div style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>Todo lo de abajo muestra solo este día</div>
-                              </div>
-                            )}
+                  {dashPeriodo !== "hoy" && (() => {
+                    const n = ventasDia.length;
+                    const totalPorFecha = {};
+                    ventas.forEach((v) => { if (!esComponente(v)) totalPorFecha[v.fecha] = (totalPorFecha[v.fecha] || 0) + v.total; });
+                    const prevFecha = (f) => {
+                      if (dashPeriodo === "mes") {
+                        const [yy, mm, dd] = f.split("-").map(Number);
+                        const pm = new Date(yy, mm - 2, 1);
+                        const ultimo = new Date(pm.getFullYear(), pm.getMonth() + 1, 0).getDate();
+                        return dd > ultimo ? null : ymd(new Date(pm.getFullYear(), pm.getMonth(), dd));
+                      }
+                      const dt = new Date(f + "T00:00:00"); dt.setDate(dt.getDate() - n); return ymd(dt);
+                    };
+                    const prevFechas = ventasDia.map((d) => prevFecha(d.fecha));
+                    const prevVals = prevFechas.map((f) => f ? (totalPorFecha[f] || 0) : null);
+                    const hayPrev = prevVals.some((v) => v);
+                    const etiquetaPrev = dashPeriodo === "mes" ? "mes anterior" : "período anterior";
+                    const acumulado = dashModoGrafico === "acumulado";
+                    const cumCur = []; const cumPrev = [];
+                    let accC = 0, accP = 0;
+                    ventasDia.forEach((d, i) => { accC += d.total; cumCur[i] = accC; accP += (prevVals[i] || 0); cumPrev[i] = accP; });
+                    const serieMax = acumulado ? Math.max(...cumCur, ...cumPrev, 1) : Math.max(...ventasDia.map((d) => d.total), ...prevVals.map((v) => v || 0), 1);
+                    const w = 300, h = 120, padX = 4, padTop = 12, padBottom = 2;
+                    const colW = (w - padX * 2) / Math.max(n, 1);
+                    const barW = colW * 0.64;
+                    const cx = (i) => padX + i * colW + colW / 2;
+                    const yv = (v) => padTop + (1 - v / serieMax) * (h - padTop - padBottom);
+                    const pathDe = (arr) => { let d = ""; let lapiz = false; arr.forEach((v, i) => { if (v === null || v === undefined) { lapiz = false; return; } d += `${lapiz ? "L" : "M"} ${cx(i).toFixed(1)} ${yv(v).toFixed(1)} `; lapiz = true; }); return d; };
+                    const sel = puntoSeleccionado;
+                    const mostrarCadaN = n > 15 ? Math.ceil(n / 10) : 1;
+                    const irA = (dir) => { if (n === 0) return; if (sel === null) setPuntoSeleccionado(dir < 0 ? n - 1 : 0); else setPuntoSeleccionado(Math.min(n - 1, Math.max(0, sel + dir))); };
+                    let comp = null;
+                    if (hayPrev) {
+                      if (sel !== null) { const b = prevVals[sel]; if (b !== null) comp = { titulo: `Ese día vs ${dmy(prevFechas[sel])}`, a: ventasDia[sel].total, b }; }
+                      else comp = { titulo: `Acumulado vs ${etiquetaPrev}, a la misma fecha`, a: cumCur[n - 1] || 0, b: cumPrev[n - 1] || 0 };
+                    }
+                    const cd = comp ? { d: comp.a - comp.b, pct: comp.b > 0 ? Math.round(((comp.a - comp.b) / comp.b) * 100) : null } : null;
+                    const botonFlecha = { background: C.tag, border: "none", color: C.text, borderRadius: 8, width: 38, height: 34, cursor: "pointer", fontSize: 14 };
+                    return (
+                      <div style={S.card}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>Ventas por día</div>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            {[{ id: "diario", label: "Diario" }, { id: "acumulado", label: "Acumulado" }].map((m) => (
+                              <button key={m.id} onClick={() => setDashModoGrafico(m.id)} style={{ background: dashModoGrafico === m.id ? C.green : C.tag, color: dashModoGrafico === m.id ? "#fff" : C.muted, border: "none", borderRadius: 14, padding: "3px 11px", fontSize: 11, fontWeight: dashModoGrafico === m.id ? 700 : 400, cursor: "pointer" }}>{m.label}</button>
+                            ))}
                           </div>
-                        );
-                      })()}
-                    </div>
-                  )}
+                        </div>
+                        <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height: 140, display: "block" }} preserveAspectRatio="none">
+                          {!acumulado && ventasDia.map((d, i) => {
+                            const y = yv(d.total); const esSel = sel === i;
+                            return <rect key={d.fecha} x={cx(i) - barW / 2} y={y} width={barW} height={Math.max(h - padBottom - y, d.total > 0 ? 1 : 0)} rx="1.5" fill={esSel || d.fecha === ahora ? C.mustard : C.green} opacity={sel !== null && !esSel ? 0.4 : 1} />;
+                          })}
+                          {acumulado && n > 0 && <path d={`${pathDe(cumCur)} L ${cx(n - 1).toFixed(1)} ${h - padBottom} L ${cx(0).toFixed(1)} ${h - padBottom} Z`} fill={C.green + "33"} />}
+                          {acumulado && <path d={pathDe(cumCur)} fill="none" stroke={C.green} strokeWidth="2" vectorEffect="non-scaling-stroke" />}
+                          {hayPrev && <path d={pathDe(acumulado ? cumPrev : prevVals)} fill="none" stroke={C.muted} strokeWidth="1.6" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />}
+                          {acumulado && sel !== null && <line x1={cx(sel)} x2={cx(sel)} y1={0} y2={h} stroke={C.mustard} strokeWidth="1" vectorEffect="non-scaling-stroke" />}
+                          {ventasDia.map((d, i) => <rect key={"hit" + d.fecha} x={padX + i * colW} y={0} width={colW} height={h} fill="transparent" onClick={() => setPuntoSeleccionado(sel === i ? null : i)} style={{ cursor: "pointer" }} />)}
+                        </svg>
+                        <div style={{ display: "flex", padding: `0 ${(padX / w) * 100}%`, marginTop: 4 }}>
+                          {ventasDia.map((d, i) => (
+                            <div key={d.fecha} style={{ flex: 1, textAlign: "center", fontSize: 9, color: sel === i || d.fecha === ahora ? C.mustard : C.muted, fontWeight: sel === i ? 700 : 400, visibility: (i % mostrarCadaN === 0 || i === n - 1 || sel === i) ? "visible" : "hidden" }}>{d.dia}</div>
+                          ))}
+                        </div>
+                        <div style={{ display: "flex", gap: 12, fontSize: 10, color: C.muted, margin: "8px 0", flexWrap: "wrap" }}>
+                          <span><span style={{ color: C.green, fontWeight: 700 }}>■</span> Este período</span>
+                          {hayPrev ? <span><span style={{ fontWeight: 700 }}>┄</span> {etiquetaPrev}</span> : <span>Sin datos del {etiquetaPrev} para comparar</span>}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <button onClick={() => irA(-1)} style={botonFlecha}>◀</button>
+                          <div style={{ flex: 1, textAlign: "center", background: C.bg, borderRadius: 8, padding: "7px 8px", fontSize: 12 }}>
+                            {sel !== null
+                              ? <><span style={{ color: C.muted }}>Día {dmy(ventasDia[sel].fecha)}: </span><span style={{ color: C.green, fontWeight: 700 }}>{fmt(ventasDia[sel].total)}</span></>
+                              : <span style={{ color: C.muted }}>Toca una barra o usa las flechas</span>}
+                          </div>
+                          <button onClick={() => irA(1)} style={botonFlecha}>▶</button>
+                        </div>
+                        {comp && cd && (
+                          <div style={{ marginTop: 10, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ color: C.muted }}>{comp.titulo}</span>
+                            <span>
+                              <span style={{ fontWeight: 700 }}>{fmt(comp.a)}</span> <span style={{ color: C.muted }}>vs {fmt(comp.b)}</span>{" "}
+                              <span style={{ fontWeight: 800, color: cd.d >= 0 ? C.green : C.red }}>{cd.d >= 0 ? "▲" : "▼"} {fmt(Math.abs(cd.d))}{cd.pct !== null ? ` (${cd.pct > 0 ? "+" : ""}${cd.pct}%)` : ""}</span>
+                            </span>
+                          </div>
+                        )}
+                        {sel !== null && <div style={{ color: C.muted, fontSize: 10, marginTop: 8, textAlign: "center" }}>Todo lo de abajo muestra solo este día</div>}
+                      </div>
+                    );
+                  })()}
                   <div style={S.card}>
                     <STitle>Por método de pago · {etiquetaPeriodo}</STitle>
                     {metodosPeriodo.length === 0 && <Empty />}
@@ -2358,7 +2395,18 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const cortesiasER = vMes.filter((v) => parseNota(v).tipo === "cortesia");
               const costoCortER = cortesiasER.reduce((acc, v) => acc + costoVenta(v), 0);
               const valorCortER = cortesiasER.reduce((acc, v) => acc + valorListaVenta(v), 0);
-              const margenBrutoER = totalVentasER - costoVentasER;
+              // Bebidas (compradas en la botillería): su costo se imputa solo, por cada bebida vendida
+              // (sueltas, dentro de combos y cortesías). El costo sale de Recetas → Insumos ("Bebida lata 350 ml").
+              const insBebida = insumosPrecio.find((i) => normNombre(i.nombre).startsWith("bebida"));
+              const filasBebida = ventas.filter((v) => v.fecha.startsWith(mesSel) && recetas.find((r) => r.nombre_producto === v.producto)?.categoria === "bebidas");
+              const unidadesBebidaER = filasBebida.reduce((acc, v) => acc + v.cantidad, 0);
+              const costoBebidasER = Math.round(filasBebida.reduce((acc, v) => {
+                const rec = recetas.find((r) => r.nombre_producto === v.producto);
+                const porIngredientes = calcularCosto(rec?.ingredientes, insumosPrecio);
+                return acc + v.cantidad * (porIngredientes > 0 ? porIngredientes : (insBebida?.precio_por_kg || 0));
+              }, 0));
+              const costoVentasTotalER = costoVentasER + costoBebidasER;
+              const margenBrutoER = totalVentasER - costoVentasTotalER;
               const esCompleto = (v) => recetas.find((r) => r.nombre_producto === v.producto && r.categoria === "completos");
               const completosSueltos = vMes.filter(esCompleto).reduce((acc, v) => acc + v.cantidad, 0);
               const completosCombo = ventas.filter((v) => v.fecha.startsWith(mesSel) && esComponente(v) && esCompleto(v)).reduce((acc, v) => acc + v.cantidad, 0);
@@ -2397,7 +2445,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
                     Efectivo {fmt(porMetodoER("Efectivo"))} · Tarjeta {fmt(porMetodoER("Tarjeta"))} · Pedidos Ya {fmt(porMetodoER("Pedidos Ya"))}
                   </div>
-                  {filaER(`(−) Costo de ventas (insumos)${pctER(costoVentasER)}`, fmt(costoVentasER), { color: C.red })}
+                  {filaER(`(−) Costo de ventas${pctER(costoVentasTotalER)}`, fmt(costoVentasTotalER), { color: C.red })}
+                  <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
+                    Insumos comprados {fmt(costoVentasER)} + bebidas {fmt(costoBebidasER)} ({unidadesBebidaER} und)
+                    {costoBebidasER > 0 && <div style={{ color: C.orange, marginTop: 2 }}>Por pagar a botillería: <span style={{ fontWeight: 700 }}>{fmt(costoBebidasER)}</span></div>}
+                  </div>
                   {filaER(`= Margen bruto${pctER(margenBrutoER)}`, fmt(margenBrutoER), { color: margenBrutoER >= 0 ? C.green : C.red })}
                   {operacionalER > 0 && filaER(`(−) Operacionales (gas, limpieza)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red })}
                   {fijosER > 0 && filaER(`(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red })}
@@ -2437,9 +2489,173 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <StatCard label={filtroResumen ? `Ventas ${filtroResumen}` : "Ventas (todo)"} value={fmt(totalVentasResumen)} color={C.green} />
               <StatCard label={filtroResumen ? `Gastos ${filtroResumen}` : "Gastos (todo)"} value={fmt(totalGastosResumen)} color={C.mustard} />
-              <StatCard label="Utilidad" value={fmt(utilidadResumen)} color={utilidadResumen >= 0 ? C.green : C.red} />
-              <StatCard label="Total histórico" value={fmt(totalGeneral)} color={C.muted} />
             </div>
+            {(() => {
+              const DIAS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+              const ORDEN = [1, 2, 3, 4, 5, 6, 0];
+              const hoyStr = today();
+              const dmy2 = (f) => f.split("-").reverse().join("-");
+              const dow = (f) => new Date(f + "T00:00:00").getDay();
+              const opH = (h) => (h < 6 ? h + 24 : h); // la madrugada cuenta como parte de la noche
+              const parseHora = (hs) => {
+                const m = /(\d{1,2}):(\d{2})/.exec(hs || "");
+                if (!m) return null;
+                let hr = Number(m[1]);
+                if (/p\.?\s?m/i.test(hs) && hr < 12) hr += 12;
+                if (/a\.?\s?m/i.test(hs) && hr === 12) hr = 0;
+                return hr >= 0 && hr < 24 ? hr : null;
+              };
+              const periodo = ventas.filter((v) => !esComponente(v) && (filtroResumen ? v.fecha.startsWith(filtroResumen) : true));
+              const etiqueta = filtroResumen ? `Mes ${filtroResumen}` : "Todo el historial";
+              const porFecha = {};
+              periodo.forEach((v) => { porFecha[v.fecha] = (porFecha[v.fecha] || 0) + v.total; });
+              const fechas = Object.keys(porFecha).filter((f) => porFecha[f] > 0);
+              // por día de la semana
+              const porDow = {};
+              fechas.forEach((f) => { const d = dow(f); (porDow[d] = porDow[d] || []).push(porFecha[f]); });
+              const statsDow = ORDEN.map((d) => { const arr = porDow[d] || []; return { d, n: arr.length, avg: arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0, min: arr.length ? Math.min(...arr) : 0, max: arr.length ? Math.max(...arr) : 0 }; });
+              const diasConDatos = statsDow.filter((x) => x.n > 0);
+              const maxAvg = Math.max(...diasConDatos.map((x) => x.avg), 1);
+              let parecidos = null;
+              const ord = diasConDatos.filter((x) => x.n >= 2).sort((a, b) => a.avg - b.avg);
+              for (let i = 0; i < ord.length - 1; i++) { const rel = (ord[i + 1].avg - ord[i].avg) / ord[i + 1].avg; if (!parecidos || rel < parecidos.rel) parecidos = { a: ord[i], b: ord[i + 1], rel }; }
+              // por hora
+              const conHora = periodo.filter((v) => parseHora(v.hora) !== null);
+              const porHora = {};
+              conHora.forEach((v) => { const h = parseHora(v.hora); porHora[h] = (porHora[h] || 0) + v.total; });
+              const totalHoras = Object.values(porHora).reduce((a, b) => a + b, 0);
+              const horasOrden = Object.keys(porHora).map(Number).sort((a, b) => opH(a) - opH(b));
+              const maxHora = Math.max(...Object.values(porHora), 1);
+              let ventana = null;
+              if (horasOrden.length > 0) {
+                const minOp = opH(horasOrden[0]); const maxOp = opH(horasOrden[horasOrden.length - 1]);
+                const val = (o) => porHora[o >= 24 ? o - 24 : o] || 0;
+                const largo = Math.min(3, maxOp - minOp + 1);
+                for (let o = minOp; o + largo - 1 <= maxOp; o++) { let sum = 0; for (let k = 0; k < largo; k++) sum += val(o + k); if (!ventana || sum > ventana.sum) ventana = { desde: o, largo, sum }; }
+              }
+              const hh = (o) => String((o >= 24 ? o - 24 : o)).padStart(2, "0");
+              // mapa de calor (promedio por día de la semana)
+              const nPorDow = {}; statsDow.forEach((x) => { nPorDow[x.d] = x.n; });
+              const celda = {};
+              conHora.forEach((v) => { const d = dow(v.fecha); const h = parseHora(v.hora); const k = d + "_" + h; celda[k] = (celda[k] || 0) + v.total; });
+              const valorCelda = (d, h) => (nPorDow[d] ? (celda[d + "_" + h] || 0) / nPorDow[d] : 0);
+              const maxCelda = Math.max(...diasConDatos.flatMap((x) => horasOrden.map((h) => valorCelda(x.d, h))), 1);
+              // mejor / peor día y proyección
+              const fechasOrd = [...fechas].sort((a, b) => porFecha[b] - porFecha[a]);
+              const mejor = fechasOrd[0];
+              const peor = [...fechasOrd].reverse().find((f) => f !== hoyStr);
+              let proyeccion = null;
+              if (filtroResumen === mesActual) {
+                const [yy, mm] = mesActual.split("-").map(Number);
+                const diasMes = new Date(yy, mm, 0).getDate();
+                const acum = fechas.reduce((a, f) => a + porFecha[f], 0);
+                let futuro = 0; let diasFut = 0;
+                for (let d = 1; d <= diasMes; d++) { const f = `${mesActual}-${String(d).padStart(2, "0")}`; if (f > hoyStr) { const av = statsDow.find((x) => x.d === dow(f))?.avg || 0; futuro += av; if (av > 0) diasFut++; } }
+                if (diasFut > 0) proyeccion = { total: acum + futuro, diasFut };
+              }
+              const tabBtn = (id, label) => (
+                <button key={id} onClick={() => setInsightTab(id)} style={{ flex: 1, background: insightTab === id ? C.mustard : C.tag, color: insightTab === id ? C.bg : C.muted, border: "none", borderRadius: 8, padding: "7px 0", cursor: "pointer", fontWeight: insightTab === id ? 700 : 400, fontSize: 12 }}>{label}</button>
+              );
+              return (
+                <div style={S.card}>
+                  <STitle>🕒 Cuándo se vende · {etiqueta}</STitle>
+                  {fechas.length === 0 ? <Empty /> : (
+                    <div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                        <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
+                          <div style={{ color: C.muted, fontSize: 10 }}>Mejor día</div>
+                          <div style={{ fontWeight: 800, color: C.green, fontSize: 15 }}>{fmt(porFecha[mejor])}</div>
+                          <div style={{ color: C.muted, fontSize: 10 }}>{DIAS[dow(mejor)]} {dmy2(mejor)}</div>
+                        </div>
+                        {peor && (
+                          <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
+                            <div style={{ color: C.muted, fontSize: 10 }}>Día más flojo</div>
+                            <div style={{ fontWeight: 800, color: C.orange, fontSize: 15 }}>{fmt(porFecha[peor])}</div>
+                            <div style={{ color: C.muted, fontSize: 10 }}>{DIAS[dow(peor)]} {dmy2(peor)}</div>
+                          </div>
+                        )}
+                        {proyeccion && (
+                          <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px", gridColumn: "1 / -1" }}>
+                            <div style={{ color: C.muted, fontSize: 10 }}>Proyección de cierre del mes (estimación)</div>
+                            <div style={{ fontWeight: 800, color: C.blue, fontSize: 15 }}>{fmt(Math.round(proyeccion.total))}</div>
+                            <div style={{ color: C.muted, fontSize: 10 }}>Suma lo vendido más el promedio de cada día que falta ({proyeccion.diasFut} días de venta restantes)</div>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                        {tabBtn("horas", "⏰ Horas")}{tabBtn("dias", "📅 Días")}{tabBtn("mapa", "🔥 Mapa")}
+                      </div>
+
+                      {insightTab === "horas" && (
+                        <div>
+                          {horasOrden.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Las ventas de este período no tienen hora registrada.</div>}
+                          {ventana && totalHoras > 0 && (
+                            <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px", marginBottom: 10, fontSize: 12 }}>
+                              Las {ventana.largo} horas más fuertes ({hh(ventana.desde)}:00 a {hh(ventana.desde + ventana.largo - 1)}:59) concentran <span style={{ color: C.mustard, fontWeight: 800 }}>{Math.round((ventana.sum / totalHoras) * 100)}%</span> de las ventas.
+                            </div>
+                          )}
+                          {horasOrden.map((h) => (
+                            <div key={h} style={{ marginBottom: 7 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                                <span>{String(h).padStart(2, "0")}:00</span>
+                                <span><span style={{ fontWeight: 700, color: C.mustard }}>{fmt(porHora[h])}</span> <span style={{ color: C.muted, fontSize: 10 }}>({Math.round((porHora[h] / totalHoras) * 100)}%)</span></span>
+                              </div>
+                              <Bar value={porHora[h]} max={maxHora} color={porHora[h] === maxHora ? C.mustard : C.green} />
+                            </div>
+                          ))}
+                          {conHora.length < periodo.length && <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>{periodo.length - conHora.length} de {periodo.length} ventas no tienen hora registrada y no entran en este gráfico.</div>}
+                        </div>
+                      )}
+
+                      {insightTab === "dias" && (
+                        <div>
+                          <div style={{ color: C.muted, fontSize: 10, marginBottom: 8 }}>Promedio de venta por día de atención. El rango muestra el día más bajo y el más alto.</div>
+                          {diasConDatos.map((x) => (
+                            <div key={x.d} style={{ marginBottom: 9 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                                <span style={{ fontWeight: 600 }}>{DIAS[x.d]} <span style={{ color: C.muted, fontWeight: 400, fontSize: 10 }}>({x.n} {x.n === 1 ? "día" : "días"})</span></span>
+                                <span style={{ fontWeight: 700, color: C.mustard }}>{fmt(Math.round(x.avg))}</span>
+                              </div>
+                              <Bar value={x.avg} max={maxAvg} color={C.green} />
+                              {x.n > 1 && <div style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>Rango {fmt(x.min)} – {fmt(x.max)}</div>}
+                            </div>
+                          ))}
+                          {parecidos && (
+                            <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px", marginTop: 8, fontSize: 12 }}>
+                              Los días que más se parecen: <span style={{ fontWeight: 700 }}>{DIAS[parecidos.a.d]}</span> ({fmt(Math.round(parecidos.a.avg))}) y <span style={{ fontWeight: 700 }}>{DIAS[parecidos.b.d]}</span> ({fmt(Math.round(parecidos.b.avg))}).
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {insightTab === "mapa" && (
+                        <div>
+                          {horasOrden.length === 0 ? <div style={{ color: C.muted, fontSize: 12 }}>Las ventas de este período no tienen hora registrada.</div> : (
+                            <div>
+                              <div style={{ color: C.muted, fontSize: 10, marginBottom: 6 }}>Miles de $ vendidos por hora, en promedio por día de atención. Más oscuro = más venta.</div>
+                              <div style={{ display: "grid", gridTemplateColumns: `34px repeat(${horasOrden.length}, 1fr)`, gap: 2 }}>
+                                <div />
+                                {horasOrden.map((h) => <div key={"h" + h} style={{ textAlign: "center", fontSize: 9, color: C.muted }}>{String(h).padStart(2, "0")}</div>)}
+                                {diasConDatos.map((x) => (
+                                  <Fragment key={"fila" + x.d}>
+                                    <div style={{ fontSize: 10, color: C.muted, alignSelf: "center" }}>{DIAS[x.d]}</div>
+                                    {horasOrden.map((h) => {
+                                      const v = valorCelda(x.d, h);
+                                      const a = v > 0 ? 0.12 + 0.88 * (v / maxCelda) : 0;
+                                      return <div key={x.d + "_" + h} style={{ background: v > 0 ? `rgba(232,184,75,${a.toFixed(2)})` : C.bg, color: a > 0.55 ? C.bg : C.text, borderRadius: 3, textAlign: "center", fontSize: 9, fontWeight: 700, padding: "6px 0" }}>{v >= 500 ? Math.round(v / 1000) : ""}</div>;
+                                    })}
+                                  </Fragment>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div style={S.card}>
               <STitle>Gastos por persona</STitle>
               {porPersonaGastos.map((x) => (
@@ -2449,15 +2665,6 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     <span style={{ fontWeight: 700, color: personColor(x.p) }}>{fmt(x.t)}</span>
                   </div>
                   <Bar value={x.t} max={Math.max(...porPersonaGastos.map((p) => p.t))} color={personColor(x.p)} />
-                </div>
-              ))}
-            </div>
-            <div style={S.card}>
-              <STitle>Gastos por insumo</STitle>
-              {porInsumo.map((x) => (
-                <div key={x.n} style={{ marginBottom: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}><span>{x.n}</span><span style={{ fontWeight: 700 }}>{fmt(x.t)}</span></div>
-                  <Bar value={x.t} max={porInsumo[0]?.t || 1} color={C.mustard} />
                 </div>
               ))}
             </div>
