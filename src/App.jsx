@@ -2656,18 +2656,6 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 </div>
               );
             })()}
-            <div style={S.card}>
-              <STitle>Gastos por persona</STitle>
-              {porPersonaGastos.map((x) => (
-                <div key={x.p} style={{ marginBottom: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: personColor(x.p), display: "inline-block" }} />{x.p}</span>
-                    <span style={{ fontWeight: 700, color: personColor(x.p) }}>{fmt(x.t)}</span>
-                  </div>
-                  <Bar value={x.t} max={Math.max(...porPersonaGastos.map((p) => p.t))} color={personColor(x.p)} />
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
