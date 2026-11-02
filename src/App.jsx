@@ -124,7 +124,7 @@ const GASTOS_FIJOS = ["Patente y permisos", "Contador", "Publicidad", "Internet 
 const GASTOS_INVERSION = ["Inversión / equipamiento"];
 const GASTOS_RETIRO = ["Retiro de Caja"];
 const GASTOS_PAGO_GUSTAVO = ["Pago sueldo Gustavo"];
-const categoriaGasto = (insumo) => {
+const categoriaGasto = (insumo, conocidos) => {
   if (GASTOS_RETIRO.includes(insumo)) return "retiro";
   if (GASTOS_PAGO_GUSTAVO.includes(insumo)) return "pago_gustavo";
   if (GASTOS_INVERSION.includes(insumo)) return "inversion";
@@ -132,6 +132,7 @@ const categoriaGasto = (insumo) => {
   if (GASTOS_OPERACIONALES.includes(insumo)) return "operacional";
   if (["ciboulette y cilantro"].includes((insumo || "").trim().toLowerCase())) return "costo_ventas";
   if ((INSUMOS_BASE.includes(insumo) && insumo !== "Otro") || resolverInsumo(insumo)) return "costo_ventas";
+  if (conocidos && conocidos.some((n) => normNombre(n) === normNombre(insumo))) return "costo_ventas";
   return "sin_clasificar";
 };
 // Normaliza nombres de insumos (mayúsculas, espacios y acentos) para no mostrar duplicados
@@ -366,7 +367,7 @@ export default function App() {
     if (view === "home") { cargarGastos(); cargarVentas(); }
     if (view === "gastos") { cargarGastos(); cargarVentas(); cargarInventarioInicial(); if (recetas.length === 0) cargarRecetas(); }
     if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); if (persona === "Alejandro") cargarHistorialTurnos(); }
-    if (view === "resumen") { cargarGastos(); cargarVentas(); }
+    if (view === "resumen") { cargarGastos(); cargarVentas(); cargarRecetas(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
 
@@ -2385,7 +2386,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const porMetodoER = (m) => vMes.filter((v) => v.metodo_pago === m).reduce((acc, v) => acc + v.total, 0);
               const totalVentasER = vMes.reduce((acc, v) => acc + v.total, 0);
               const gMes = gastos.filter((g) => (g.mes_corresponde || g.fecha.slice(0, 7)) === mesSel);
-              const sumCat = (c) => gMes.filter((g) => categoriaGasto(g.insumo) === c).reduce((acc, g) => acc + g.monto, 0);
+              const nombresInsumos = insumosPrecio.map((i) => i.nombre);
+              const sumCat = (c) => gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos) === c).reduce((acc, g) => acc + g.monto, 0);
               const costoVentasER = sumCat("costo_ventas");
               const operacionalER = sumCat("operacional");
               const fijosER = sumCat("fijo");
@@ -2416,7 +2418,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * COMISION_PEDIDOS_YA);
               const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
               const resultadoER = margenBrutoER - operacionalER - fijosER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
-              const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo) === "sin_clasificar").map((g) => g.insumo))];
+              const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos) === "sin_clasificar").map((g) => g.insumo))];
               const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
               const filaER = (label, valor, extra) => (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
