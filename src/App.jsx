@@ -173,6 +173,8 @@ const GASTOS_INVERSION = ["Inversión / equipamiento"];
 const GASTOS_RETIRO = ["Retiro de Caja"];
 const GASTOS_PAGO_GUSTAVO = ["Pago sueldo Gustavo"];
 // Gastos donde la cantidad no aporta (se asume 1 si se deja vacía)
+// Estos movimientos no se le compran a nadie: el proveedor es opcional
+const PROVEEDOR_OPCIONAL = [...GASTOS_RETIRO, ...GASTOS_PAGO_GUSTAVO];
 const INSUMOS_SIN_CANTIDAD = [...GASTOS_RETIRO, ...GASTOS_PAGO_GUSTAVO, ...GASTOS_FIJOS, ...GASTOS_INVERSION, "Reparaciones"];
 // Tipos que se pueden elegir al ingresar un gasto con "Otro" (o al reclasificarlo en el Historial)
 const TIPOS_GASTO = [
@@ -330,7 +332,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [gastosView, setGastosView] = useState("nuevo");
   const [form, setForm] = useState({ fecha: today(), insumo: INSUMOS_BASE[0], insumoCustom: "", tipoGasto: "", mesCorresponde: "", cantidad: "", unidad: UNIDAD_DEFAULT_INSUMO[INSUMOS_BASE[0]] || "unidad", fondo: FONDOS[0], proveedor: "", proveedorCustom: "", monto: "", nota: "" });
-  const [filtro, setFiltro] = useState({ mes: "", insumo: "", persona: "" });
+  const [filtro, setFiltro] = useState({ mes: "", insumo: "", persona: "", revisar: false, sinProv: false });
 
   // Ventas
   const [ventas, setVentas] = useState([]);
@@ -381,6 +383,9 @@ export default function App() {
   const [retiroModalDest, setRetiroModalDest] = useState("sueldo");
   const [retiroModalSocio, setRetiroModalSocio] = useState("");
   const [retiroModalMes, setRetiroModalMes] = useState("");
+  const [provModal, setProvModal] = useState(null); // gasto al que se le asigna proveedor
+  const [provModalValor, setProvModalValor] = useState("");
+  const [provModalNuevo, setProvModalNuevo] = useState("");
   const [inversionModo, setInversionModo] = useState("aparte"); // "aparte" | "mes" | "cuotas": cómo se refleja una compra de equipamiento
   const [cuotasN, setCuotasN] = useState("12"); // meses en que se reparte un gasto
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
@@ -475,7 +480,7 @@ export default function App() {
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
   useEffect(() => {
-    if (view === "home") { cargarGastos(); cargarVentas(); }
+    if (view === "home") { cargarGastos(); cargarVentas(); cargarRecetas(); }
     if (view === "gastos") { cargarGastos(); cargarVentas(); cargarInventarioInicial(); if (recetas.length === 0) cargarRecetas(); setForm((f) => ({ ...f, fecha: today() })); }
     if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); setFechaVenta(today()); if (persona === "Alejandro") cargarHistorialTurnos(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); cargarRecetas(); cargarInventarioInicial(); }
@@ -794,6 +799,17 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     else cargarGastos();
   };
 
+  const confirmarProveedor = async () => {
+    if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
+    const nombre = provModalValor === "__nuevo__" ? normProv(provModalNuevo) : provModalValor;
+    if (!nombre) { showToast("Elige el proveedor"); return; }
+    const { error } = await supabase.from("gastos").update({ proveedor: nombre }).eq("id", provModal.id);
+    if (error) { console.error("Error al asignar proveedor:", error); showToast("❌ Error: " + error.message); return; }
+    setProvModal(null); setAdminClave(""); setAdminError(false);
+    showToast("✓ Proveedor asignado");
+    cargarGastos();
+  };
+
   const confirmarDestinoRetiro = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     const g = retiroModal;
@@ -851,11 +867,26 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   // Gastos
   const agregarGasto = async () => {
     if (!persona) { showToast("Selecciona quién registra"); return; }
+    // Todo lo necesario debe estar completo antes de guardar (se avisa qué falta)
+    {
+      const faltan = [];
+      const err = {};
+      if (!form.fecha) { faltan.push("fecha"); err._errorFecha = true; }
+      if (!form.monto || !(Number(form.monto) > 0)) { faltan.push("monto"); err._errorMonto = true; }
+      if (form.insumo === "Otro" && !(form.insumoCustom || "").trim()) { faltan.push("nombre del insumo"); err._errorOtro = true; }
+      if (form.insumo === "Otro" && !form.tipoGasto) { faltan.push("tipo de gasto"); err._errorTipo = true; }
+      if (!INSUMOS_SIN_CANTIDAD.includes(form.insumo) && !(Number(form.cantidad) > 0)) { faltan.push("cantidad"); err._errorCantidad = true; }
+      const provOk = PROVEEDOR_OPCIONAL.includes(form.insumo) || (form.proveedor === "__nuevo__" ? !!normProv(form.proveedorCustom) : !!form.proveedor);
+      if (!provOk) { faltan.push("proveedor"); err._errorProveedor = true; }
+      if (form.insumo === "Retiro de Caja" && retiroDestino === "socio" && !retiroSocio) faltan.push("socio");
+      if (faltan.length > 0) { setForm({ ...form, ...err }); showToast("Falta: " + faltan.join(", ")); return; }
+    }
     const esRetiro = form.insumo === "Retiro de Caja";
     if (esRetiro && retiroDestino === "socio" && !retiroSocio) { showToast("Elige qué socio retira"); return; }
     // Un retiro para el sueldo de Gustavo se guarda como "Pago sueldo Gustavo" (no se cuenta dos veces como costo)
     const insumofinal = esRetiro && retiroDestino === "sueldo" ? "Pago sueldo Gustavo" : (form.insumo === "Otro" ? (form.insumoCustom || "Otro") : form.insumo);
     const provFinal = form.proveedor === "__nuevo__" ? normProv(form.proveedorCustom) : form.proveedor;
+    if (!PROVEEDOR_OPCIONAL.includes(form.insumo) && !provFinal) { setForm({ ...form, _errorProveedor: true }); showToast("Elige el proveedor"); return; }
     if (!form.monto || isNaN(Number(form.monto))) { setForm({ ...form, _errorMonto: true }); showToast("Completa el monto"); return; }
     const quiereCuotas = (form.insumo === "Inversión / equipamiento" && inversionModo === "cuotas") || (form.insumo === "Otro" && form.tipoGasto === "cuotas");
     const nCuotas = parseInt(cuotasN, 10);
@@ -873,7 +904,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const { error: errGasto } = await supabase.from("gastos").insert([filaGasto]);
     if (errGasto) { console.error("Error al guardar gasto:", errGasto); showToast("❌ Error: " + errGasto.message); setSaving(false); return; }
     showToast("✓ Gasto guardado");
-    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", tipoGasto: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false });
+    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", tipoGasto: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false, _errorProveedor: false, _errorOtro: false, _errorTipo: false, _errorFecha: false });
     setRetiroSocio(""); setInversionModo("aparte"); setCuotasN("12");
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
@@ -971,6 +1002,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     if (!persona) { showToast("Selecciona quién registra"); return; }
     if (!botProducto || !botRegistro) { showToast("Busca y elige un producto"); return; }
     if (!botTipo) { showToast("Elige el tipo de gasto"); return; }
+    if (!form.fecha) { showToast("Falta la fecha"); return; }
     const cant = Number(String(botCantidad).replace(",", "."));
     if (!cant || cant <= 0) { showToast("Completa la cantidad"); return; }
     const costo = Number(botRegistro.costoReal) || 0;
@@ -1106,6 +1138,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const registrarVenta = async () => {
     if (carrito.length === 0) { showToast("Agrega productos"); return; }
     if (!turnoActivo) { showToast("⚠️ Debes abrir la caja antes de registrar ventas"); return; }
+    if (!persona) { showToast("Selecciona quién registra la venta"); return; }
+    if (!fechaVenta) { showToast("Falta la fecha de la venta"); return; }
     setSavingVenta(true);
     const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
     const rows = [];
@@ -1264,6 +1298,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     .sort((a, b) => a.localeCompare(b, "es"));
   insumos.push("Otro");
   const nombresInsumosTodos = insumosPrecio.map((i) => i.nombre);
+  const gastosSinProveedor = gastos.filter((g) => !g.proveedor && !PROVEEDOR_OPCIONAL.includes(g.insumo)).length;
+  const gastosPorRevisar = gastos.filter((g) => categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto) === "sin_clasificar").length;
   const gastosResumen = filtroResumen ? gastos.filter((g) => g.fecha.startsWith(filtroResumen)) : gastos;
   const totalGeneral = gastos.reduce((s, g) => s + g.monto, 0);
   const totalMes = gastos.filter((g) => g.fecha.startsWith(mesActual)).reduce((s, g) => s + g.monto, 0);
@@ -1278,6 +1314,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     if (filtro.mes && !g.fecha.startsWith(filtro.mes)) return false;
     if (filtro.insumo && nombreCanonico(g.insumo) !== filtro.insumo) return false;
     if (filtro.persona && g.persona !== filtro.persona) return false;
+    if (filtro.revisar && categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto) !== "sin_clasificar") return false;
+    if (filtro.sinProv && (g.proveedor || PROVEEDOR_OPCIONAL.includes(g.insumo))) return false;
     return true;
   });
   const ventasFiltradas = ventas.filter((v) => {
@@ -1488,6 +1526,27 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         </div>
       )}
 
+      {provModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🏷️ Asignar proveedor</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>{provModal.insumo} · {fmt(provModal.monto)} · {provModal.fecha} · {provModal.persona}</div>
+            <select value={provModalValor} onChange={(e) => setProvModalValor(e.target.value)} style={{ ...S.inp, marginBottom: 8 }}>
+              <option value="">Elige el proveedor…</option>
+              {proveedores.map((pv) => <option key={pv} value={pv}>{pv}</option>)}
+              <option value="__nuevo__">+ Nuevo…</option>
+            </select>
+            {provModalValor === "__nuevo__" && <input placeholder="Nombre del proveedor" value={provModalNuevo} onChange={(e) => setProvModalNuevo(e.target.value)} style={{ ...S.inp, marginBottom: 8 }} />}
+            <input type="password" placeholder="Clave" value={adminClave} onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }} onKeyDown={(e) => e.key === "Enter" && confirmarProveedor()} style={{ ...S.inp, fontSize: 18, letterSpacing: 6, marginBottom: 8 }} />
+            {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setProvModal(null); setAdminClave(""); setAdminError(false); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={confirmarProveedor} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {retiroModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
@@ -1659,6 +1718,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 </button>
               ))}
             </div>
+            {persona === "Alejandro" && gastosPorRevisar > 0 && (
+              <button onClick={() => { setFiltro({ mes: "", insumo: "", persona: "", revisar: true }); setGastosView("historial"); setView("gastos"); }} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", border: `1px solid ${C.orange}`, background: C.orange + "15", width: "100%", textAlign: "left", marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: C.orange }}>⚠️ {gastosPorRevisar} {gastosPorRevisar === 1 ? "gasto por revisar" : "gastos por revisar"}</div>
+                  <div style={{ color: C.muted, fontSize: 11 }}>Toca para clasificarlos</div>
+                </div>
+                <span style={{ color: C.orange, fontSize: 18 }}>→</span>
+              </button>
+            )}
             <div style={{ ...S.card, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, textAlign: "center" }}>
               <div><div style={{ color: C.muted, fontSize: 10 }}>Ventas hoy</div><div style={{ fontWeight: 800, fontSize: 17, color: C.green }}>{fmt(totalVentasDia)}</div></div>
               <div><div style={{ color: C.muted, fontSize: 10 }}>Gastos mes</div><div style={{ fontWeight: 800, fontSize: 17, color: C.mustard }}>{fmt(totalMes)}</div></div>
@@ -1804,7 +1872,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         );
                       })()}
                     </Fld>
-                    <Fld label="Total que pagaste por este insumo ($)" full>
+                    <Fld label="Total que pagaste por este insumo ($) *" full>
                       <input type="text" inputMode="numeric" placeholder="ej: 12.790" value={form.montoDisplay || ""}
                         onChange={(e) => {
                           const raw = e.target.value.replace(/\./g, "").replace(/[^0-9]/g, "");
@@ -1815,10 +1883,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       {form._errorMonto && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa el monto</div>}
                     </Fld>
                     <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => { const unidadAuto = unidadFijaDe(e.target.value); setForm({ ...form, insumo: e.target.value, unidad: unidadAuto || form.unidad }); }} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
-                    {form.insumo === "Otro" && <Fld label="¿Cuál?" full><input value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value })} style={S.inp} /></Fld>}
+                    {form.insumo === "Otro" && <Fld label="¿Cuál? *" full><input value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value, _errorOtro: false })} style={{ ...S.inp, borderColor: form._errorOtro ? C.red : C.border }} /></Fld>}
                     {form.insumo === "Otro" && (
                       <Fld label="Tipo de gasto *" full>
-                        <select value={form.tipoGasto} onChange={(e) => setForm({ ...form, tipoGasto: e.target.value })} style={S.inp}>
+                        <select value={form.tipoGasto} onChange={(e) => setForm({ ...form, tipoGasto: e.target.value, _errorTipo: false })} style={{ ...S.inp, borderColor: form._errorTipo ? C.red : C.border }}>
                           <option value="">Elige el tipo…</option>
                           {TIPOS_GASTO_OTRO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                         </select>
@@ -1866,7 +1934,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </Fld>
                     <Fld label="Unidad">{ unidadFijaDe(form.insumo) ? (<div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, color: C.mustard, padding: "8px 10px", fontSize: 13, fontWeight: 700 }}>{unidadFijaDe(form.insumo)} <span style={{ color: C.muted, fontWeight: 400, fontSize: 11 }}>(fija según el insumo)</span></div>) : (<select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>{["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}</select>) }</Fld>
                     <Fld label="Fondo"><select value={form.fondo} onChange={(e) => setForm({ ...form, fondo: e.target.value })} style={S.inp}>{FONDOS.map((f) => <option key={f}>{f}</option>)}</select></Fld>
-                    <Fld label="Proveedor"><select value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value, proveedorCustom: "" })} style={S.inp}><option value="">Sin proveedor</option>{proveedores.map((p) => <option key={p}>{p}</option>)}<option value="__nuevo__">+ Nuevo…</option></select></Fld>
+                    <Fld label={PROVEEDOR_OPCIONAL.includes(form.insumo) ? "Proveedor (opcional)" : "Proveedor *"}><select value={form.proveedor} onChange={(e) => setForm({ ...form, proveedor: e.target.value, proveedorCustom: "", _errorProveedor: false })} style={{ ...S.inp, borderColor: form._errorProveedor ? C.red : C.border }}><option value="">{PROVEEDOR_OPCIONAL.includes(form.insumo) ? "Sin proveedor" : "Elige el proveedor…"}</option>{proveedores.map((p) => <option key={p}>{p}</option>)}<option value="__nuevo__">+ Nuevo…</option></select></Fld>
                     {form.proveedor === "__nuevo__" && <Fld label="Nombre" full><input value={form.proveedorCustom} onChange={(e) => setForm({ ...form, proveedorCustom: e.target.value })} style={S.inp} /></Fld>}
                     <Fld label="Nota" full><input placeholder="opcional" value={form.nota} onChange={(e) => setForm({ ...form, nota: e.target.value })} style={S.inp} /></Fld>
                   </div>
@@ -1881,6 +1949,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             {gastosView === "historial" && (
               <div>
                 <div style={{ ...S.card, marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {(gastosPorRevisar > 0 || filtro.revisar) && (
+                    <button onClick={() => setFiltro({ ...filtro, revisar: !filtro.revisar })} style={{ flexBasis: "100%", background: filtro.revisar ? C.orange : C.orange + "22", color: filtro.revisar ? "#fff" : C.orange, border: `1px solid ${C.orange}`, borderRadius: 8, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                      ⚠️ Por revisar ({gastosPorRevisar}){filtro.revisar ? " · mostrando solo estos" : ""}
+                    </button>
+                  )}
+                  {(gastosSinProveedor > 0 || filtro.sinProv) && (
+                    <button onClick={() => setFiltro({ ...filtro, sinProv: !filtro.sinProv })} style={{ flexBasis: "100%", background: filtro.sinProv ? C.blue : C.blue + "22", color: filtro.sinProv ? "#fff" : C.blue, border: `1px solid ${C.blue}`, borderRadius: 8, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                      🏷️ Sin proveedor ({gastosSinProveedor}){filtro.sinProv ? " · mostrando solo estos" : ""}
+                    </button>
+                  )}
                   <select value={filtro.mes} onChange={(e) => setFiltro({ ...filtro, mes: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 110 }}><option value="">Todos los meses</option>{meses.map((m) => <option key={m}>{m}</option>)}</select>
                   <select value={filtro.insumo} onChange={(e) => setFiltro({ ...filtro, insumo: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 120 }}><option value="">Todos los insumos</option>{[...new Set(gastos.map((g) => nombreCanonico(g.insumo)))].sort((a, b) => a.localeCompare(b, "es")).map((i) => <option key={i}>{i}</option>)}</select>
                   <select value={filtro.persona} onChange={(e) => setFiltro({ ...filtro, persona: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 100 }}><option value="">Todos</option>{PERSONAS.map((p) => <option key={p}>{p}</option>)}</select>
@@ -1906,6 +1984,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, color: C.mustard }}>{fmt(g.monto)}</div>
+                      {!g.proveedor && !PROVEEDOR_OPCIONAL.includes(g.insumo) && (
+                        <button onClick={() => { setProvModal(g); setProvModalValor(""); setProvModalNuevo(""); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.orange, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>asignar proveedor</button>
+                      )}
                       {categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto) === "retiro" ? (
                         <button onClick={() => { setRetiroModal(g); setRetiroModalDest("sueldo"); setRetiroModalSocio(""); setRetiroModalMes(g.fecha.slice(0, 7)); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>destino</button>
                       ) : (
@@ -2297,7 +2378,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               ) : (
                 <div style={{ background: C.green + "22", border: `1px solid ${C.green}`, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div><div style={{ fontWeight: 700, color: C.green }}>🟢 Caja abierta</div><div style={{ color: C.muted, fontSize: 12 }}>Saldo inicial: {fmt(turnoActivo.saldo_inicial)} · {turnoActivo.persona}</div></div>
-                  <button onClick={() => setModalCierre(true)} style={{ background: C.red, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700 }}>Cerrar turno</button>
+                  <button onClick={() => { if (!persona) { showToast("Selecciona quién cierra"); return; } setModalCierre(true); }} style={{ background: C.red, border: "none", color: "#fff", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontWeight: 700 }}>Cerrar turno</button>
                 </div>
               )}
                 <div style={{ ...S.card, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
