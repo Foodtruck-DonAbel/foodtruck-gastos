@@ -272,6 +272,7 @@ export default function App() {
   const [dashVerTodosProd, setDashVerTodosProd] = useState(false);
   const [dashModoGrafico, setDashModoGrafico] = useState("diario"); // "diario" | "acumulado"
   const [insightTab, setInsightTab] = useState("horas"); // "horas" | "dias" | "mapa"
+  const [erAbierto, setErAbierto] = useState({}); // líneas del estado de resultados con el desglose abierto
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -2413,7 +2414,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const completosSueltos = vMes.filter(esCompleto).reduce((acc, v) => acc + v.cantidad, 0);
               const completosCombo = ventas.filter((v) => v.fecha.startsWith(mesSel) && esComponente(v) && esCompleto(v)).reduce((acc, v) => acc + v.cantidad, 0);
               const completosMes = completosSueltos + completosCombo;
-              const gustavoER = GUSTAVO_FIJO + GUSTAVO_POR_COMPLETO * completosMes;
+              const esMesParcialER = mesSel === mesActual;
+              const diasMesER = new Date(Number(mesSel.slice(0, 4)), Number(mesSel.slice(5, 7)), 0).getDate();
+              const diasTranscER = Math.min(Number(today().slice(8, 10)), diasMesER);
+              const fijoGustavoER = esMesParcialER ? Math.round(GUSTAVO_FIJO * diasTranscER / diasMesER) : GUSTAVO_FIJO;
+              const gustavoER = fijoGustavoER + GUSTAVO_POR_COMPLETO * completosMes;
               const pagadoGustavoER = sumCat("pago_gustavo");
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * COMISION_PEDIDOS_YA);
               const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
@@ -2424,6 +2429,29 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
                   <span style={{ fontSize: 13 }}>{label}</span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: extra?.color || C.text }}>{valor}</span>
+                </div>
+              );
+              const gastosDe = (c) => gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos) === c);
+              const agruparPorInsumo = (arr) => { const m = {}; arr.forEach((g) => { const k = nombreCanonico(g.insumo); if (!m[k]) m[k] = { nombre: k, monto: 0, compras: 0 }; m[k].monto += g.monto; m[k].compras += 1; }); return Object.values(m).sort((a, b) => b.monto - a.monto); };
+              const detalleInsumos = (arr, base, extra) => (
+                <div>
+                  {agruparPorInsumo(arr).map((x) => (
+                    <div key={x.nombre} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 }}>
+                      <span>{x.nombre} <span style={{ color: C.muted, fontSize: 10 }}>{x.compras} {x.compras === 1 ? "compra" : "compras"}</span></span>
+                      <span style={{ whiteSpace: "nowrap" }}><span style={{ fontWeight: 700 }}>{fmt(x.monto)}</span>{base > 0 && <span style={{ color: C.muted, fontSize: 10 }}> ({Math.round((x.monto / base) * 100)}%)</span>}</span>
+                    </div>
+                  ))}
+                  {extra}
+                  {arr.length === 0 && !extra && <div style={{ color: C.muted, fontSize: 12 }}>Sin compras en este mes.</div>}
+                </div>
+              );
+              const filaERDesglose = (clave, label, valor, extra, detalle) => (
+                <div>
+                  <div onClick={() => setErAbierto({ ...erAbierto, [clave]: !erAbierto[clave] })} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
+                    <span style={{ fontSize: 13 }}><span style={{ color: C.muted, fontSize: 10 }}>{erAbierto[clave] ? "▼" : "▶"}</span> {label}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: extra?.color || C.text }}>{valor}</span>
+                  </div>
+                  {erAbierto[clave] && <div style={{ padding: "6px 0 8px 12px", borderBottom: `1px solid ${C.border}` }}>{detalle}</div>}
                 </div>
               );
               const filaP = (label, nota) => (
@@ -2447,26 +2475,32 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
                     Efectivo {fmt(porMetodoER("Efectivo"))} · Tarjeta {fmt(porMetodoER("Tarjeta"))} · Pedidos Ya {fmt(porMetodoER("Pedidos Ya"))}
                   </div>
-                  {filaER(`(−) Costo de ventas${pctER(costoVentasTotalER)}`, fmt(costoVentasTotalER), { color: C.red })}
+                  {filaERDesglose("costo", `(−) Costo de ventas${pctER(costoVentasTotalER)}`, fmt(costoVentasTotalER), { color: C.red },
+                    detalleInsumos(gastosDe("costo_ventas"), costoVentasTotalER, costoBebidasER > 0 ? (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 }}>
+                        <span>🥤 Bebidas (botillería) <span style={{ color: C.muted, fontSize: 10 }}>{unidadesBebidaER} und vendidas</span></span>
+                        <span style={{ whiteSpace: "nowrap" }}><span style={{ fontWeight: 700 }}>{fmt(costoBebidasER)}</span>{costoVentasTotalER > 0 && <span style={{ color: C.muted, fontSize: 10 }}> ({Math.round((costoBebidasER / costoVentasTotalER) * 100)}%)</span>}</span>
+                      </div>
+                    ) : null))}
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
                     Insumos comprados {fmt(costoVentasER)} + bebidas {fmt(costoBebidasER)} ({unidadesBebidaER} und)
                     {costoBebidasER > 0 && <div style={{ color: C.orange, marginTop: 2 }}>Por pagar a botillería: <span style={{ fontWeight: 700 }}>{fmt(costoBebidasER)}</span></div>}
                   </div>
                   {filaER(`= Margen bruto${pctER(margenBrutoER)}`, fmt(margenBrutoER), { color: margenBrutoER >= 0 ? C.green : C.red })}
-                  {operacionalER > 0 && filaER(`(−) Operacionales (gas, limpieza)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red })}
-                  {fijosER > 0 && filaER(`(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red })}
+                  {operacionalER > 0 && filaERDesglose("operacional", `(−) Operacionales (gas, limpieza)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red }, detalleInsumos(gastosDe("operacional"), operacionalER))}
+                  {fijosER > 0 && filaERDesglose("fijos", `(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red }, detalleInsumos(gastosDe("fijo"), fijosER))}
                   {filaER(`(−) Comisión tarjeta (${(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
                   {filaER(`(−) Comisión Pedidos Ya (${Math.round(COMISION_PEDIDOS_YA * 100)}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
                   {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
-                    {fmt(GUSTAVO_FIJO)} fijo + {fmt(GUSTAVO_POR_COMPLETO)} × {completosMes} completos ({completosSueltos} sueltos + {completosCombo} en combo) = {fmt(GUSTAVO_POR_COMPLETO * completosMes)} variable
+                    {esMesParcialER ? `${fmt(fijoGustavoER)} fijo proporcional (${diasTranscER} de ${diasMesER} días)` : `${fmt(GUSTAVO_FIJO)} fijo`} + {fmt(GUSTAVO_POR_COMPLETO)} × {completosMes} completos ({completosSueltos} sueltos + {completosCombo} en combo) = {fmt(GUSTAVO_POR_COMPLETO * completosMes)} variable
                     <div style={{ marginTop: 2 }}>
                       Pagado a este mes: <span style={{ color: C.text, fontWeight: 700 }}>{fmt(pagadoGustavoER)}</span> · {gustavoER - pagadoGustavoER >= 0 ? "Saldo por pagar" : "Pagado de más"}: <span style={{ color: gustavoER - pagadoGustavoER > 0 ? C.orange : C.green, fontWeight: 700 }}>{fmt(Math.abs(gustavoER - pagadoGustavoER))}</span>
                     </div>
                   </div>
                   {sinClasER > 0 && (
                     <div>
-                      {filaER(`(−) Sin clasificar${pctER(sinClasER)}`, fmt(sinClasER), { color: C.orange })}
+                      {filaERDesglose("sinclas", `(−) Sin clasificar${pctER(sinClasER)}`, fmt(sinClasER), { color: C.orange }, detalleInsumos(gastosDe("sin_clasificar"), sinClasER))}
                       <div style={{ color: C.orange, fontSize: 10, margin: "2px 0 4px" }}>Revisar: {sinClasNombres.join(", ")}</div>
                     </div>
                   )}
