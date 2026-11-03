@@ -9,13 +9,15 @@ const C = {
 };
 
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
-const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel", "Pago personal"];
+const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel", "Pago personal", "Botillería"];
+// Buscador de precios de la botillería (Apps Script). Devuelve [{ nombre, codigo, proveedor, costoReal, fecha }]
+const BOTILLERIA_URL = "https://script.google.com/macros/s/AKfycbwcNig7G26Th8jJzdpnJkt5Ic8qIMYDtk_6iZ_gUaJxFbpsxRT4mFyd9NfWOdsoGtGU/exec";
 const INSUMOS_BASE = [
   "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Pago sueldo Gustavo","Toalla nova","Guantes","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
-  "Tarjeta foodtruck": "#C97DDB", "Tarjeta Don Abel": "#E8B84B", "Pago personal": "#FF6B35",
+  "Tarjeta foodtruck": "#C97DDB", "Tarjeta Don Abel": "#E8B84B", "Pago personal": "#FF6B35", "Botillería": "#4CC9C0",
 };
 const metodoPagoColors = { "Efectivo": "#5BAD7F", "Tarjeta": "#6B9FD4", "Pedidos Ya": "#FF6B35" };
 const personColor = (n) => ({ Raul: "#6B9FD4", Pepe: "#E8B84B", Alejandro: "#5BAD7F", Gustavo: "#C97DDB" }[n] || C.muted);
@@ -332,6 +334,16 @@ export default function App() {
   const [resumenInsMes, setResumenInsMes] = useState("");
   const [resumenInsAbierto, setResumenInsAbierto] = useState(null);
   const [resumenInsVista, setResumenInsVista] = useState("insumos"); // "insumos" | "proveedor" | "consumo"
+  // Consumo de botillería (productos que se sacan para uso interno y no se venden)
+  const [botilleriaMode, setBotilleriaMode] = useState(false);
+  const [botQ, setBotQ] = useState("");
+  const [botCargando, setBotCargando] = useState(false);
+  const [botError, setBotError] = useState("");
+  const [botResultados, setBotResultados] = useState(null); // null = sin buscar
+  const [botProducto, setBotProducto] = useState(null);
+  const [botRegistro, setBotRegistro] = useState(null);
+  const [botCantidad, setBotCantidad] = useState("1");
+  const [botTipo, setBotTipo] = useState("operacional");
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -430,6 +442,31 @@ export default function App() {
     if (view === "resumen") { cargarGastos(); cargarVentas(); cargarRecetas(); cargarInventarioInicial(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
+
+  // Búsqueda en la hoja de la botillería (misma consulta que usa el buscador de precios)
+  useEffect(() => {
+    if (!botilleriaMode) return;
+    const q = botQ.trim();
+    if (q.length < 2) { setBotResultados(null); setBotError(""); return; }
+    let vigente = true;
+    const t = setTimeout(async () => {
+      setBotCargando(true); setBotError("");
+      try {
+        const res = await fetch(BOTILLERIA_URL + "?codigo=" + encodeURIComponent(q) + "&proveedor=ALL");
+        const data = await res.json();
+        if (!vigente) return;
+        const grupos = {};
+        (Array.isArray(data) ? data : []).forEach((r) => { const n = r.nombre || "—"; (grupos[n] = grupos[n] || []).push(r); });
+        setBotResultados(Object.entries(grupos).map(([nombre, registros]) => ({ nombre, registros })));
+      } catch (e) {
+        if (!vigente) return;
+        setBotError("No se pudo consultar la botillería. Intenta de nuevo.");
+        setBotResultados(null);
+      }
+      if (vigente) setBotCargando(false);
+    }, 400);
+    return () => { vigente = false; clearTimeout(t); };
+  }, [botQ, botilleriaMode]);
 
   const cargarGastos = async () => {
     setLoading(true);
@@ -766,6 +803,36 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     }
   };
 
+  const elegirProductoBot = (g) => {
+    const ts = (r) => { const t = new Date(r.fecha).getTime(); return isNaN(t) ? 0 : t; };
+    const masReciente = [...g.registros].sort((a, b) => ts(b) - ts(a))[0];
+    setBotProducto(g); setBotRegistro(masReciente); setBotCantidad("1");
+  };
+  const fechaBot = (iso) => { try { return new Date(iso).toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "2-digit" }); } catch { return "—"; } };
+
+  const guardarConsumoBotilleria = async () => {
+    if (!persona) { showToast("Selecciona quién registra"); return; }
+    if (!botProducto || !botRegistro) { showToast("Busca y elige un producto"); return; }
+    const cant = Number(String(botCantidad).replace(",", "."));
+    if (!cant || cant <= 0) { showToast("Completa la cantidad"); return; }
+    const costo = Number(botRegistro.costoReal) || 0;
+    if (costo <= 0) { showToast("Ese producto no tiene costo registrado"); return; }
+    setSaving(true);
+    const monto = Math.round(costo * cant);
+    const fila = {
+      fecha: form.fecha, insumo: botProducto.nombre, cantidad: String(cant), unidad: "unidad", fondo: "Botillería", proveedor: "Botillería", monto, persona,
+      nota: `Consumo de botillería · costo real ${fmt(costo)} c/u (${botRegistro.proveedor || "s/prov"}, ${fechaBot(botRegistro.fecha)})${form.nota ? " · " + form.nota : ""}`,
+      tipo_gasto: botTipo,
+    };
+    if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) fila.mes_corresponde = form.mesCorresponde;
+    const { error } = await supabase.from("gastos").insert([fila]);
+    if (error) { console.error("Error al guardar consumo de botillería:", error); showToast("❌ Error: " + error.message); setSaving(false); return; }
+    showToast(`✓ Consumo guardado — ${fmt(monto)}`);
+    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1");
+    setForm({ ...form, nota: "", mesCorresponde: "" });
+    cargarGastos(); setSaving(false);
+  };
+
   const costoPorKgMayonesaCasera = (insumosLista) => {
     const costoTotal = RECETA_MAYONESA_CASERA.reduce((total, ing) => {
       const ins = insumosLista.find((i) => i.nombre === ing.insumo);
@@ -1026,7 +1093,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const out = [];
     gastos.forEach((g) => {
       const i = (g.insumo || "").trim();
-      if (!i) return;
+      if (!i || g.fondo === "Botillería") return;
       const n = normNombre(i);
       if (vistos.has(n) || resolverInsumo(i) || EXCLUIR_DEL_DESPLEGABLE.includes(n)) return;
       vistos.add(n);
@@ -1409,7 +1476,105 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             {gastosView === "nuevo" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div style={S.card}>
-                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 14 }}>Registrar gasto</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10 }}>Registrar gasto</div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                    {[{ id: false, label: "Gasto normal" }, { id: true, label: "🛒 Consumo de botillería" }].map((m) => (
+                      <button key={String(m.id)} onClick={() => setBotilleriaMode(m.id)} style={{ flex: 1, background: botilleriaMode === m.id ? C.mustard : C.tag, color: botilleriaMode === m.id ? C.bg : C.muted, border: "none", borderRadius: 8, padding: "7px 0", cursor: "pointer", fontWeight: botilleriaMode === m.id ? 700 : 400, fontSize: 12 }}>{m.label}</button>
+                    ))}
+                  </div>
+                  {botilleriaMode ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div style={{ color: C.muted, fontSize: 11 }}>Para lo que se saca de la botillería y no se vende (toalla nova, guantes, etc.). El costo viene de la hoja de la botillería.</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <Fld label="Fecha"><input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value, mesCorresponde: "" })} style={S.inp} /></Fld>
+                        <Fld label="Corresponde al mes">
+                          {(() => {
+                            const mesFecha = (form.fecha || today()).slice(0, 7);
+                            const opciones = mesesRecientes(12);
+                            if (!opciones.includes(mesFecha)) opciones.push(mesFecha);
+                            return (
+                              <select value={form.mesCorresponde || mesFecha} onChange={(e) => setForm({ ...form, mesCorresponde: e.target.value === mesFecha ? "" : e.target.value })} style={S.inp}>
+                                {opciones.map((m) => <option key={m} value={m}>{nombreMes(m)}{m === today().slice(0, 7) ? " (en curso)" : ""}</option>)}
+                              </select>
+                            );
+                          })()}
+                        </Fld>
+                      </div>
+                      {!botProducto ? (
+                        <div>
+                          <Fld label="Buscar producto (nombre o código)">
+                            <input value={botQ} onChange={(e) => setBotQ(e.target.value)} placeholder="ej: toalla" style={S.inp} autoFocus />
+                          </Fld>
+                          {botCargando && <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>Buscando…</div>}
+                          {botError && <div style={{ color: C.red, fontSize: 12, marginTop: 8 }}>{botError}</div>}
+                          {botResultados && botResultados.length === 0 && !botCargando && <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>Sin resultados</div>}
+                          {botResultados && botResultados.length > 0 && <div style={{ color: C.muted, fontSize: 10, margin: "8px 0 4px" }}>{botResultados.length} {botResultados.length === 1 ? "producto" : "productos"} — toca uno</div>}
+                          {botResultados && botResultados.map((g) => {
+                            const costos = g.registros.map((r) => Number(r.costoReal) || 0).filter((c) => c > 0);
+                            const min = costos.length ? Math.min(...costos) : 0;
+                            return (
+                              <div key={g.nombre} onClick={() => elegirProductoBot(g)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
+                                <div>
+                                  <div style={{ fontWeight: 700, fontSize: 13 }}>{g.nombre}</div>
+                                  <div style={{ color: C.muted, fontSize: 10 }}>{g.registros.length} {g.registros.length === 1 ? "proveedor" : "proveedores"}</div>
+                                </div>
+                                <div style={{ fontWeight: 800, color: C.mustard }}>{min > 0 ? fmt(min) : "—"}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
+                            <div style={{ fontWeight: 700, fontSize: 14 }}>{botProducto.nombre}</div>
+                            <button onClick={() => { setBotProducto(null); setBotRegistro(null); }} style={{ background: C.tag, border: "none", color: C.muted, borderRadius: 14, padding: "3px 10px", cursor: "pointer", fontSize: 11 }}>cambiar</button>
+                          </div>
+                          <div>
+                            <div style={{ color: C.muted, fontSize: 11, marginBottom: 5 }}>Costo real por proveedor (toca el que corresponde)</div>
+                            {(() => {
+                              const costos = botProducto.registros.map((r) => Number(r.costoReal) || 0).filter((c) => c > 0);
+                              const min = costos.length ? Math.min(...costos) : 0;
+                              const ts = (r) => { const t = new Date(r.fecha).getTime(); return isNaN(t) ? 0 : t; };
+                              const masRec = Math.max(...botProducto.registros.map(ts));
+                              return botProducto.registros.map((r, i) => {
+                                const sel = botRegistro === r;
+                                const c = Number(r.costoReal) || 0;
+                                return (
+                                  <div key={i} onClick={() => setBotRegistro(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: sel ? C.mustard + "22" : C.bg, border: `1px solid ${sel ? C.mustard : C.border}`, borderRadius: 8, padding: "8px 12px", marginBottom: 5, cursor: "pointer" }}>
+                                    <div>
+                                      <div style={{ fontSize: 13, fontWeight: 600 }}>{r.proveedor || "—"}</div>
+                                      <div style={{ color: C.muted, fontSize: 10 }}>{fechaBot(r.fecha)}{ts(r) === masRec && botProducto.registros.length > 1 ? " · más reciente" : ""}{c > 0 && c === min && botProducto.registros.length > 1 ? " · mejor precio" : ""}</div>
+                                    </div>
+                                    <div style={{ fontWeight: 800, color: sel ? C.mustard : C.text }}>{c > 0 ? fmt(c) : "—"}</div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                            <Fld label="Cantidad"><input type="text" inputMode="decimal" value={botCantidad} onChange={(e) => setBotCantidad(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} /></Fld>
+                            <Fld label="Tipo de gasto">
+                              <select value={botTipo} onChange={(e) => setBotTipo(e.target.value)} style={S.inp}>
+                                {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                              </select>
+                            </Fld>
+                          </div>
+                          <div style={{ color: C.muted, fontSize: 10 }}>{TIPOS_GASTO.find((t) => t.id === botTipo)?.ayuda}</div>
+                          {botRegistro && Number(botRegistro.costoReal) > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
+                              <span style={{ color: C.muted, fontSize: 12 }}>{fmt(Number(botRegistro.costoReal))} × {botCantidad || 0}</span>
+                              <span style={{ fontWeight: 800, fontSize: 18, color: C.mustard }}>{fmt(Math.round(Number(botRegistro.costoReal) * (Number(String(botCantidad).replace(",", ".")) || 0)))}</span>
+                            </div>
+                          )}
+                          <Fld label="Nota"><input placeholder="opcional" value={form.nota} onChange={(e) => setForm({ ...form, nota: e.target.value })} style={S.inp} /></Fld>
+                          <button onClick={guardarConsumoBotilleria} disabled={saving} style={{ background: persona ? C.mustard : C.border, color: persona ? C.bg : C.muted, border: "none", borderRadius: 8, padding: "11px 0", fontWeight: 700, cursor: persona ? "pointer" : "default", width: "100%" }}>
+                            {saving ? "Guardando..." : persona ? `Guardar consumo — ${persona}` : "Selecciona quién registra arriba"}
+                          </button>
+                          <div style={{ color: C.muted, fontSize: 10 }}>Se guarda como gasto con fondo "Botillería": no toca la caja y suma a lo que se le debe a la botillería.</div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (<>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                     <Fld label="Fecha"><input type="date" value={form.fecha} onChange={(e) => setForm({ ...form, fecha: e.target.value, mesCorresponde: "" })} style={S.inp} /></Fld>
                     <Fld label="Corresponde al mes">
@@ -1459,6 +1624,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     {saving ? "Guardando..." : persona ? `Guardar — ${persona}` : "Selecciona quién registra arriba"}
                   </button>
                   <div style={{ color: C.muted, fontSize: 11, marginTop: 8 }}>💡 Si el insumo no está en la lista, elige "Otro" y escribe el nombre — quedará guardado y disponible para la próxima vez.</div>
+                  </>)}
                 </div>
               </div>
             )}
@@ -1602,6 +1768,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const insBebida = insumosPrecio.find((i) => normNombre(i.nombre).startsWith("bebida"));
               const filasBebida = ventas.filter((v) => v.fecha.startsWith(mesSel) && recetas.find((r) => r.nombre_producto === v.producto)?.categoria === "bebidas");
               const undBebida = filasBebida.reduce((a, v) => a + v.cantidad, 0);
+              const consumosBot = sumar(gSel.filter((g) => g.fondo === "Botillería"));
               const costoBebida = Math.round(filasBebida.reduce((a, v) => {
                 const rec = recetas.find((r) => r.nombre_producto === v.producto);
                 const porIng = calcularCosto(rec?.ingredientes, insumosPrecio);
@@ -1718,15 +1885,22 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                           </div>
                         );
                       })}
-                      {undBebida > 0 && (
+                      {(undBebida > 0 || consumosBot > 0) && (
                         <div style={{ ...S.card, borderLeft: `4px solid ${C.orange}` }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                            <div style={{ fontWeight: 700, fontSize: 14 }}>🥤 Bebidas (botillería)</div>
-                            <div style={{ fontWeight: 800, fontSize: 16, color: C.orange }}>{fmt(costoBebida)}</div>
+                            <div style={{ fontWeight: 700, fontSize: 14 }}>🥤 Botillería</div>
+                            <div style={{ fontWeight: 800, fontSize: 16, color: C.orange }}>{fmt(costoBebida + consumosBot)}</div>
                           </div>
-                          <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>{undBebida} bebidas vendidas en el mes{insBebida ? ` · costo ${fmt(insBebida.precio_por_kg)} c/u (${insBebida.nombre})` : ""}</div>
-                          <div style={{ color: C.orange, fontSize: 11, marginTop: 4 }}>Por pagar a botillería: <span style={{ fontWeight: 700 }}>{fmt(costoBebida)}</span></div>
-                          <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>No es una compra del foodtruck: se calcula por cada bebida vendida y no está en el total de arriba. Sí entra al costo de ventas del estado de resultados.</div>
+                          <div style={{ color: C.orange, fontSize: 11, marginTop: 2 }}>Por pagar a botillería este mes</div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 8 }}>
+                            <span>Bebidas vendidas <span style={{ color: C.muted, fontSize: 10 }}>({undBebida} und{insBebida ? ` × ${fmt(insBebida.precio_por_kg)}` : ""})</span></span>
+                            <span style={{ fontWeight: 700 }}>{fmt(costoBebida)}</span>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 4 }}>
+                            <span>Consumos internos <span style={{ color: C.muted, fontSize: 10 }}>(toalla, guantes, etc.)</span></span>
+                            <span style={{ fontWeight: 700 }}>{fmt(consumosBot)}</span>
+                          </div>
+                          <div style={{ color: C.muted, fontSize: 10, marginTop: 8 }}>Las bebidas se calculan por cada venta y no están en el total de arriba. Los consumos internos sí: son gastos con fondo "Botillería", ya incluidos en sus grupos.</div>
                         </div>
                       )}
                     </>
@@ -2827,6 +3001,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 return acc + v.cantidad * (porIngredientes > 0 ? porIngredientes : (insBebida?.precio_por_kg || 0));
               }, 0));
               const costoVentasTotalER = costoVentasER + costoBebidasER;
+              const consumosBotER = gMes.filter((g) => g.fondo === "Botillería").reduce((acc, g) => acc + g.monto, 0);
+              const porPagarBotER = costoBebidasER + consumosBotER;
               const mermasMes = calcularMermasBase(historialInventario, gastos, ventas, recetas, insumosPrecio, ingredientesEfectivos, parseNota).filter((m) => (m.fecha || "").startsWith(mesSel));
               const mermaNetaER = mermasMes.reduce((acc, m) => acc + m.costo, 0);
               const margenBrutoER = totalVentasER - costoVentasTotalER;
@@ -2904,7 +3080,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     ) : null))}
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
                     Insumos comprados {fmt(costoVentasER)} + bebidas {fmt(costoBebidasER)} ({unidadesBebidaER} und)
-                    {costoBebidasER > 0 && <div style={{ color: C.orange, marginTop: 2 }}>Por pagar a botillería: <span style={{ fontWeight: 700 }}>{fmt(costoBebidasER)}</span></div>}
+                    {porPagarBotER > 0 && <div style={{ color: C.orange, marginTop: 2 }}>Por pagar a botillería: <span style={{ fontWeight: 700 }}>{fmt(porPagarBotER)}</span> <span style={{ color: C.muted }}>(bebidas {fmt(costoBebidasER)} + consumos {fmt(consumosBotER)})</span></div>}
                   </div>
                   {mermasMes.length > 0 && (
                     <div style={{ paddingLeft: 12 }}>
