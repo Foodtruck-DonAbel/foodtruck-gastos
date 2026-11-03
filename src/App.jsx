@@ -183,6 +183,8 @@ const TIPOS_GASTO = [
 ];
 // Tipo extra: repartir un gasto en N meses. Se guarda en tipo_gasto como "cuotas:N" (sin columna nueva).
 const TIPOS_GASTO_CON_CUOTAS = [...TIPOS_GASTO, { id: "cuotas", label: "Repartir en cuotas mensuales", ayuda: "el gasto se divide en partes iguales entre varios meses (desde el mes que corresponde)" }];
+// Opciones para el selector de "Otro": incluye "No sé" para quien no sabe qué tipo elegir
+const TIPOS_GASTO_OTRO = [...TIPOS_GASTO_CON_CUOTAS, { id: "revisar", label: "No sé: lo revisa Alejandro", ayuda: "queda como Sin clasificar y Alejandro lo corrige después en el Historial" }];
 const cuotasDe = (g) => { const t = g && g.tipo_gasto; if (typeof t === "string" && t.startsWith("cuotas:")) { const n = parseInt(t.slice(7), 10); return n >= 2 ? n : 0; } return 0; };
 // Cuota que cae en el mes `mes` (YYYY-MM) para un gasto repartido; null si ese mes no corresponde
 const cuotaDelMes = (g, mes) => {
@@ -198,6 +200,7 @@ const cuotaDelMes = (g, mes) => {
 };
 const categoriaGasto = (insumo, conocidos, tipoElegido) => {
   if (typeof tipoElegido === "string" && tipoElegido.startsWith("cuotas:")) return "cuotas";
+  if (tipoElegido === "revisar") return "sin_clasificar"; // "No sé": lo revisa Alejandro
   if (tipoElegido && TIPOS_GASTO.some((t) => t.id === tipoElegido)) return tipoElegido;
   if (GASTOS_RETIRO.includes(insumo)) return "retiro";
   if (GASTOS_PAGO_GUSTAVO.includes(insumo)) return "pago_gustavo";
@@ -1765,6 +1768,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                               <select value={botTipo} onChange={(e) => { setBotTipo(e.target.value); setBotTipoRecordado(false); setBotTipoSugerido(false); }} style={S.inp}>
                                 <option value="">Elige el tipo…</option>
                                 {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                                <option value="revisar">No sé: lo revisa Alejandro</option>
                               </select>
                             </Fld>
                           </div>
@@ -1815,9 +1819,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       <Fld label="Tipo de gasto *" full>
                         <select value={form.tipoGasto} onChange={(e) => setForm({ ...form, tipoGasto: e.target.value })} style={S.inp}>
                           <option value="">Elige el tipo…</option>
-                          {TIPOS_GASTO_CON_CUOTAS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                          {TIPOS_GASTO_OTRO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                         </select>
-                        <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{form.tipoGasto ? TIPOS_GASTO_CON_CUOTAS.find((t) => t.id === form.tipoGasto)?.ayuda : "Define en qué parte del estado de resultados entra este gasto."}</div>
+                        <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{form.tipoGasto ? TIPOS_GASTO_OTRO.find((t) => t.id === form.tipoGasto)?.ayuda : "Define en qué parte del estado de resultados entra este gasto."}</div>
                       </Fld>
                     )}
                     {form.insumo === "Retiro de Caja" && (
