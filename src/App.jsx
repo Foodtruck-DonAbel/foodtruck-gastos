@@ -171,6 +171,8 @@ const GASTOS_FIJOS = ["Patente y permisos", "Contador", "Publicidad", "Internet 
 const GASTOS_INVERSION = ["Inversión / equipamiento"];
 const GASTOS_RETIRO = ["Retiro de Caja"];
 const GASTOS_PAGO_GUSTAVO = ["Pago sueldo Gustavo"];
+// Gastos donde la cantidad no aporta (se asume 1 si se deja vacía)
+const INSUMOS_SIN_CANTIDAD = [...GASTOS_RETIRO, ...GASTOS_PAGO_GUSTAVO, ...GASTOS_FIJOS, ...GASTOS_INVERSION];
 // Tipos que se pueden elegir al ingresar un gasto con "Otro" (o al reclasificarlo en el Historial)
 const TIPOS_GASTO = [
   { id: "costo_ventas", label: "Costo de ventas", ayuda: "ingredientes y envases que van en el producto" },
@@ -344,6 +346,13 @@ export default function App() {
   const [botRegistro, setBotRegistro] = useState(null);
   const [botCantidad, setBotCantidad] = useState("1");
   const [botTipo, setBotTipo] = useState("operacional");
+  // Destino de los retiros de caja
+  const [retiroDestino, setRetiroDestino] = useState("sueldo"); // "sueldo" | "socio"
+  const [retiroSocio, setRetiroSocio] = useState("");
+  const [retiroModal, setRetiroModal] = useState(null); // retiro del Historial al que se le asigna destino
+  const [retiroModalDest, setRetiroModalDest] = useState("sueldo");
+  const [retiroModalSocio, setRetiroModalSocio] = useState("");
+  const [retiroModalMes, setRetiroModalMes] = useState("");
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -735,6 +744,25 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     else cargarGastos();
   };
 
+  const confirmarDestinoRetiro = async () => {
+    if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
+    const g = retiroModal;
+    let cambios;
+    if (retiroModalDest === "sueldo") {
+      cambios = { insumo: "Pago sueldo Gustavo" };
+      if (retiroModalMes && retiroModalMes !== g.fecha.slice(0, 7)) cambios.mes_corresponde = retiroModalMes;
+      else if (g.mes_corresponde) cambios.mes_corresponde = null;
+    } else {
+      if (!retiroModalSocio) { showToast("Elige qué socio"); return; }
+      cambios = { nota: `Retiro de ${retiroModalSocio}` + (g.nota ? " · " + g.nota : "") };
+    }
+    const { error } = await supabase.from("gastos").update(cambios).eq("id", g.id);
+    if (error) { console.error("Error al asignar destino:", error); showToast("❌ Error: " + error.message); return; }
+    setRetiroModal(null); setAdminClave(""); setAdminError(false);
+    showToast(retiroModalDest === "sueldo" ? "✓ Registrado como sueldo de Gustavo" : "✓ Retiro de socio anotado");
+    cargarGastos();
+  };
+
   const confirmarReclasificacion = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     if (!reclasTipo) { showToast("Elige el tipo"); return; }
@@ -771,20 +799,25 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   // Gastos
   const agregarGasto = async () => {
     if (!persona) { showToast("Selecciona quién registra"); return; }
-    const insumofinal = form.insumo === "Otro" ? (form.insumoCustom || "Otro") : form.insumo;
+    const esRetiro = form.insumo === "Retiro de Caja";
+    if (esRetiro && retiroDestino === "socio" && !retiroSocio) { showToast("Elige qué socio retira"); return; }
+    // Un retiro para el sueldo de Gustavo se guarda como "Pago sueldo Gustavo" (no se cuenta dos veces como costo)
+    const insumofinal = esRetiro && retiroDestino === "sueldo" ? "Pago sueldo Gustavo" : (form.insumo === "Otro" ? (form.insumoCustom || "Otro") : form.insumo);
     const provFinal = form.proveedor === "__nuevo__" ? normProv(form.proveedorCustom) : form.proveedor;
     if (!form.monto || isNaN(Number(form.monto))) { setForm({ ...form, _errorMonto: true }); showToast("Completa el monto"); return; }
-    if (!form.cantidad || isNaN(Number(form.cantidad)) || Number(form.cantidad) <= 0) { setForm({ ...form, _errorCantidad: true }); showToast("Completa la cantidad"); return; }
+    const cantidadFinal = INSUMOS_SIN_CANTIDAD.includes(form.insumo) && !form.cantidad ? "1" : form.cantidad;
+    if (!cantidadFinal || isNaN(Number(cantidadFinal)) || Number(cantidadFinal) <= 0) { setForm({ ...form, _errorCantidad: true }); showToast("Completa la cantidad"); return; }
     if (form.insumo === "Otro" && !form.tipoGasto) { showToast("Elige el tipo de gasto"); return; }
     setSaving(true);
     const unidadFinal = unidadFijaDe(form.insumo) || form.unidad;
-    const filaGasto = { fecha: form.fecha, insumo: insumofinal, cantidad: form.cantidad || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: form.nota || null };
+    const filaGasto = { fecha: form.fecha, insumo: insumofinal, cantidad: cantidadFinal || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: (esRetiro && retiroDestino === "socio" ? `Retiro de ${retiroSocio}` + (form.nota ? " · " + form.nota : "") : form.nota) || null };
     if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) filaGasto.mes_corresponde = form.mesCorresponde;
     if (form.insumo === "Otro" && form.tipoGasto) filaGasto.tipo_gasto = form.tipoGasto;
     const { error: errGasto } = await supabase.from("gastos").insert([filaGasto]);
     if (errGasto) { console.error("Error al guardar gasto:", errGasto); showToast("❌ Error: " + errGasto.message); setSaving(false); return; }
     showToast("✓ Gasto guardado");
     setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", tipoGasto: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false });
+    setRetiroSocio("");
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
     const insumoRef = resolverInsumo(insumofinal);
@@ -1330,6 +1363,42 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         </div>
       )}
 
+      {retiroModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>↪ Destino del retiro</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>{fmt(retiroModal.monto)} · {retiroModal.fecha}{retiroModal.nota ? ` · ${retiroModal.nota}` : ""}</div>
+            <select value={retiroModalDest} onChange={(e) => setRetiroModalDest(e.target.value)} style={{ ...S.inp, marginBottom: 8 }}>
+              <option value="sueldo">Sueldo de Gustavo</option>
+              <option value="socio">Retiro de socio</option>
+            </select>
+            {retiroModalDest === "sueldo" && (
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>Sueldo del mes de:</div>
+                <select value={retiroModalMes} onChange={(e) => setRetiroModalMes(e.target.value)} style={S.inp}>
+                  {(() => { const o = mesesRecientes(12); const mf = retiroModal.fecha.slice(0, 7); if (!o.includes(mf)) o.push(mf); return o.map((m) => <option key={m} value={m}>{nombreMes(m)}</option>); })()}
+                </select>
+                <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>Pasa a contar como pagado a Gustavo en ese mes y deja de contarse como retiro.</div>
+              </div>
+            )}
+            {retiroModalDest === "socio" && (
+              <div style={{ marginBottom: 8 }}>
+                <select value={retiroModalSocio} onChange={(e) => setRetiroModalSocio(e.target.value)} style={S.inp}>
+                  <option value="">¿Qué socio?</option>
+                  {["Raul", "Pepe", "Alejandro"].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+            )}
+            <input type="password" placeholder="Clave" value={adminClave} onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }} onKeyDown={(e) => e.key === "Enter" && confirmarDestinoRetiro()} style={{ ...S.inp, fontSize: 18, letterSpacing: 6, marginBottom: 8 }} />
+            {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setRetiroModal(null); setAdminClave(""); setAdminError(false); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={confirmarDestinoRetiro} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {reclasModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
@@ -1610,7 +1679,26 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{form.tipoGasto ? TIPOS_GASTO.find((t) => t.id === form.tipoGasto)?.ayuda : "Define en qué parte del estado de resultados entra este gasto."}</div>
                       </Fld>
                     )}
-                    <Fld label="Cantidad *">
+                    {form.insumo === "Retiro de Caja" && (
+                      <>
+                        <Fld label="Destino del retiro *" full>
+                          <select value={retiroDestino} onChange={(e) => setRetiroDestino(e.target.value)} style={S.inp}>
+                            <option value="sueldo">Sueldo de Gustavo</option>
+                            <option value="socio">Retiro de socio</option>
+                          </select>
+                          <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{retiroDestino === "sueldo" ? "Se guarda como pago de sueldo a Gustavo: resta de la caja y suma a lo que ya se le pagó, sin contarse dos veces como costo." : "Resta de la caja y no es un costo del negocio."}</div>
+                        </Fld>
+                        {retiroDestino === "socio" && (
+                          <Fld label="¿Qué socio? *" full>
+                            <select value={retiroSocio} onChange={(e) => setRetiroSocio(e.target.value)} style={S.inp}>
+                              <option value="">Elige…</option>
+                              {["Raul", "Pepe", "Alejandro"].map((n) => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                          </Fld>
+                        )}
+                      </>
+                    )}
+                    <Fld label={INSUMOS_SIN_CANTIDAD.includes(form.insumo) ? "Cantidad (opcional)" : "Cantidad *"}>
                       <input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value, _errorCantidad: false })} style={{ ...S.inp, borderColor: form._errorCantidad ? C.red : C.border }} />
                       {form._errorCantidad && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa la cantidad</div>}
                     </Fld>
@@ -1651,12 +1739,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <Tag text={g.fondo} />
                         {g.proveedor && <Tag text={normProv(g.proveedor)} color="#2A3530" textColor={C.green} />}
                         {g.mes_corresponde && g.mes_corresponde !== g.fecha.slice(0, 7) && <Tag text={`↪ ${nombreMes(g.mes_corresponde)}`} color={C.blue + "33"} textColor={C.blue} />}
-                        {(() => { const cat = categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto); const etiquetas = { operacional: "Operacional", fijo: "Costo fijo", inversion: "Inversión", sin_clasificar: "Sin clasificar" }; return etiquetas[cat] ? <Tag text={etiquetas[cat]} color={(cat === "sin_clasificar" ? C.orange : C.purple) + "33"} textColor={cat === "sin_clasificar" ? C.orange : C.purple} /> : null; })()}
+                        {(() => { const cat = categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto); const etiquetas = { operacional: "Operacional", fijo: "Costo fijo", inversion: "Inversión", sin_clasificar: "Sin clasificar", retiro: "Retiro de caja", pago_gustavo: "Sueldo Gustavo" }; return etiquetas[cat] ? <Tag text={etiquetas[cat]} color={(cat === "sin_clasificar" ? C.orange : C.purple) + "33"} textColor={cat === "sin_clasificar" ? C.orange : C.purple} /> : null; })()}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, color: C.mustard }}>{fmt(g.monto)}</div>
-                      <button onClick={() => { setReclasModal(g); setReclasTipo(g.tipo_gasto || ""); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>reclasificar</button>
+                      {categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto) === "retiro" ? (
+                        <button onClick={() => { setRetiroModal(g); setRetiroModalDest("sueldo"); setRetiroModalSocio(""); setRetiroModalMes(g.fecha.slice(0, 7)); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>destino</button>
+                      ) : (
+                        <button onClick={() => { setReclasModal(g); setReclasTipo(g.tipo_gasto || ""); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>reclasificar</button>
+                      )}
                       <button onClick={() => solicitarEliminacion("gasto", g)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>eliminar</button>
                     </div>
                   </div>
@@ -3124,15 +3216,30 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                   )}
                   {filaER(`= Resultado preliminar${pctER(resultadoER)}`, fmt(resultadoER), { color: resultadoER >= 0 ? C.green : C.red })}
+                  {(retirosER > 0 || inversionER > 0) && (
+                    <>
+                      {retirosER > 0 && filaERDesglose("retiros", `(−) Retiros de socios${pctER(retirosER)}`, fmt(retirosER), { color: C.orange },
+                        <div>
+                          {[...gastosDe("retiro")].sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).map((g) => (
+                            <div key={g.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0", gap: 8 }}>
+                              <span>{g.fecha.split("-").reverse().join("-")} <span style={{ color: C.muted, fontSize: 10 }}>{g.nota || "sin destino"}</span></span>
+                              <span style={{ fontWeight: 700 }}>{fmt(g.monto)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {inversionER > 0 && filaERDesglose("inversion", `(−) Inversiones${pctER(inversionER)}`, fmt(inversionER), { color: C.orange }, detalleInsumos(gastosDe("inversion"), inversionER))}
+                      {filaER(`= Saldo después de retiros e inversiones${pctER(resultadoER - retirosER - inversionER)}`, fmt(resultadoER - retirosER - inversionER), { color: resultadoER - retirosER - inversionER >= 0 ? C.green : C.red })}
+                      <div style={{ color: C.muted, fontSize: 10, margin: "4px 0 2px" }}>El resultado mide lo que ganó el negocio. Los retiros y las inversiones no son costos, pero reducen lo que queda disponible.</div>
+                    </>
+                  )}
                   <div style={{ color: C.muted, fontSize: 10, margin: "6px 0 4px" }}>Los % de cada línea son sobre las ventas brutas del mes. Incluye comisiones y Gustavo. Los costos fijos (patente, contador, publicidad, etc.) entran a medida que los ingresas en Gastos.</div>
                   {cortesiasER.length > 0 && (
                     <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>
                       🎁 Cortesías del mes: {cortesiasER.reduce((acc, v) => acc + v.cantidad, 0)} und · costo en insumos <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costoCortER))}</span> (ya incluido en el costo de ventas) · a precio de lista {fmt(Math.round(valorCortER))}
                     </div>
                   )}
-                  {inversionER > 0 && <div style={{ marginTop: 10 }}>{filaERDesglose("inversion", "Inversiones del mes (no restan del resultado)", fmt(inversionER), { color: C.muted }, detalleInsumos(gastosDe("inversion"), inversionER))}</div>}
-                  {retirosER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Retiros de caja del mes (no restan del resultado): {fmt(retirosER)}</div>}
-                </div>
+                                                    </div>
               );
             })()}
             <div style={S.card}>
