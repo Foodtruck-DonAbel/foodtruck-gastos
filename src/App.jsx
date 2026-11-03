@@ -13,7 +13,7 @@ const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", 
 // Buscador de precios de la botillería (Apps Script). Devuelve [{ nombre, codigo, proveedor, costoReal, fecha }]
 const BOTILLERIA_URL = "https://script.google.com/macros/s/AKfycbwcNig7G26Th8jJzdpnJkt5Ic8qIMYDtk_6iZ_gUaJxFbpsxRT4mFyd9NfWOdsoGtGU/exec";
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Pago sueldo Gustavo","Toalla nova","Guantes","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Pago sueldo Gustavo","Toalla nova","Guantes","Reparaciones","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -31,7 +31,7 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají en Pasta": "kg",
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
   "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro", "Empanadas de Queso": "unidad",
-  "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad", "Pago sueldo Gustavo": "unidad", "Toalla nova": "unidad", "Guantes": "unidad",
+  "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad", "Pago sueldo Gustavo": "unidad", "Toalla nova": "unidad", "Guantes": "unidad", "Reparaciones": "unidad",
 };
 
 // Unidad de respaldo para todos los insumos de la lista de gastos (se usa si Recetas → Insumos no la tiene)
@@ -172,13 +172,14 @@ const GASTOS_INVERSION = ["Inversión / equipamiento"];
 const GASTOS_RETIRO = ["Retiro de Caja"];
 const GASTOS_PAGO_GUSTAVO = ["Pago sueldo Gustavo"];
 // Gastos donde la cantidad no aporta (se asume 1 si se deja vacía)
-const INSUMOS_SIN_CANTIDAD = [...GASTOS_RETIRO, ...GASTOS_PAGO_GUSTAVO, ...GASTOS_FIJOS, ...GASTOS_INVERSION];
+const INSUMOS_SIN_CANTIDAD = [...GASTOS_RETIRO, ...GASTOS_PAGO_GUSTAVO, ...GASTOS_FIJOS, ...GASTOS_INVERSION, "Reparaciones"];
 // Tipos que se pueden elegir al ingresar un gasto con "Otro" (o al reclasificarlo en el Historial)
 const TIPOS_GASTO = [
   { id: "costo_ventas", label: "Costo de ventas", ayuda: "ingredientes y envases que van en el producto" },
   { id: "operacional", label: "Operacional", ayuda: "consumibles y utensilios chicos: guantes, toalla, gas, limpieza, canastillo" },
   { id: "fijo", label: "Costo fijo", ayuda: "patente, contador, arriendo, internet, seguros" },
-  { id: "inversion", label: "Inversión", ayuda: "equipos que duran años: plancha, freidora (no resta del mes)" },
+  { id: "equipamiento", label: "Equipamiento / reparación (resta en el mes)", ayuda: "compras de equipos o reparaciones que quieres ver en el resultado del mes: canasto, plancha, reparación de agua" },
+  { id: "inversion", label: "Inversión (aparte, no resta)", ayuda: "equipos grandes o que duran años: no resta del mes, aparece aparte" },
 ];
 const categoriaGasto = (insumo, conocidos, tipoElegido) => {
   if (tipoElegido && TIPOS_GASTO.some((t) => t.id === tipoElegido)) return tipoElegido;
@@ -186,6 +187,7 @@ const categoriaGasto = (insumo, conocidos, tipoElegido) => {
   if (GASTOS_PAGO_GUSTAVO.includes(insumo)) return "pago_gustavo";
   if (GASTOS_INVERSION.includes(insumo)) return "inversion";
   if (GASTOS_FIJOS.includes(insumo)) return "fijo";
+  if (insumo === "Reparaciones") return "equipamiento";
   if (GASTOS_OPERACIONALES.includes(insumo)) return "operacional";
   if (["ciboulette y cilantro"].includes((insumo || "").trim().toLowerCase())) return "costo_ventas";
   if ((INSUMOS_BASE.includes(insumo) && insumo !== "Otro") || resolverInsumo(insumo)) return "costo_ventas";
@@ -353,6 +355,7 @@ export default function App() {
   const [retiroModalDest, setRetiroModalDest] = useState("sueldo");
   const [retiroModalSocio, setRetiroModalSocio] = useState("");
   const [retiroModalMes, setRetiroModalMes] = useState("");
+  const [inversionModo, setInversionModo] = useState("aparte"); // "aparte" | "mes": cómo se refleja una compra de equipamiento
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -813,11 +816,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const filaGasto = { fecha: form.fecha, insumo: insumofinal, cantidad: cantidadFinal || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: (esRetiro && retiroDestino === "socio" ? `Retiro de ${retiroSocio}` + (form.nota ? " · " + form.nota : "") : form.nota) || null };
     if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) filaGasto.mes_corresponde = form.mesCorresponde;
     if (form.insumo === "Otro" && form.tipoGasto) filaGasto.tipo_gasto = form.tipoGasto;
+    if (form.insumo === "Inversión / equipamiento" && inversionModo === "mes") filaGasto.tipo_gasto = "equipamiento";
     const { error: errGasto } = await supabase.from("gastos").insert([filaGasto]);
     if (errGasto) { console.error("Error al guardar gasto:", errGasto); showToast("❌ Error: " + errGasto.message); setSaving(false); return; }
     showToast("✓ Gasto guardado");
     setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", tipoGasto: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false });
-    setRetiroSocio("");
+    setRetiroSocio(""); setInversionModo("aparte");
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
     const insumoRef = resolverInsumo(insumofinal);
@@ -1698,6 +1702,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         )}
                       </>
                     )}
+                    {form.insumo === "Inversión / equipamiento" && (
+                      <Fld label="¿Cómo se refleja? *" full>
+                        <select value={inversionModo} onChange={(e) => setInversionModo(e.target.value)} style={S.inp}>
+                          <option value="aparte">Aparte: no resta del resultado del mes</option>
+                          <option value="mes">Restar en el mes (canasto, plancha, reparación)</option>
+                        </select>
+                        <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{inversionModo === "mes" ? "Se descuenta completo del resultado del mes en que lo registras." : "Para equipos grandes: aparece debajo del resultado, sin restarlo del mes."}</div>
+                      </Fld>
+                    )}
                     <Fld label={INSUMOS_SIN_CANTIDAD.includes(form.insumo) ? "Cantidad (opcional)" : "Cantidad *"}>
                       <input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value, _errorCantidad: false })} style={{ ...S.inp, borderColor: form._errorCantidad ? C.red : C.border }} />
                       {form._errorCantidad && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa la cantidad</div>}
@@ -1739,7 +1752,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <Tag text={g.fondo} />
                         {g.proveedor && <Tag text={normProv(g.proveedor)} color="#2A3530" textColor={C.green} />}
                         {g.mes_corresponde && g.mes_corresponde !== g.fecha.slice(0, 7) && <Tag text={`↪ ${nombreMes(g.mes_corresponde)}`} color={C.blue + "33"} textColor={C.blue} />}
-                        {(() => { const cat = categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto); const etiquetas = { operacional: "Operacional", fijo: "Costo fijo", inversion: "Inversión", sin_clasificar: "Sin clasificar", retiro: "Retiro de caja", pago_gustavo: "Sueldo Gustavo" }; return etiquetas[cat] ? <Tag text={etiquetas[cat]} color={(cat === "sin_clasificar" ? C.orange : C.purple) + "33"} textColor={cat === "sin_clasificar" ? C.orange : C.purple} /> : null; })()}
+                        {(() => { const cat = categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto); const etiquetas = { operacional: "Operacional", fijo: "Costo fijo", equipamiento: "Equipo / reparación", inversion: "Inversión", sin_clasificar: "Sin clasificar", retiro: "Retiro de caja", pago_gustavo: "Sueldo Gustavo" }; return etiquetas[cat] ? <Tag text={etiquetas[cat]} color={(cat === "sin_clasificar" ? C.orange : C.purple) + "33"} textColor={cat === "sin_clasificar" ? C.orange : C.purple} /> : null; })()}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -1770,6 +1783,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 { id: "costo_ventas", titulo: "Costo de ventas", color: C.green, nota: "Ingredientes y envases" },
                 { id: "operacional", titulo: "Operacionales", color: C.blue, nota: "Gas, limpieza, consumibles" },
                 { id: "fijo", titulo: "Costos fijos", color: C.purple, nota: "Patente, contador, arriendo…" },
+                { id: "equipamiento", titulo: "Equipamiento y reparaciones", color: C.blue, nota: "Restan en el mes" },
                 { id: "sin_clasificar", titulo: "Sin clasificar", color: C.orange, nota: "Reclasifícalos en el Historial" },
                 { id: "inversion", titulo: "Inversiones", color: C.muted, nota: "No restan del resultado" },
                 { id: "pago_gustavo", titulo: "Pagos a Gustavo", color: C.muted, nota: "No restan: su sueldo sale de la fórmula" },
@@ -1870,7 +1884,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               // ---- 4) exportar CSV del mes
               const exportarMes = () => {
                 const esc = (v) => { const t = String(v ?? ""); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
-                const nombresCat = { costo_ventas: "Costo de ventas", operacional: "Operacional", fijo: "Costo fijo", sin_clasificar: "Sin clasificar", inversion: "Inversión", pago_gustavo: "Pago Gustavo", retiro: "Retiro de caja" };
+                const nombresCat = { costo_ventas: "Costo de ventas", operacional: "Operacional", fijo: "Costo fijo", sin_clasificar: "Sin clasificar", inversion: "Inversión", equipamiento: "Equipamiento / reparación", pago_gustavo: "Pago Gustavo", retiro: "Retiro de caja" };
                 const header = ["Mes", "Fecha de pago", "Categoría", "Insumo", "Cantidad", "Unidad", "Monto", "Proveedor", "Persona", "Fondo", "Nota"];
                 const rows = [...gSel].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).map((g) => [mesSel, g.fecha, nombresCat[catDe(g)], nombreCanonico(g.insumo), g.cantidad || "", g.unidad || "", g.monto, g.proveedor ? normProv(g.proveedor) : "", g.persona, g.fondo, g.nota || ""].map(esc).join(","));
                 const csv = "\uFEFF" + [header.map(esc).join(","), ...rows].join("\n");
@@ -3076,6 +3090,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const costoVentasER = sumCat("costo_ventas");
               const operacionalER = sumCat("operacional");
               const fijosER = sumCat("fijo");
+              const equipamientoER = sumCat("equipamiento");
               const sinClasER = sumCat("sin_clasificar");
               const inversionER = sumCat("inversion");
               const retirosER = sumCat("retiro");
@@ -3110,7 +3125,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const pagadoGustavoER = sumCat("pago_gustavo");
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * COMISION_PEDIDOS_YA);
               const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
-              const resultadoER = margenBrutoER - operacionalER - fijosER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
+              const resultadoER = margenBrutoER - operacionalER - fijosER - equipamientoER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
               const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos, g.tipo_gasto) === "sin_clasificar").map((g) => g.insumo))];
               const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
               const filaER = (label, valor, extra) => (
@@ -3200,6 +3215,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {filaER(`= Margen bruto${pctER(margenBrutoER)}`, fmt(margenBrutoER), { color: margenBrutoER >= 0 ? C.green : C.red })}
                   {operacionalER > 0 && filaERDesglose("operacional", `(−) Operacionales (gas, consumibles)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red }, detalleInsumos(gastosDe("operacional"), operacionalER))}
                   {fijosER > 0 && filaERDesglose("fijos", `(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red }, detalleInsumos(gastosDe("fijo"), fijosER))}
+                  {equipamientoER > 0 && filaERDesglose("equipamiento", `(−) Equipamiento y reparaciones${pctER(equipamientoER)}`, fmt(equipamientoER), { color: C.red }, detalleInsumos(gastosDe("equipamiento"), equipamientoER))}
                   {filaER(`(−) Comisión tarjeta (${(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
                   {filaER(`(−) Comisión Pedidos Ya (${Math.round(COMISION_PEDIDOS_YA * 100)}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
                   {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
