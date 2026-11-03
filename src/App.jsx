@@ -365,6 +365,7 @@ export default function App() {
   const [botCantidad, setBotCantidad] = useState("1");
   const [botTipo, setBotTipo] = useState("");
   const [botTipoRecordado, setBotTipoRecordado] = useState(false); // la categoría viene de un consumo anterior
+  const [botTipoSugerido, setBotTipoSugerido] = useState(false); // la categoría se sugirió por el nombre del producto
   const [botCamAbierta, setBotCamAbierta] = useState(false);
   const [botCamError, setBotCamError] = useState("");
   const botVideoRef = useRef(null);
@@ -897,8 +898,18 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     setBotProducto(g); setBotRegistro(masReciente); setBotCantidad("1");
     // Si este producto ya se consumió antes, se reutiliza su categoría (el más reciente primero)
     const previo = gastos.find((x) => x.fondo === "Botillería" && normNombre(x.insumo) === normNombre(g.nombre) && TIPOS_GASTO.some((t) => t.id === x.tipo_gasto));
-    setBotTipo(previo ? previo.tipo_gasto : "");
+    const sugerido = previo ? "" : sugerirTipoBot(g.nombre);
+    setBotTipo(previo ? previo.tipo_gasto : sugerido);
     setBotTipoRecordado(!!previo);
+    setBotTipoSugerido(!!sugerido);
+  };
+  // Sugerencia por nombre para lo que se suele sacar de la botillería (se puede cambiar siempre)
+  const sugerirTipoBot = (nombre) => {
+    const n = normNombre(nombre);
+    if (/servilleta/.test(n)) return "costo_ventas";
+    if (/nova|toalla|guante|detergente|cloro|lavaloza|lava loza|jabon|esponja|escoba|trapero|basura|desinfect|limpia|limpi|pano|alcohol|virutilla/.test(n)) return "operacional";
+    if (/tocino|mayonesa|ketchup|mostaza|aceite|queso|salchicha|palta|tomate|papas|pollo|churrasco|salsa|aji|pepinillo|cebolla|chucrut|pan /.test(n)) return "costo_ventas";
+    return "";
   };
 
   // ---- Lector de código de barras (cámara del celular)
@@ -971,7 +982,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const { error } = await supabase.from("gastos").insert([fila]);
     if (error) { console.error("Error al guardar consumo de botillería:", error); showToast("❌ Error: " + error.message); setSaving(false); return; }
     showToast(`✓ Consumo guardado — ${fmt(monto)}`);
-    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1"); setBotTipo(""); setBotTipoRecordado(false);
+    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1"); setBotTipo(""); setBotTipoRecordado(false); setBotTipoSugerido(false);
     setForm({ ...form, nota: "", mesCorresponde: "" });
     cargarGastos(); setSaving(false);
   };
@@ -1751,13 +1762,14 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                             <Fld label="Cantidad"><input type="text" inputMode="decimal" value={botCantidad} onChange={(e) => setBotCantidad(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} /></Fld>
                             <Fld label="Tipo de gasto *">
-                              <select value={botTipo} onChange={(e) => { setBotTipo(e.target.value); setBotTipoRecordado(false); }} style={S.inp}>
+                              <select value={botTipo} onChange={(e) => { setBotTipo(e.target.value); setBotTipoRecordado(false); setBotTipoSugerido(false); }} style={S.inp}>
                                 <option value="">Elige el tipo…</option>
                                 {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                               </select>
                             </Fld>
                           </div>
-                          <div style={{ color: botTipoRecordado ? C.green : C.muted, fontSize: 10 }}>{botTipoRecordado ? "✓ Categoría recordada de un consumo anterior de este producto. Puedes cambiarla." : (TIPOS_GASTO.find((t) => t.id === botTipo)?.ayuda || "Producto nuevo: elige una vez el tipo y la próxima vez queda guardado.")}</div>
+                          <div style={{ color: botTipoRecordado ? C.green : botTipoSugerido ? C.orange : C.muted, fontSize: 10 }}>{botTipoRecordado ? "✓ Categoría recordada de un consumo anterior de este producto. Puedes cambiarla." : botTipoSugerido ? "Sugerida por el nombre del producto. Confírmala o cámbiala: la próxima vez queda recordada." : (TIPOS_GASTO.find((t) => t.id === botTipo)?.ayuda || "Producto nuevo: elige una vez el tipo y la próxima vez queda guardado.")}</div>
+                          {botTipo === "costo_ventas" && <div style={{ color: C.muted, fontSize: 10 }}>Si es un ingrediente de tus recetas (tocino, mayonesa…), conviene registrarlo como gasto normal con fondo "Botillería": así también suma a tu stock.</div>}
                           {botRegistro && Number(botRegistro.costoReal) > 0 && (
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
                               <span style={{ color: C.muted, fontSize: 12 }}>{fmt(Number(botRegistro.costoReal))} × {botCantidad || 0}</span>
