@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { supabase } from "./supabase";
 
 const C = {
@@ -363,7 +363,12 @@ export default function App() {
   const [botProducto, setBotProducto] = useState(null);
   const [botRegistro, setBotRegistro] = useState(null);
   const [botCantidad, setBotCantidad] = useState("1");
-  const [botTipo, setBotTipo] = useState("operacional");
+  const [botTipo, setBotTipo] = useState("");
+  const [botTipoRecordado, setBotTipoRecordado] = useState(false); // la categoría viene de un consumo anterior
+  const [botCamAbierta, setBotCamAbierta] = useState(false);
+  const [botCamError, setBotCamError] = useState("");
+  const botVideoRef = useRef(null);
+  const botCamRef = useRef({ stream: null, interval: null, reader: null });
   // Destino de los retiros de caja
   const [retiroDestino, setRetiroDestino] = useState("sueldo"); // "sueldo" | "socio"
   const [retiroSocio, setRetiroSocio] = useState("");
@@ -466,8 +471,8 @@ export default function App() {
 
   useEffect(() => {
     if (view === "home") { cargarGastos(); cargarVentas(); }
-    if (view === "gastos") { cargarGastos(); cargarVentas(); cargarInventarioInicial(); if (recetas.length === 0) cargarRecetas(); }
-    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); if (persona === "Alejandro") cargarHistorialTurnos(); }
+    if (view === "gastos") { cargarGastos(); cargarVentas(); cargarInventarioInicial(); if (recetas.length === 0) cargarRecetas(); setForm((f) => ({ ...f, fecha: today() })); }
+    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); setFechaVenta(today()); if (persona === "Alejandro") cargarHistorialTurnos(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); cargarRecetas(); cargarInventarioInicial(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
@@ -496,6 +501,10 @@ export default function App() {
     }, 400);
     return () => { vigente = false; clearTimeout(t); };
   }, [botQ, botilleriaMode]);
+
+  // La cámara se apaga al salir del modo botillería, de la pantalla de gastos o de la app
+  useEffect(() => { if (!botilleriaMode || view !== "gastos") { stopCamHardware(); setBotCamAbierta(false); } }, [botilleriaMode, view]);
+  useEffect(() => () => stopCamHardware(), []);
 
   const cargarGastos = async () => {
     setLoading(true);
@@ -729,7 +738,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       const ins = insumosData.find((i) => i.nombre === nombre);
       const inicial = invInicialMap[nombre]?.valor || 0;
       const comprado = compras[nombre] || 0;
-      const consumido = consumo[nombre] || 0;
+      const consumido = (consumo[nombre] || 0) / (1 - (MERMA_INSUMOS[nombre] || 0)); // incluye la merma natural (ej: palta)
       const disponible = inicial + comprado - consumido;
       const unidad = ins?.unidad || "unidad";
       // Convertir disponible a unidad legible
@@ -753,12 +762,28 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     const { tipo, registro } = adminModal;
     const tabla = tipo === "venta" ? "ventas" : tipo === "receta" ? "recetas" : tipo === "insumo" ? "insumos_precio" : "gastos";
+    // Un combo se guarda como una fila principal + una fila por cada producto interno (misma hora de registro)
+    let idsComponentes = [];
+    if (tipo === "venta") {
+      try {
+        const notaP = (() => { try { return JSON.parse(registro.nota || "{}"); } catch { return {}; } })();
+        if (Array.isArray(notaP.productos) && !notaP.es_componente) {
+          const { data: mismas } = await supabase.from("ventas").select("*").eq("created_at", registro.created_at);
+          const cands = (mismas || []).filter((r) => { try { const n = JSON.parse(r.nota || "{}"); return n.es_componente === true && n.combo === notaP.combo; } catch { return false; } });
+          notaP.productos.forEach((nombreProd) => {
+            const r = cands.find((x) => x.producto === nombreProd && x.cantidad === registro.cantidad && !idsComponentes.includes(x.id));
+            if (r) idsComponentes.push(r.id);
+          });
+        }
+      } catch (e) { console.error("No se pudieron buscar los productos internos del combo:", e); }
+    }
     await supabase.from(tabla).delete().eq("id", registro.id);
+    if (idsComponentes.length > 0) await supabase.from("ventas").delete().in("id", idsComponentes);
     if (tipo !== "receta" && tipo !== "insumo") {
-      await supabase.from("log_eliminaciones").insert([{ tipo, registro_id: registro.id, detalle: registro, eliminado_por: persona || "desconocido" }]);
+      await supabase.from("log_eliminaciones").insert([{ tipo, registro_id: registro.id, detalle: idsComponentes.length > 0 ? { ...registro, componentes_eliminados: idsComponentes } : registro, eliminado_por: persona || "desconocido" }]);
     }
     setAdminModal(null); setAdminClave("");
-    showToast("Eliminado");
+    showToast(idsComponentes.length > 0 ? "Eliminado (y sus productos del combo)" : "Eliminado");
     if (tipo === "venta") cargarVentas();
     else if (tipo === "receta" || tipo === "insumo") { setRecetas([]); setInsumosPrecio([]); cargarRecetas(); }
     else cargarGastos();
@@ -852,12 +877,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const monto = Number(form.monto);
     if (insumoRef && cantidad > 0 && monto > 0) {
       const ins = insumosPrecio.find((i) => i.nombre === insumoRef);
-      if (ins) {
+      // El precio de Recetas es por kg / litro (o por unidad): la cantidad se lleva a esa misma base
+      const compatible = ins && (ins.unidad === "unidad" ? unidadFinal === "unidad" : unidadFinal !== "unidad");
+      if (ins && compatible) {
+        const cantBase = ins.unidad === "unidad" ? cantidad : aGramos(cantidad, unidadFinal) / 1000;
         const merma = MERMA_INSUMOS[insumoRef] || 0;
-        const cantidadAprovechable = merma > 0 ? cantidad * (1 - merma) : cantidad;
+        const cantidadAprovechable = merma > 0 ? cantBase * (1 - merma) : cantBase;
         const precioNuevo = Math.round(monto / cantidadAprovechable);
         if (Math.abs(precioNuevo - ins.precio_por_kg) > 5) {
-          setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo, cantidad, cantidadAprovechable, merma });
+          setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo, cantidad: cantBase, cantidadAprovechable, merma });
         }
       }
     }
@@ -867,12 +895,67 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const ts = (r) => { const t = new Date(r.fecha).getTime(); return isNaN(t) ? 0 : t; };
     const masReciente = [...g.registros].sort((a, b) => ts(b) - ts(a))[0];
     setBotProducto(g); setBotRegistro(masReciente); setBotCantidad("1");
+    // Si este producto ya se consumió antes, se reutiliza su categoría (el más reciente primero)
+    const previo = gastos.find((x) => x.fondo === "Botillería" && normNombre(x.insumo) === normNombre(g.nombre) && TIPOS_GASTO.some((t) => t.id === x.tipo_gasto));
+    setBotTipo(previo ? previo.tipo_gasto : "");
+    setBotTipoRecordado(!!previo);
+  };
+
+  // ---- Lector de código de barras (cámara del celular)
+  const stopCamHardware = () => {
+    const c = botCamRef.current;
+    if (c.interval) { clearInterval(c.interval); c.interval = null; }
+    if (c.reader) { try { c.reader.reset(); } catch (e) {} c.reader = null; }
+    if (c.stream) { c.stream.getTracks().forEach((t) => t.stop()); c.stream = null; }
+  };
+  const detenerCamBot = () => { stopCamHardware(); setBotCamAbierta(false); };
+  // iPhone/Safari no trae lector nativo: se carga uno (ZXing) solo cuando hace falta
+  const cargarZXing = () => new Promise((resolve, reject) => {
+    if (window.ZXing) return resolve(window.ZXing);
+    const sc = document.createElement("script");
+    sc.src = "https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js";
+    sc.onload = () => (window.ZXing ? resolve(window.ZXing) : reject(new Error("lector no disponible")));
+    sc.onerror = () => reject(new Error("no se pudo cargar el lector de códigos (¿sin internet?)"));
+    document.head.appendChild(sc);
+  });
+  const abrirCamBot = async () => {
+    setBotCamError(""); setBotCamAbierta(true);
+    await new Promise((r) => setTimeout(r, 60)); // espera a que exista el <video>
+    const video = botVideoRef.current;
+    if (!video) return;
+    const alEncontrar = (valor) => { detenerCamBot(); setBotQ(String(valor)); };
+    try {
+      if ("BarcodeDetector" in window) {
+        let stream;
+        try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } } }); }
+        catch (e) { stream = await navigator.mediaDevices.getUserMedia({ video: true }); }
+        botCamRef.current.stream = stream;
+        video.srcObject = stream;
+        await video.play();
+        const detector = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "code_128", "upc_a", "upc_e"] });
+        botCamRef.current.interval = setInterval(async () => {
+          if (video.readyState < 2) return;
+          try { const codigos = await detector.detect(video); if (codigos.length > 0) alEncontrar(codigos[0].rawValue); } catch (e) {}
+        }, 500);
+      } else {
+        const ZX = await cargarZXing();
+        const hints = new Map();
+        hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS, [ZX.BarcodeFormat.EAN_13, ZX.BarcodeFormat.EAN_8, ZX.BarcodeFormat.CODE_128, ZX.BarcodeFormat.UPC_A, ZX.BarcodeFormat.UPC_E]);
+        const reader = new ZX.BrowserMultiFormatReader(hints);
+        botCamRef.current.reader = reader;
+        await reader.decodeFromConstraints({ video: { facingMode: "environment" } }, video, (resultado) => { if (resultado) alEncontrar(resultado.getText()); });
+      }
+    } catch (e) {
+      stopCamHardware(); setBotCamAbierta(false);
+      setBotCamError(e && e.name === "NotAllowedError" ? "Permiso de cámara denegado. Actívalo en los ajustes del navegador." : "No se pudo abrir la cámara: " + ((e && (e.message || e.name)) || "error"));
+    }
   };
   const fechaBot = (iso) => { try { return new Date(iso).toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "2-digit" }); } catch { return "—"; } };
 
   const guardarConsumoBotilleria = async () => {
     if (!persona) { showToast("Selecciona quién registra"); return; }
     if (!botProducto || !botRegistro) { showToast("Busca y elige un producto"); return; }
+    if (!botTipo) { showToast("Elige el tipo de gasto"); return; }
     const cant = Number(String(botCantidad).replace(",", "."));
     if (!cant || cant <= 0) { showToast("Completa la cantidad"); return; }
     const costo = Number(botRegistro.costoReal) || 0;
@@ -888,7 +971,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const { error } = await supabase.from("gastos").insert([fila]);
     if (error) { console.error("Error al guardar consumo de botillería:", error); showToast("❌ Error: " + error.message); setSaving(false); return; }
     showToast(`✓ Consumo guardado — ${fmt(monto)}`);
-    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1");
+    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1"); setBotTipo(""); setBotTipoRecordado(false);
     setForm({ ...form, nota: "", mesCorresponde: "" });
     cargarGastos(); setSaving(false);
   };
@@ -1605,9 +1688,20 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       </div>
                       {!botProducto ? (
                         <div>
-                          <Fld label="Buscar producto (nombre o código)">
-                            <input value={botQ} onChange={(e) => setBotQ(e.target.value)} placeholder="ej: toalla" style={S.inp} autoFocus />
+                          <Fld label="Buscar producto (nombre o código de barras)">
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <input value={botQ} onChange={(e) => setBotQ(e.target.value)} placeholder="ej: toalla, o escanea el código" style={S.inp} />
+                              <button onClick={botCamAbierta ? detenerCamBot : abrirCamBot} style={{ background: botCamAbierta ? C.red : C.tag, border: `1px solid ${C.border}`, color: C.text, borderRadius: 7, padding: "0 14px", fontSize: 20, cursor: "pointer" }}>{botCamAbierta ? "✕" : "📷"}</button>
+                            </div>
                           </Fld>
+                          {botCamError && <div style={{ color: C.red, fontSize: 12, marginTop: 8 }}>{botCamError}</div>}
+                          {botCamAbierta && (
+                            <div style={{ position: "relative", borderRadius: 10, overflow: "hidden", background: "#000", marginTop: 8 }}>
+                              <video ref={botVideoRef} playsInline muted autoPlay style={{ width: "100%", maxHeight: 240, objectFit: "cover", display: "block" }} />
+                              <div style={{ position: "absolute", left: "10%", width: "80%", top: "50%", height: 2, background: C.green, boxShadow: `0 0 8px ${C.green}` }} />
+                              <div style={{ position: "absolute", bottom: 6, width: "100%", textAlign: "center", fontSize: 11, color: "#fff" }}>Apunta al código de barras</div>
+                            </div>
+                          )}
                           {botCargando && <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>Buscando…</div>}
                           {botError && <div style={{ color: C.red, fontSize: 12, marginTop: 8 }}>{botError}</div>}
                           {botResultados && botResultados.length === 0 && !botCargando && <div style={{ color: C.muted, fontSize: 12, marginTop: 8 }}>Sin resultados</div>}
@@ -1656,13 +1750,14 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                           </div>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                             <Fld label="Cantidad"><input type="text" inputMode="decimal" value={botCantidad} onChange={(e) => setBotCantidad(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} /></Fld>
-                            <Fld label="Tipo de gasto">
-                              <select value={botTipo} onChange={(e) => setBotTipo(e.target.value)} style={S.inp}>
+                            <Fld label="Tipo de gasto *">
+                              <select value={botTipo} onChange={(e) => { setBotTipo(e.target.value); setBotTipoRecordado(false); }} style={S.inp}>
+                                <option value="">Elige el tipo…</option>
                                 {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                               </select>
                             </Fld>
                           </div>
-                          <div style={{ color: C.muted, fontSize: 10 }}>{TIPOS_GASTO.find((t) => t.id === botTipo)?.ayuda}</div>
+                          <div style={{ color: botTipoRecordado ? C.green : C.muted, fontSize: 10 }}>{botTipoRecordado ? "✓ Categoría recordada de un consumo anterior de este producto. Puedes cambiarla." : (TIPOS_GASTO.find((t) => t.id === botTipo)?.ayuda || "Producto nuevo: elige una vez el tipo y la próxima vez queda guardado.")}</div>
                           {botRegistro && Number(botRegistro.costoReal) > 0 && (
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
                               <span style={{ color: C.muted, fontSize: 12 }}>{fmt(Number(botRegistro.costoReal))} × {botCantidad || 0}</span>
@@ -1873,9 +1968,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 const reg = insDe(r.nombre);
                 if (reg && reg.nombre !== "Mayonesa Casera" && reg.unidad === unid && reg.precio_por_kg > 0) {
                   const factor = MERMA_INSUMOS[reg.nombre] || 0;
-                  const precioComparable = precioHoy / (1 - factor);
+                  const escala = unid === "ml" || unid === "g" ? 1000 : 1; // el precio de Recetas es por litro / kg
+                  const etiqUnid = unid === "ml" ? "litro" : unid === "g" ? "kg" : unid;
+                  const precioComparable = (precioHoy * escala) / (1 - factor);
                   const dif = precioComparable / reg.precio_por_kg - 1;
-                  if (Math.abs(dif) > UMBRAL_PRECIO) textos.push(`compraste a ${fmtPrecio(precioComparable)}/${unid} y en Recetas tienes ${fmtPrecio(reg.precio_por_kg)} (${dif > 0 ? "+" : ""}${Math.round(dif * 100)}%)`);
+                  if (Math.abs(dif) > UMBRAL_PRECIO) textos.push(`compraste a ${fmtPrecio(precioComparable)}/${etiqUnid} y en Recetas tienes ${fmtPrecio(reg.precio_por_kg)}/${etiqUnid} (${dif > 0 ? "+" : ""}${Math.round(dif * 100)}%)`);
                 }
                 if (textos.length > 0) alertas.push({ nombre: r.nombre, textos });
               });
