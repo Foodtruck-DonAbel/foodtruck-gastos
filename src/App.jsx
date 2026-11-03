@@ -11,7 +11,7 @@ const C = {
 const PERSONAS = ["Raul", "Pepe", "Alejandro", "Gustavo"];
 const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", "Tarjeta Don Abel", "Pago personal"];
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Pago sueldo Gustavo","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Pago sueldo Gustavo","Toalla nova","Guantes","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -29,7 +29,7 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Palta": "kg", "Tomate": "kg", "Tocino": "kg", "Papas fritas": "kg", "Ají en Pasta": "kg",
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
   "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro", "Empanadas de Queso": "unidad",
-  "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad", "Pago sueldo Gustavo": "unidad",
+  "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad", "Pago sueldo Gustavo": "unidad", "Toalla nova": "unidad", "Guantes": "unidad",
 };
 
 // Unidad de respaldo para todos los insumos de la lista de gastos (se usa si Recetas → Insumos no la tiene)
@@ -101,6 +101,51 @@ const resolverInsumo = (nombreGasto) => {
   const norm = (nombreGasto || "").trim().toLowerCase();
   return MAPA_INSUMOS[norm] || null;
 };
+
+// Merma detectada en los ajustes de inventario.
+// Por cada insumo, compara lo que DEBÍA haber (ajuste anterior + compras - consumo según recetas)
+// con lo que se contó en el ajuste siguiente. Positivo = faltante (merma), negativo = sobrante.
+const calcularMermasBase = (historial, gastosData, ventasData, recetasData, insumosData, ingredientesEfectivosFn, parseNotaFn) => {
+  const porInsumo = {};
+  [...historial].sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)).forEach((h) => {
+    (porInsumo[h.insumo] = porInsumo[h.insumo] || []).push(h);
+  });
+  const out = [];
+  Object.entries(porInsumo).forEach(([nombre, ajustes]) => {
+    const ins = insumosData.find((i) => i.nombre === nombre);
+    if (!ins) return;
+    const factor = MERMA_INSUMOS[nombre] || 0; // merma natural ya incluida en el precio (ej: palta)
+    for (let k = 1; k < ajustes.length; k++) {
+      const prev = ajustes[k - 1];
+      const cur = ajustes[k];
+      const base = aGramos(prev.cantidad, prev.unidad);
+      let compras = 0;
+      gastosData.forEach((g) => {
+        if (resolverInsumo(g.insumo) !== nombre) return;
+        if (g.created_at < prev.created_at || g.created_at >= cur.created_at) return;
+        compras += aGramos(g.cantidad, g.unidad);
+      });
+      let consumo = 0;
+      ventasData.forEach((v) => {
+        if (v.created_at < prev.created_at || v.created_at >= cur.created_at) return;
+        const rec = recetasData.find((r) => r.nombre_producto === v.producto);
+        if (!rec || !rec.ingredientes) return;
+        ingredientesEfectivosFn(rec, parseNotaFn(v)).forEach((ing) => {
+          if (ing.insumo === nombre) consumo += (ing.gramos || 0) * v.cantidad;
+        });
+      });
+      if (factor > 0) consumo = consumo / (1 - factor);
+      const esperado = base + compras - consumo;
+      const contado = aGramos(cur.cantidad, cur.unidad);
+      const dif = esperado - contado;
+      if (Math.abs(dif) < 0.5) continue;
+      const costoUnit = (ins.unidad === "unidad" ? ins.precio_por_kg : ins.precio_por_kg / 1000) * (factor > 0 ? 1 - factor : 1);
+      out.push({ id: cur.id, insumo: nombre, fecha: cur.fecha, persona: cur.persona, motivo: cur.motivo || "", unidad: ins.unidad, esperado, contado, dif, costo: Math.round(dif * costoUnit) });
+    }
+  });
+  return out;
+};
+
 // Comisión efectiva de Pedidos Ya: $142.931 sobre $509.920 de ventas (liquidación a oct-2026) = 28,0%
 // Gustavo: fijo mensual + comisión por cada completo vendido (cuentan los AS y los que van dentro de combos)
 const GUSTAVO_FIJO = 600000;
@@ -119,12 +164,20 @@ const mesesRecientes = (n = 12) => { const out = []; const d = new Date(); for (
 const nombreMes = (ym) => { const [y, m] = ym.split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("es-CL", { month: "long", year: "numeric" }); };
 
 // Categoría contable de cada gasto (para el estado de resultados)
-const GASTOS_OPERACIONALES = ["Gas / combustible", "Limpieza"];
+const GASTOS_OPERACIONALES = ["Gas / combustible", "Limpieza", "Toalla nova", "Guantes"];
 const GASTOS_FIJOS = ["Patente y permisos", "Contador", "Publicidad", "Internet y celular", "Seguros", "Mantención camión", "Arriendo lugar"];
 const GASTOS_INVERSION = ["Inversión / equipamiento"];
 const GASTOS_RETIRO = ["Retiro de Caja"];
 const GASTOS_PAGO_GUSTAVO = ["Pago sueldo Gustavo"];
-const categoriaGasto = (insumo, conocidos) => {
+// Tipos que se pueden elegir al ingresar un gasto con "Otro" (o al reclasificarlo en el Historial)
+const TIPOS_GASTO = [
+  { id: "costo_ventas", label: "Costo de ventas", ayuda: "ingredientes y envases que van en el producto" },
+  { id: "operacional", label: "Operacional", ayuda: "consumibles y utensilios chicos: guantes, toalla, gas, limpieza, canastillo" },
+  { id: "fijo", label: "Costo fijo", ayuda: "patente, contador, arriendo, internet, seguros" },
+  { id: "inversion", label: "Inversión", ayuda: "equipos que duran años: plancha, freidora (no resta del mes)" },
+];
+const categoriaGasto = (insumo, conocidos, tipoElegido) => {
+  if (tipoElegido && TIPOS_GASTO.some((t) => t.id === tipoElegido)) return tipoElegido;
   if (GASTOS_RETIRO.includes(insumo)) return "retiro";
   if (GASTOS_PAGO_GUSTAVO.includes(insumo)) return "pago_gustavo";
   if (GASTOS_INVERSION.includes(insumo)) return "inversion";
@@ -250,7 +303,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [gastosView, setGastosView] = useState("nuevo");
-  const [form, setForm] = useState({ fecha: today(), insumo: INSUMOS_BASE[0], insumoCustom: "", mesCorresponde: "", cantidad: "", unidad: UNIDAD_DEFAULT_INSUMO[INSUMOS_BASE[0]] || "unidad", fondo: FONDOS[0], proveedor: "", proveedorCustom: "", monto: "", nota: "" });
+  const [form, setForm] = useState({ fecha: today(), insumo: INSUMOS_BASE[0], insumoCustom: "", tipoGasto: "", mesCorresponde: "", cantidad: "", unidad: UNIDAD_DEFAULT_INSUMO[INSUMOS_BASE[0]] || "unidad", fondo: FONDOS[0], proveedor: "", proveedorCustom: "", monto: "", nota: "" });
   const [filtro, setFiltro] = useState({ mes: "", insumo: "", persona: "" });
 
   // Ventas
@@ -273,6 +326,9 @@ export default function App() {
   const [dashModoGrafico, setDashModoGrafico] = useState("diario"); // "diario" | "acumulado"
   const [insightTab, setInsightTab] = useState("horas"); // "horas" | "dias" | "mapa"
   const [erAbierto, setErAbierto] = useState({}); // líneas del estado de resultados con el desglose abierto
+  const [reclasModal, setReclasModal] = useState(null); // gasto que se está reclasificando
+  const [reclasTipo, setReclasTipo] = useState("");
+  const [motivoAjuste, setMotivoAjuste] = useState(""); // motivo opcional de las diferencias al ajustar inventario
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -368,7 +424,7 @@ export default function App() {
     if (view === "home") { cargarGastos(); cargarVentas(); }
     if (view === "gastos") { cargarGastos(); cargarVentas(); cargarInventarioInicial(); if (recetas.length === 0) cargarRecetas(); }
     if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); if (persona === "Alejandro") cargarHistorialTurnos(); }
-    if (view === "resumen") { cargarGastos(); cargarVentas(); cargarRecetas(); }
+    if (view === "resumen") { cargarGastos(); cargarVentas(); cargarRecetas(); cargarInventarioInicial(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
 
@@ -449,12 +505,21 @@ export default function App() {
       .filter(([_, v]) => v !== "" && !isNaN(Number(v)))
       .map(([insumo, v]) => {
         const ins = insumosPrecio.find((i) => i.nombre === insumo);
-        return { insumo, cantidad: Number(v), unidad: ins?.unidad || "unidad", fecha: today(), persona: persona || "Sin nombre" };
+        return { insumo, cantidad: Number(v), unidad: ins?.unidad || "unidad", fecha: today(), persona: persona || "Sin nombre", ...(motivoAjuste ? { motivo: motivoAjuste } : {}) };
       });
       // Nota: siempre se guarda con la fecha de hoy, aunque el valor sea igual al ajuste
       // anterior — es lo que fija el nuevo punto de partida para compras/consumo.
     if (rows.length === 0) { showToast("Ingresa al menos un valor"); return; }
-    await supabase.from("inventario_inicial").insert(rows);
+    let { error: errAjuste } = await supabase.from("inventario_inicial").insert(rows);
+    if (errAjuste && motivoAjuste) {
+      // Probablemente falta la columna "motivo": se guarda igual, sin el motivo
+      const sinMotivo = rows.map(({ motivo, ...resto }) => resto);
+      const r2 = await supabase.from("inventario_inicial").insert(sinMotivo);
+      errAjuste = r2.error;
+      if (!errAjuste) showToast("Guardado sin motivo: falta la columna 'motivo' en Supabase");
+    }
+    if (errAjuste) { console.error("Error al guardar ajuste:", errAjuste); showToast("❌ Error: " + errAjuste.message); return; }
+    setMotivoAjuste("");
     setAjusteValues({});
     setAjusteClave("");
     setAjusteError(false);
@@ -630,6 +695,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     else cargarGastos();
   };
 
+  const confirmarReclasificacion = async () => {
+    if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
+    if (!reclasTipo) { showToast("Elige el tipo"); return; }
+    const { error } = await supabase.from("gastos").update({ tipo_gasto: reclasTipo }).eq("id", reclasModal.id);
+    if (error) { console.error("Error al reclasificar:", error); showToast("❌ Error: " + error.message); return; }
+    setReclasModal(null); setReclasTipo(""); setAdminClave(""); setAdminError(false);
+    showToast("✓ Gasto reclasificado");
+    cargarGastos();
+  };
+
   // Precio normal con clave
   const solicitarCambioPrecio = (rec, valor) => { setConfirmarPrecioModal({ rec, valor, tipo: "normal" }); setAdminClave(""); setAdminError(false); };
   const solicitarCambioPrecioAS = (rec, valor) => { setConfirmarPrecioModal({ rec, valor, tipo: "as" }); setAdminClave(""); setAdminError(false); };
@@ -660,14 +735,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const provFinal = form.proveedor === "__nuevo__" ? normProv(form.proveedorCustom) : form.proveedor;
     if (!form.monto || isNaN(Number(form.monto))) { setForm({ ...form, _errorMonto: true }); showToast("Completa el monto"); return; }
     if (!form.cantidad || isNaN(Number(form.cantidad)) || Number(form.cantidad) <= 0) { setForm({ ...form, _errorCantidad: true }); showToast("Completa la cantidad"); return; }
+    if (form.insumo === "Otro" && !form.tipoGasto) { showToast("Elige el tipo de gasto"); return; }
     setSaving(true);
     const unidadFinal = unidadFijaDe(form.insumo) || form.unidad;
     const filaGasto = { fecha: form.fecha, insumo: insumofinal, cantidad: form.cantidad || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: form.nota || null };
     if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) filaGasto.mes_corresponde = form.mesCorresponde;
+    if (form.insumo === "Otro" && form.tipoGasto) filaGasto.tipo_gasto = form.tipoGasto;
     const { error: errGasto } = await supabase.from("gastos").insert([filaGasto]);
     if (errGasto) { console.error("Error al guardar gasto:", errGasto); showToast("❌ Error: " + errGasto.message); setSaving(false); return; }
     showToast("✓ Gasto guardado");
-    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false });
+    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", tipoGasto: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false });
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
     const insumoRef = resolverInsumo(insumofinal);
@@ -958,6 +1035,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     .filter((v, i, arr) => arr.indexOf(v) === i)
     .sort((a, b) => a.localeCompare(b, "es"));
   insumos.push("Otro");
+  const nombresInsumosTodos = insumosPrecio.map((i) => i.nombre);
   const gastosResumen = filtroResumen ? gastos.filter((g) => g.fecha.startsWith(filtroResumen)) : gastos;
   const totalGeneral = gastos.reduce((s, g) => s + g.monto, 0);
   const totalMes = gastos.filter((g) => g.fecha.startsWith(mesActual)).reduce((s, g) => s + g.monto, 0);
@@ -1010,6 +1088,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   const resumenTurno = turnoActivo ? calcularResumenTurno() : null;
+  const sistemaPorInsumo = modalAjuste ? Object.fromEntries(calcularStock(gastos, ventas, recetas, insumosPrecio).map((x) => [x.nombre, x])) : {};
 
   const exportCSV = () => {
     const header = "Fecha,Insumo,Cantidad,Unidad,Fondo,Proveedor,Monto,Persona,Nota\n";
@@ -1052,7 +1131,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 const valorInput = ajusteValues[nombre] !== undefined ? ajusteValues[nombre] : (invActual ? String(invActual.cantidad) : "");
                 return (
                   <div key={nombre} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ flex: 1, fontSize: 13 }}>{nombre}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13 }}>{nombre}</div>
+                      {sistemaPorInsumo[nombre] && <div style={{ fontSize: 10, color: C.muted }}>Sistema: {sistemaPorInsumo[nombre].esKgLitro ? `${(sistemaPorInsumo[nombre].disponible / 1000).toFixed(2)} ${sistemaPorInsumo[nombre].unidad}` : `${Math.round(sistemaPorInsumo[nombre].disponible)} und`}</div>}
+                    </div>
                     <input type="text" inputMode="decimal" placeholder="0"
                       value={valorInput}
                       onChange={(e) => {
@@ -1084,6 +1166,14 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 )}
               </div>
             )}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>Motivo de las diferencias (opcional)</div>
+              <select value={motivoAjuste} onChange={(e) => setMotivoAjuste(e.target.value)} style={S.inp}>
+                <option value="">Sin motivo</option>
+                {["Descarte / botado", "Porciones más grandes", "Vencimiento", "Consumo del equipo", "Error de conteo", "Otro"].map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>Al guardar, la app compara lo que contaste con lo que debía haber y registra la diferencia como merma.</div>
+            </div>
             <div style={{ marginTop: 16 }}>
               <div style={{ color: C.muted, fontSize: 12, marginBottom: 6 }}>🔐 Clave para confirmar el ajuste</div>
               <input type="password" placeholder="Clave" value={ajusteClave}
@@ -1093,7 +1183,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               {ajusteError && <div style={{ color: C.red, fontSize: 12, marginTop: 4 }}>Clave incorrecta</div>}
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button onClick={() => { setModalAjuste(false); setAjusteClave(""); setAjusteError(false); setAjusteValues({}); setVerHistorialAjuste(false); }} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 9, padding: "12px 0", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={() => { setModalAjuste(false); setAjusteClave(""); setAjusteError(false); setAjusteValues({}); setVerHistorialAjuste(false); setMotivoAjuste(""); }} style={{ flex: 1, background: C.tag, border: "none", color: C.muted, borderRadius: 9, padding: "12px 0", cursor: "pointer" }}>Cancelar</button>
               <button onClick={guardarAjusteInventario} style={{ flex: 2, background: C.blue, border: "none", color: "#fff", borderRadius: 9, padding: "12px 0", cursor: "pointer", fontWeight: 800 }}>Guardar ajuste</button>
             </div>
           </div>
@@ -1165,6 +1255,26 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => { const { rec, tipo } = confirmarPrecioModal; setConfirmarPrecioModal(null); setAdminClave(""); if (tipo === "as") setPrecioASEdit((p) => { const n={...p}; delete n[rec.id]; return n; }); else setPrecioVentaEdit((p) => { const n={...p}; delete n[rec.id]; return n; }); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Descartar</button>
               <button onClick={confirmarCambioPrecio} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reclasModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🏷️ Reclasificar gasto</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>{reclasModal.insumo} · {fmt(reclasModal.monto)} · {reclasModal.fecha}</div>
+            <select value={reclasTipo} onChange={(e) => setReclasTipo(e.target.value)} style={{ ...S.inp, marginBottom: 6 }}>
+              <option value="">Elige el tipo…</option>
+              {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
+            <div style={{ color: C.muted, fontSize: 10, marginBottom: 12 }}>{reclasTipo ? TIPOS_GASTO.find((t) => t.id === reclasTipo)?.ayuda : "Define en qué parte del estado de resultados entra."}</div>
+            <input type="password" placeholder="Clave" value={adminClave} onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }} onKeyDown={(e) => e.key === "Enter" && confirmarReclasificacion()} style={{ ...S.inp, fontSize: 18, letterSpacing: 6, marginBottom: 8 }} />
+            {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setReclasModal(null); setReclasTipo(""); setAdminClave(""); setAdminError(false); }} style={{ flex: 1, background: C.tag, border: "none", color: C.text, borderRadius: 7, padding: "10px 0", cursor: "pointer" }}>Cancelar</button>
+              <button onClick={confirmarReclasificacion} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 7, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Guardar</button>
             </div>
           </div>
         </div>
@@ -1323,6 +1433,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </Fld>
                     <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => { const unidadAuto = unidadFijaDe(e.target.value); setForm({ ...form, insumo: e.target.value, unidad: unidadAuto || form.unidad }); }} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
                     {form.insumo === "Otro" && <Fld label="¿Cuál?" full><input value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value })} style={S.inp} /></Fld>}
+                    {form.insumo === "Otro" && (
+                      <Fld label="Tipo de gasto *" full>
+                        <select value={form.tipoGasto} onChange={(e) => setForm({ ...form, tipoGasto: e.target.value })} style={S.inp}>
+                          <option value="">Elige el tipo…</option>
+                          {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                        </select>
+                        <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{form.tipoGasto ? TIPOS_GASTO.find((t) => t.id === form.tipoGasto)?.ayuda : "Define en qué parte del estado de resultados entra este gasto."}</div>
+                      </Fld>
+                    )}
                     <Fld label="Cantidad *">
                       <input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value, _errorCantidad: false })} style={{ ...S.inp, borderColor: form._errorCantidad ? C.red : C.border }} />
                       {form._errorCantidad && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa la cantidad</div>}
@@ -1363,11 +1482,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <Tag text={g.fondo} />
                         {g.proveedor && <Tag text={normProv(g.proveedor)} color="#2A3530" textColor={C.green} />}
                         {g.mes_corresponde && g.mes_corresponde !== g.fecha.slice(0, 7) && <Tag text={`↪ ${nombreMes(g.mes_corresponde)}`} color={C.blue + "33"} textColor={C.blue} />}
+                        {(() => { const cat = categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto); const etiquetas = { operacional: "Operacional", fijo: "Costo fijo", inversion: "Inversión", sin_clasificar: "Sin clasificar" }; return etiquetas[cat] ? <Tag text={etiquetas[cat]} color={(cat === "sin_clasificar" ? C.orange : C.purple) + "33"} textColor={cat === "sin_clasificar" ? C.orange : C.purple} /> : null; })()}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontWeight: 700, color: C.mustard }}>{fmt(g.monto)}</div>
-                      <button onClick={() => solicitarEliminacion("gasto", g)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4 }}>eliminar</button>
+                      <button onClick={() => { setReclasModal(g); setReclasTipo(g.tipo_gasto || ""); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>reclasificar</button>
+                      <button onClick={() => solicitarEliminacion("gasto", g)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>eliminar</button>
                     </div>
                   </div>
                 ))}
@@ -2388,7 +2509,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const totalVentasER = vMes.reduce((acc, v) => acc + v.total, 0);
               const gMes = gastos.filter((g) => (g.mes_corresponde || g.fecha.slice(0, 7)) === mesSel);
               const nombresInsumos = insumosPrecio.map((i) => i.nombre);
-              const sumCat = (c) => gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos) === c).reduce((acc, g) => acc + g.monto, 0);
+              const sumCat = (c) => gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos, g.tipo_gasto) === c).reduce((acc, g) => acc + g.monto, 0);
               const costoVentasER = sumCat("costo_ventas");
               const operacionalER = sumCat("operacional");
               const fijosER = sumCat("fijo");
@@ -2409,6 +2530,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 return acc + v.cantidad * (porIngredientes > 0 ? porIngredientes : (insBebida?.precio_por_kg || 0));
               }, 0));
               const costoVentasTotalER = costoVentasER + costoBebidasER;
+              const mermasMes = calcularMermasBase(historialInventario, gastos, ventas, recetas, insumosPrecio, ingredientesEfectivos, parseNota).filter((m) => (m.fecha || "").startsWith(mesSel));
+              const mermaNetaER = mermasMes.reduce((acc, m) => acc + m.costo, 0);
               const margenBrutoER = totalVentasER - costoVentasTotalER;
               const esCompleto = (v) => recetas.find((r) => r.nombre_producto === v.producto && r.categoria === "completos");
               const completosSueltos = vMes.filter(esCompleto).reduce((acc, v) => acc + v.cantidad, 0);
@@ -2423,7 +2546,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * COMISION_PEDIDOS_YA);
               const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
               const resultadoER = margenBrutoER - operacionalER - fijosER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
-              const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos) === "sin_clasificar").map((g) => g.insumo))];
+              const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos, g.tipo_gasto) === "sin_clasificar").map((g) => g.insumo))];
               const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
               const filaER = (label, valor, extra) => (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
@@ -2431,7 +2554,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <span style={{ fontSize: 14, fontWeight: 700, color: extra?.color || C.text }}>{valor}</span>
                 </div>
               );
-              const gastosDe = (c) => gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos) === c);
+              const gastosDe = (c) => gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos, g.tipo_gasto) === c);
               const agruparPorInsumo = (arr) => { const m = {}; arr.forEach((g) => { const k = nombreCanonico(g.insumo); if (!m[k]) m[k] = { nombre: k, monto: 0, compras: 0 }; m[k].monto += g.monto; m[k].compras += 1; }); return Object.values(m).sort((a, b) => b.monto - a.monto); };
               const detalleInsumos = (arr, base, extra) => (
                 <div>
@@ -2486,8 +2609,31 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     Insumos comprados {fmt(costoVentasER)} + bebidas {fmt(costoBebidasER)} ({unidadesBebidaER} und)
                     {costoBebidasER > 0 && <div style={{ color: C.orange, marginTop: 2 }}>Por pagar a botillería: <span style={{ fontWeight: 700 }}>{fmt(costoBebidasER)}</span></div>}
                   </div>
+                  {mermasMes.length > 0 && (
+                    <div style={{ paddingLeft: 12 }}>
+                      {filaERDesglose("merma", `${mermaNetaER >= 0 ? "Merma detectada" : "Sobrante neto"} en ajustes (ya incluida en el costo)`, fmt(Math.abs(mermaNetaER)), { color: mermaNetaER >= 0 ? C.orange : C.green },
+                        <div>
+                          {[...mermasMes].sort((a, b) => Math.abs(b.costo) - Math.abs(a.costo)).map((m) => {
+                            const kgL = m.unidad === "kg" || m.unidad === "litro";
+                            const cantTxt = kgL ? `${(Math.abs(m.dif) / 1000).toFixed(2)} ${m.unidad}` : `${Math.round(Math.abs(m.dif))} und`;
+                            const falta = m.dif >= 0;
+                            return (
+                              <div key={m.id} style={{ padding: "4px 0" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, gap: 8 }}>
+                                  <span>{m.insumo} <span style={{ color: falta ? C.orange : C.green, fontSize: 10 }}>{falta ? "faltan" : "sobran"} {cantTxt}</span></span>
+                                  <span style={{ fontWeight: 700, color: falta ? C.orange : C.green, whiteSpace: "nowrap" }}>{falta ? "" : "−"}{fmt(Math.abs(m.costo))}</span>
+                                </div>
+                                <div style={{ color: C.muted, fontSize: 10 }}>{(m.fecha || "").split("-").reverse().join("-")} · {m.persona}{m.motivo ? ` · ${m.motivo}` : ""}</div>
+                              </div>
+                            );
+                          })}
+                          <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>Diferencia entre lo que debía haber (ajuste anterior + compras − consumo según recetas) y lo que contaste. Informativo: no cambia el resultado.</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {filaER(`= Margen bruto${pctER(margenBrutoER)}`, fmt(margenBrutoER), { color: margenBrutoER >= 0 ? C.green : C.red })}
-                  {operacionalER > 0 && filaERDesglose("operacional", `(−) Operacionales (gas, limpieza)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red }, detalleInsumos(gastosDe("operacional"), operacionalER))}
+                  {operacionalER > 0 && filaERDesglose("operacional", `(−) Operacionales (gas, consumibles)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red }, detalleInsumos(gastosDe("operacional"), operacionalER))}
                   {fijosER > 0 && filaERDesglose("fijos", `(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red }, detalleInsumos(gastosDe("fijo"), fijosER))}
                   {filaER(`(−) Comisión tarjeta (${(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
                   {filaER(`(−) Comisión Pedidos Ya (${Math.round(COMISION_PEDIDOS_YA * 100)}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
@@ -2511,7 +2657,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       🎁 Cortesías del mes: {cortesiasER.reduce((acc, v) => acc + v.cantidad, 0)} und · costo en insumos <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costoCortER))}</span> (ya incluido en el costo de ventas) · a precio de lista {fmt(Math.round(valorCortER))}
                     </div>
                   )}
-                  {inversionER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 10 }}>Inversiones del mes (no restan del resultado): {fmt(inversionER)}</div>}
+                  {inversionER > 0 && <div style={{ marginTop: 10 }}>{filaERDesglose("inversion", "Inversiones del mes (no restan del resultado)", fmt(inversionER), { color: C.muted }, detalleInsumos(gastosDe("inversion"), inversionER))}</div>}
                   {retirosER > 0 && <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>Retiros de caja del mes (no restan del resultado): {fmt(retirosER)}</div>}
                 </div>
               );
