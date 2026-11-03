@@ -181,7 +181,23 @@ const TIPOS_GASTO = [
   { id: "equipamiento", label: "Equipamiento / reparación (resta en el mes)", ayuda: "compras de equipos o reparaciones que quieres ver en el resultado del mes: canasto, plancha, reparación de agua" },
   { id: "inversion", label: "Inversión (aparte, no resta)", ayuda: "equipos grandes o que duran años: no resta del mes, aparece aparte" },
 ];
+// Tipo extra: repartir un gasto en N meses. Se guarda en tipo_gasto como "cuotas:N" (sin columna nueva).
+const TIPOS_GASTO_CON_CUOTAS = [...TIPOS_GASTO, { id: "cuotas", label: "Repartir en cuotas mensuales", ayuda: "el gasto se divide en partes iguales entre varios meses (desde el mes que corresponde)" }];
+const cuotasDe = (g) => { const t = g && g.tipo_gasto; if (typeof t === "string" && t.startsWith("cuotas:")) { const n = parseInt(t.slice(7), 10); return n >= 2 ? n : 0; } return 0; };
+// Cuota que cae en el mes `mes` (YYYY-MM) para un gasto repartido; null si ese mes no corresponde
+const cuotaDelMes = (g, mes) => {
+  const n = cuotasDe(g);
+  if (!n) return null;
+  const inicio = g.mes_corresponde || g.fecha.slice(0, 7);
+  const [y1, m1] = inicio.split("-").map(Number);
+  const [y2, m2] = mes.split("-").map(Number);
+  const k = (y2 - y1) * 12 + (m2 - m1);
+  if (k < 0 || k >= n) return null;
+  const base = Math.floor(g.monto / n);
+  return { cuota: k === n - 1 ? g.monto - base * (n - 1) : base, k, n }; // la última absorbe el redondeo
+};
 const categoriaGasto = (insumo, conocidos, tipoElegido) => {
+  if (typeof tipoElegido === "string" && tipoElegido.startsWith("cuotas:")) return "cuotas";
   if (tipoElegido && TIPOS_GASTO.some((t) => t.id === tipoElegido)) return tipoElegido;
   if (GASTOS_RETIRO.includes(insumo)) return "retiro";
   if (GASTOS_PAGO_GUSTAVO.includes(insumo)) return "pago_gustavo";
@@ -355,7 +371,8 @@ export default function App() {
   const [retiroModalDest, setRetiroModalDest] = useState("sueldo");
   const [retiroModalSocio, setRetiroModalSocio] = useState("");
   const [retiroModalMes, setRetiroModalMes] = useState("");
-  const [inversionModo, setInversionModo] = useState("aparte"); // "aparte" | "mes": cómo se refleja una compra de equipamiento
+  const [inversionModo, setInversionModo] = useState("aparte"); // "aparte" | "mes" | "cuotas": cómo se refleja una compra de equipamiento
+  const [cuotasN, setCuotasN] = useState("12"); // meses en que se reparte un gasto
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -769,7 +786,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const confirmarReclasificacion = async () => {
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     if (!reclasTipo) { showToast("Elige el tipo"); return; }
-    const { error } = await supabase.from("gastos").update({ tipo_gasto: reclasTipo }).eq("id", reclasModal.id);
+    const nRec = parseInt(cuotasN, 10);
+    if (reclasTipo === "cuotas" && !(nRec >= 2 && nRec <= 60)) { showToast("Indica entre 2 y 60 meses"); return; }
+    const { error } = await supabase.from("gastos").update({ tipo_gasto: reclasTipo === "cuotas" ? `cuotas:${nRec}` : reclasTipo }).eq("id", reclasModal.id);
     if (error) { console.error("Error al reclasificar:", error); showToast("❌ Error: " + error.message); return; }
     setReclasModal(null); setReclasTipo(""); setAdminClave(""); setAdminError(false);
     showToast("✓ Gasto reclasificado");
@@ -808,6 +827,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const insumofinal = esRetiro && retiroDestino === "sueldo" ? "Pago sueldo Gustavo" : (form.insumo === "Otro" ? (form.insumoCustom || "Otro") : form.insumo);
     const provFinal = form.proveedor === "__nuevo__" ? normProv(form.proveedorCustom) : form.proveedor;
     if (!form.monto || isNaN(Number(form.monto))) { setForm({ ...form, _errorMonto: true }); showToast("Completa el monto"); return; }
+    const quiereCuotas = (form.insumo === "Inversión / equipamiento" && inversionModo === "cuotas") || (form.insumo === "Otro" && form.tipoGasto === "cuotas");
+    const nCuotas = parseInt(cuotasN, 10);
+    if (quiereCuotas && !(nCuotas >= 2 && nCuotas <= 60)) { showToast("Indica entre 2 y 60 meses"); return; }
     const cantidadFinal = INSUMOS_SIN_CANTIDAD.includes(form.insumo) && !form.cantidad ? "1" : form.cantidad;
     if (!cantidadFinal || isNaN(Number(cantidadFinal)) || Number(cantidadFinal) <= 0) { setForm({ ...form, _errorCantidad: true }); showToast("Completa la cantidad"); return; }
     if (form.insumo === "Otro" && !form.tipoGasto) { showToast("Elige el tipo de gasto"); return; }
@@ -815,13 +837,14 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const unidadFinal = unidadFijaDe(form.insumo) || form.unidad;
     const filaGasto = { fecha: form.fecha, insumo: insumofinal, cantidad: cantidadFinal || null, unidad: unidadFinal, fondo: form.fondo, proveedor: provFinal || null, monto: Number(form.monto), persona, nota: (esRetiro && retiroDestino === "socio" ? `Retiro de ${retiroSocio}` + (form.nota ? " · " + form.nota : "") : form.nota) || null };
     if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) filaGasto.mes_corresponde = form.mesCorresponde;
-    if (form.insumo === "Otro" && form.tipoGasto) filaGasto.tipo_gasto = form.tipoGasto;
+    if (form.insumo === "Otro" && form.tipoGasto) filaGasto.tipo_gasto = form.tipoGasto === "cuotas" ? `cuotas:${nCuotas}` : form.tipoGasto;
     if (form.insumo === "Inversión / equipamiento" && inversionModo === "mes") filaGasto.tipo_gasto = "equipamiento";
+    if (form.insumo === "Inversión / equipamiento" && inversionModo === "cuotas") filaGasto.tipo_gasto = `cuotas:${nCuotas}`;
     const { error: errGasto } = await supabase.from("gastos").insert([filaGasto]);
     if (errGasto) { console.error("Error al guardar gasto:", errGasto); showToast("❌ Error: " + errGasto.message); setSaving(false); return; }
     showToast("✓ Gasto guardado");
     setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", tipoGasto: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false });
-    setRetiroSocio(""); setInversionModo("aparte");
+    setRetiroSocio(""); setInversionModo("aparte"); setCuotasN("12");
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
     const insumoRef = resolverInsumo(insumofinal);
@@ -1410,9 +1433,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>{reclasModal.insumo} · {fmt(reclasModal.monto)} · {reclasModal.fecha}</div>
             <select value={reclasTipo} onChange={(e) => setReclasTipo(e.target.value)} style={{ ...S.inp, marginBottom: 6 }}>
               <option value="">Elige el tipo…</option>
-              {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              {TIPOS_GASTO_CON_CUOTAS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
-            <div style={{ color: C.muted, fontSize: 10, marginBottom: 12 }}>{reclasTipo ? TIPOS_GASTO.find((t) => t.id === reclasTipo)?.ayuda : "Define en qué parte del estado de resultados entra."}</div>
+            <div style={{ color: C.muted, fontSize: 10, marginBottom: 12 }}>{reclasTipo ? TIPOS_GASTO_CON_CUOTAS.find((t) => t.id === reclasTipo)?.ayuda : "Define en qué parte del estado de resultados entra."}</div>
+            {reclasTipo === "cuotas" && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>¿En cuántos meses?</div>
+                <input type="text" inputMode="numeric" value={cuotasN} onChange={(e) => setCuotasN(e.target.value.replace(/[^0-9]/g, ""))} style={S.inp} />
+                {reclasModal.monto > 0 && parseInt(cuotasN, 10) >= 2 && <div style={{ color: C.mustard, fontSize: 11, marginTop: 4 }}>Cuota mensual: {fmt(Math.round(reclasModal.monto / parseInt(cuotasN, 10)))}</div>}
+              </div>
+            )}
             <input type="password" placeholder="Clave" value={adminClave} onChange={(e) => { setAdminClave(e.target.value); setAdminError(false); }} onKeyDown={(e) => e.key === "Enter" && confirmarReclasificacion()} style={{ ...S.inp, fontSize: 18, letterSpacing: 6, marginBottom: 8 }} />
             {adminError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>Clave incorrecta</div>}
             <div style={{ display: "flex", gap: 8 }}>
@@ -1678,9 +1708,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       <Fld label="Tipo de gasto *" full>
                         <select value={form.tipoGasto} onChange={(e) => setForm({ ...form, tipoGasto: e.target.value })} style={S.inp}>
                           <option value="">Elige el tipo…</option>
-                          {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                          {TIPOS_GASTO_CON_CUOTAS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                         </select>
-                        <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{form.tipoGasto ? TIPOS_GASTO.find((t) => t.id === form.tipoGasto)?.ayuda : "Define en qué parte del estado de resultados entra este gasto."}</div>
+                        <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{form.tipoGasto ? TIPOS_GASTO_CON_CUOTAS.find((t) => t.id === form.tipoGasto)?.ayuda : "Define en qué parte del estado de resultados entra este gasto."}</div>
                       </Fld>
                     )}
                     {form.insumo === "Retiro de Caja" && (
@@ -1707,8 +1737,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <select value={inversionModo} onChange={(e) => setInversionModo(e.target.value)} style={S.inp}>
                           <option value="aparte">Aparte: no resta del resultado del mes</option>
                           <option value="mes">Restar en el mes (canasto, plancha, reparación)</option>
+                          <option value="cuotas">Repartir en cuotas mensuales</option>
                         </select>
-                        <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{inversionModo === "mes" ? "Se descuenta completo del resultado del mes en que lo registras." : "Para equipos grandes: aparece debajo del resultado, sin restarlo del mes."}</div>
+                        <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>{inversionModo === "mes" ? "Se descuenta completo del resultado del mes en que lo registras." : inversionModo === "cuotas" ? "Se divide en partes iguales entre varios meses, desde el mes que indica 'Corresponde al mes'." : "Para equipos grandes: aparece debajo del resultado, sin restarlo del mes."}</div>
+                      </Fld>
+                    )}
+                    {((form.insumo === "Inversión / equipamiento" && inversionModo === "cuotas") || (form.insumo === "Otro" && form.tipoGasto === "cuotas")) && (
+                      <Fld label="¿En cuántos meses? *" full>
+                        <input type="text" inputMode="numeric" value={cuotasN} onChange={(e) => setCuotasN(e.target.value.replace(/[^0-9]/g, ""))} style={S.inp} />
+                        {Number(form.monto) > 0 && parseInt(cuotasN, 10) >= 2 && <div style={{ color: C.mustard, fontSize: 11, marginTop: 4 }}>Cuota mensual: {fmt(Math.round(Number(form.monto) / parseInt(cuotasN, 10)))} por {parseInt(cuotasN, 10)} meses</div>}
                       </Fld>
                     )}
                     <Fld label={INSUMOS_SIN_CANTIDAD.includes(form.insumo) ? "Cantidad (opcional)" : "Cantidad *"}>
@@ -1752,7 +1789,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <Tag text={g.fondo} />
                         {g.proveedor && <Tag text={normProv(g.proveedor)} color="#2A3530" textColor={C.green} />}
                         {g.mes_corresponde && g.mes_corresponde !== g.fecha.slice(0, 7) && <Tag text={`↪ ${nombreMes(g.mes_corresponde)}`} color={C.blue + "33"} textColor={C.blue} />}
-                        {(() => { const cat = categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto); const etiquetas = { operacional: "Operacional", fijo: "Costo fijo", equipamiento: "Equipo / reparación", inversion: "Inversión", sin_clasificar: "Sin clasificar", retiro: "Retiro de caja", pago_gustavo: "Sueldo Gustavo" }; return etiquetas[cat] ? <Tag text={etiquetas[cat]} color={(cat === "sin_clasificar" ? C.orange : C.purple) + "33"} textColor={cat === "sin_clasificar" ? C.orange : C.purple} /> : null; })()}
+                        {(() => { const cat = categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto); const etiquetas = { cuotas: "En cuotas", operacional: "Operacional", fijo: "Costo fijo", equipamiento: "Equipo / reparación", inversion: "Inversión", sin_clasificar: "Sin clasificar", retiro: "Retiro de caja", pago_gustavo: "Sueldo Gustavo" }; return etiquetas[cat] ? <Tag text={cat === "cuotas" ? `En ${cuotasDe(g)} cuotas` : etiquetas[cat]} color={(cat === "sin_clasificar" ? C.orange : C.purple) + "33"} textColor={cat === "sin_clasificar" ? C.orange : C.purple} /> : null; })()}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -1760,7 +1797,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       {categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto) === "retiro" ? (
                         <button onClick={() => { setRetiroModal(g); setRetiroModalDest("sueldo"); setRetiroModalSocio(""); setRetiroModalMes(g.fecha.slice(0, 7)); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>destino</button>
                       ) : (
-                        <button onClick={() => { setReclasModal(g); setReclasTipo(g.tipo_gasto || ""); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>reclasificar</button>
+                        <button onClick={() => { setReclasModal(g); setReclasTipo(cuotasDe(g) ? "cuotas" : (g.tipo_gasto || "")); if (cuotasDe(g)) setCuotasN(String(cuotasDe(g))); setAdminClave(""); setAdminError(false); }} style={{ background: "none", border: "none", color: C.blue, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>reclasificar</button>
                       )}
                       <button onClick={() => solicitarEliminacion("gasto", g)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 11, padding: 0, marginTop: 4, display: "block", marginLeft: "auto" }}>eliminar</button>
                     </div>
@@ -1784,6 +1821,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 { id: "operacional", titulo: "Operacionales", color: C.blue, nota: "Gas, limpieza, consumibles" },
                 { id: "fijo", titulo: "Costos fijos", color: C.purple, nota: "Patente, contador, arriendo…" },
                 { id: "equipamiento", titulo: "Equipamiento y reparaciones", color: C.blue, nota: "Restan en el mes" },
+                { id: "cuotas", titulo: "Compras en cuotas", color: C.blue, nota: "Se reparten en varios meses en el estado de resultados" },
                 { id: "sin_clasificar", titulo: "Sin clasificar", color: C.orange, nota: "Reclasifícalos en el Historial" },
                 { id: "inversion", titulo: "Inversiones", color: C.muted, nota: "No restan del resultado" },
                 { id: "pago_gustavo", titulo: "Pagos a Gustavo", color: C.muted, nota: "No restan: su sueldo sale de la fórmula" },
@@ -1884,7 +1922,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               // ---- 4) exportar CSV del mes
               const exportarMes = () => {
                 const esc = (v) => { const t = String(v ?? ""); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
-                const nombresCat = { costo_ventas: "Costo de ventas", operacional: "Operacional", fijo: "Costo fijo", sin_clasificar: "Sin clasificar", inversion: "Inversión", equipamiento: "Equipamiento / reparación", pago_gustavo: "Pago Gustavo", retiro: "Retiro de caja" };
+                const nombresCat = { costo_ventas: "Costo de ventas", operacional: "Operacional", fijo: "Costo fijo", sin_clasificar: "Sin clasificar", inversion: "Inversión", equipamiento: "Equipamiento / reparación", cuotas: "En cuotas", pago_gustavo: "Pago Gustavo", retiro: "Retiro de caja" };
                 const header = ["Mes", "Fecha de pago", "Categoría", "Insumo", "Cantidad", "Unidad", "Monto", "Proveedor", "Persona", "Fondo", "Nota"];
                 const rows = [...gSel].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).map((g) => [mesSel, g.fecha, nombresCat[catDe(g)], nombreCanonico(g.insumo), g.cantidad || "", g.unidad || "", g.monto, g.proveedor ? normProv(g.proveedor) : "", g.persona, g.fondo, g.nota || ""].map(esc).join(","));
                 const csv = "\uFEFF" + [header.map(esc).join(","), ...rows].join("\n");
@@ -3091,6 +3129,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const operacionalER = sumCat("operacional");
               const fijosER = sumCat("fijo");
               const equipamientoER = sumCat("equipamiento");
+              const cuotasActivasER = gastos.map((g) => ({ g, c: cuotaDelMes(g, mesSel) })).filter((x) => x.c);
+              const cuotasER = cuotasActivasER.reduce((acc, x) => acc + x.c.cuota, 0);
+              const comprasCuotasER = sumCat("cuotas"); // compras repartidas pagadas este mes (salida de caja completa)
               const sinClasER = sumCat("sin_clasificar");
               const inversionER = sumCat("inversion");
               const retirosER = sumCat("retiro");
@@ -3125,7 +3166,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const pagadoGustavoER = sumCat("pago_gustavo");
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * COMISION_PEDIDOS_YA);
               const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
-              const resultadoER = margenBrutoER - operacionalER - fijosER - equipamientoER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
+              const resultadoER = margenBrutoER - operacionalER - fijosER - equipamientoER - cuotasER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
               const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos, g.tipo_gasto) === "sin_clasificar").map((g) => g.insumo))];
               const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
               const filaER = (label, valor, extra) => (
@@ -3215,6 +3256,19 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {filaER(`= Margen bruto${pctER(margenBrutoER)}`, fmt(margenBrutoER), { color: margenBrutoER >= 0 ? C.green : C.red })}
                   {operacionalER > 0 && filaERDesglose("operacional", `(−) Operacionales (gas, consumibles)${pctER(operacionalER)}`, fmt(operacionalER), { color: C.red }, detalleInsumos(gastosDe("operacional"), operacionalER))}
                   {fijosER > 0 && filaERDesglose("fijos", `(−) Costos fijos${pctER(fijosER)}`, fmt(fijosER), { color: C.red }, detalleInsumos(gastosDe("fijo"), fijosER))}
+                  {cuotasER > 0 && filaERDesglose("cuotas", `(−) Equipamiento en cuotas${pctER(cuotasER)}`, fmt(cuotasER), { color: C.red },
+                    <div>
+                      {cuotasActivasER.sort((a, b) => b.c.cuota - a.c.cuota).map((x) => (
+                        <div key={x.g.id} style={{ padding: "3px 0" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, gap: 8 }}>
+                            <span>{nombreCanonico(x.g.insumo)} <span style={{ color: C.muted, fontSize: 10 }}>cuota {x.c.k + 1} de {x.c.n}</span></span>
+                            <span style={{ fontWeight: 700 }}>{fmt(x.c.cuota)}</span>
+                          </div>
+                          <div style={{ color: C.muted, fontSize: 10 }}>Compra de {fmt(x.g.monto)} · {x.g.fecha.split("-").reverse().join("-")}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {equipamientoER > 0 && filaERDesglose("equipamiento", `(−) Equipamiento y reparaciones${pctER(equipamientoER)}`, fmt(equipamientoER), { color: C.red }, detalleInsumos(gastosDe("equipamiento"), equipamientoER))}
                   {filaER(`(−) Comisión tarjeta (${(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
                   {filaER(`(−) Comisión Pedidos Ya (${Math.round(COMISION_PEDIDOS_YA * 100)}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
@@ -3232,7 +3286,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                   )}
                   {filaER(`= Resultado preliminar${pctER(resultadoER)}`, fmt(resultadoER), { color: resultadoER >= 0 ? C.green : C.red })}
-                  {(retirosER > 0 || inversionER > 0) && (
+                  {(retirosER > 0 || inversionER > 0 || comprasCuotasER > 0 || cuotasER > 0) && (
                     <>
                       {retirosER > 0 && filaERDesglose("retiros", `(−) Retiros de socios${pctER(retirosER)}`, fmt(retirosER), { color: C.orange },
                         <div>
@@ -3245,8 +3299,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         </div>
                       )}
                       {inversionER > 0 && filaERDesglose("inversion", `(−) Inversiones${pctER(inversionER)}`, fmt(inversionER), { color: C.orange }, detalleInsumos(gastosDe("inversion"), inversionER))}
-                      {filaER(`= Saldo después de retiros e inversiones${pctER(resultadoER - retirosER - inversionER)}`, fmt(resultadoER - retirosER - inversionER), { color: resultadoER - retirosER - inversionER >= 0 ? C.green : C.red })}
-                      <div style={{ color: C.muted, fontSize: 10, margin: "4px 0 2px" }}>El resultado mide lo que ganó el negocio. Los retiros y las inversiones no son costos, pero reducen lo que queda disponible.</div>
+                      {comprasCuotasER > 0 && filaER(`(−) Compras en cuotas pagadas este mes${pctER(comprasCuotasER)}`, fmt(comprasCuotasER), { color: C.orange })}
+                      {cuotasER > 0 && filaER("(+) Cuotas del mes ya descontadas arriba", fmt(cuotasER), { color: C.green })}
+                      {filaER(`= Saldo después de retiros e inversiones${pctER(resultadoER - retirosER - inversionER - comprasCuotasER + cuotasER)}`, fmt(resultadoER - retirosER - inversionER - comprasCuotasER + cuotasER), { color: resultadoER - retirosER - inversionER - comprasCuotasER + cuotasER >= 0 ? C.green : C.red })}
+                      <div style={{ color: C.muted, fontSize: 10, margin: "4px 0 2px" }}>El resultado mide lo que ganó el negocio. Los retiros y las inversiones no son costos, pero reducen lo que queda disponible. Las compras en cuotas salen completas de la plata el mes que se pagan, y su cuota ya está restada en el resultado.</div>
                     </>
                   )}
                   <div style={{ color: C.muted, fontSize: 10, margin: "6px 0 4px" }}>Los % de cada línea son sobre las ventas brutas del mes. Incluye comisiones y Gustavo. Los costos fijos (patente, contador, publicidad, etc.) entran a medida que los ingresas en Gastos.</div>
