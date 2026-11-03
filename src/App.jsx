@@ -33,11 +33,12 @@ const UNIDAD_DEFAULT_INSUMO = {
   "Mayonesa": "kg", "Mayonesa Casera": "kg", "Mostaza": "kg", "Ketchup": "kg",
   "Chucrut": "kg", "Pepinillo": "kg", "Cebolla": "kg", "Aceite para Freir": "litro", "Empanadas de Queso": "unidad",
   "Patente y permisos": "unidad", "Contador": "unidad", "Publicidad": "unidad", "Internet y celular": "unidad", "Seguros": "unidad", "Mantención camión": "unidad", "Arriendo lugar": "unidad", "Inversión / equipamiento": "unidad", "Pago sueldo Gustavo": "unidad", "Toalla nova": "unidad", "Guantes": "unidad", "Reparaciones": "unidad",
+  "Aceite para Mayonesa Casera": "litro",
 };
 
 // Unidad de respaldo para todos los insumos de la lista de gastos (se usa si Recetas → Insumos no la tiene)
 const UNIDAD_RESPALDO = {
-  "Aceite para Freir": "litro", "Aceite para Mayonesa Casera": "ml", "Ají en Pasta": "kg", "Cebolla Caramelizada": "kg",
+  "Aceite para Freir": "litro", "Aceite para Mayonesa Casera": "litro", "Ají en Pasta": "kg", "Cebolla Caramelizada": "kg",
   "Chicken Fingers": "unidad", "Chucrut": "kg", "Churrascos": "unidad", "Ciboulette": "unidad", "Cilantro": "unidad",
   "Empanadas de Queso": "unidad", "Envase para Papas / Sandwich/ PY": "unidad", "Envases para completos": "unidad",
   "Gas / combustible": "unidad", "Ketchup": "kg", "Limpieza": "unidad", "Mayonesa": "kg", "Mayonesa Casera": "kg",
@@ -803,10 +804,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     if (adminClave !== ADMIN_CLAVE) { setAdminError(true); return; }
     const nombre = provModalValor === "__nuevo__" ? normProv(provModalNuevo) : provModalValor;
     if (!nombre) { showToast("Elige el proveedor"); return; }
-    const { error } = await supabase.from("gastos").update({ proveedor: nombre }).eq("id", provModal.id);
+    const ids = provModal.bulk ? provModal.ids : [provModal.id];
+    const { error } = await supabase.from("gastos").update({ proveedor: nombre }).in("id", ids);
     if (error) { console.error("Error al asignar proveedor:", error); showToast("❌ Error: " + error.message); return; }
     setProvModal(null); setAdminClave(""); setAdminError(false);
-    showToast("✓ Proveedor asignado");
+    showToast(ids.length > 1 ? `✓ Proveedor asignado a ${ids.length} gastos` : "✓ Proveedor asignado");
     cargarGastos();
   };
 
@@ -1530,7 +1532,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🏷️ Asignar proveedor</div>
-            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>{provModal.insumo} · {fmt(provModal.monto)} · {provModal.fecha} · {provModal.persona}</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>{provModal.bulk ? `${provModal.ids.length} gastos · ${fmt(provModal.total)} · ${provModal.insumos.slice(0, 4).join(", ")}${provModal.insumos.length > 4 ? "…" : ""}` : `${provModal.insumo} · ${fmt(provModal.monto)} · ${provModal.fecha} · ${provModal.persona}`}</div>
+            {provModal.bulk && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Se asignará el mismo proveedor a todos los gastos de la lista. Filtra antes por insumo o por persona si no todos son del mismo proveedor.</div>}
             <select value={provModalValor} onChange={(e) => setProvModalValor(e.target.value)} style={{ ...S.inp, marginBottom: 8 }}>
               <option value="">Elige el proveedor…</option>
               {proveedores.map((pv) => <option key={pv} value={pv}>{pv}</option>)}
@@ -1957,6 +1960,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   {(gastosSinProveedor > 0 || filtro.sinProv) && (
                     <button onClick={() => setFiltro({ ...filtro, sinProv: !filtro.sinProv })} style={{ flexBasis: "100%", background: filtro.sinProv ? C.blue : C.blue + "22", color: filtro.sinProv ? "#fff" : C.blue, border: `1px solid ${C.blue}`, borderRadius: 8, padding: "7px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
                       🏷️ Sin proveedor ({gastosSinProveedor}){filtro.sinProv ? " · mostrando solo estos" : ""}
+                    </button>
+                  )}
+                  {filtro.sinProv && gastosFiltrados.length > 0 && (
+                    <button onClick={() => { setProvModal({ bulk: true, ids: gastosFiltrados.map((g) => g.id), total: gastosFiltrados.reduce((a, g) => a + g.monto, 0), insumos: [...new Set(gastosFiltrados.map((g) => nombreCanonico(g.insumo)))] }); setProvModalValor(""); setProvModalNuevo(""); setAdminClave(""); setAdminError(false); }} style={{ flexBasis: "100%", background: C.orange, color: "#fff", border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                      Asignar proveedor a estos {gastosFiltrados.length}
                     </button>
                   )}
                   <select value={filtro.mes} onChange={(e) => setFiltro({ ...filtro, mes: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 110 }}><option value="">Todos los meses</option>{meses.map((m) => <option key={m}>{m}</option>)}</select>
