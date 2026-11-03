@@ -23,7 +23,8 @@ const metodoPagoColors = { "Efectivo": "#5BAD7F", "Tarjeta": "#6B9FD4", "Pedidos
 const personColor = (n) => ({ Raul: "#6B9FD4", Pepe: "#E8B84B", Alejandro: "#5BAD7F", Gustavo: "#C97DDB" }[n] || C.muted);
 const fmt = (n) => "$" + Number(n || 0).toLocaleString("es-CL");
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
-const normProv = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+// Mayúscula inicial por palabra; reconoce ñ y tildes (con \b\w, "castaño" salía "CastañO")
+const normProv = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/(^|\s)(\p{L})/gu, (m, sep, c) => sep + c.toUpperCase());
 const UNIDAD_DEFAULT_INSUMO = {
   "Salchichas": "unidad", "Chicken Fingers": "unidad", "Churrascos": "unidad",
   "Pan para completo": "unidad", "Pan Castaño Brioche para Sandwich": "unidad",
