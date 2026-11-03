@@ -329,6 +329,9 @@ export default function App() {
   const [reclasModal, setReclasModal] = useState(null); // gasto que se está reclasificando
   const [reclasTipo, setReclasTipo] = useState("");
   const [motivoAjuste, setMotivoAjuste] = useState(""); // motivo opcional de las diferencias al ajustar inventario
+  const [resumenInsMes, setResumenInsMes] = useState("");
+  const [resumenInsAbierto, setResumenInsAbierto] = useState(null);
+  const [resumenInsVista, setResumenInsVista] = useState("insumos"); // "insumos" | "proveedor" | "consumo"
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
   const [estadoMes, setEstadoMes] = useState("");
   const [insumoDetalle, setInsumoDetalle] = useState(null); // insumo clave seleccionado para ver de qué productos sale su consumo
@@ -1398,9 +1401,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
 
         {view === "gastos" && (
           <div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-              {[{ id: "nuevo", label: "+ Nuevo" }, { id: "historial", label: "Historial" }, { id: "stock", label: "📦 Stock" }].map((t) => (
-                <button key={t.id} onClick={() => setGastosView(t.id)} style={{ background: gastosView === t.id ? C.mustard : C.tag, color: gastosView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 16px", cursor: "pointer", fontWeight: gastosView === t.id ? 700 : 400, fontSize: 13 }}>{t.label}</button>
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+              {[{ id: "nuevo", label: "+ Nuevo" }, { id: "historial", label: "Historial" }, { id: "stock", label: "📦 Stock" }, { id: "resumen", label: "📊 Resumen" }].map((t) => (
+                <button key={t.id} onClick={() => setGastosView(t.id)} style={{ background: gastosView === t.id ? C.mustard : C.tag, color: gastosView === t.id ? C.bg : C.muted, border: "none", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontWeight: gastosView === t.id ? 700 : 400, fontSize: 13 }}>{t.label}</button>
               ))}
             </div>
             {gastosView === "nuevo" && (
@@ -1495,6 +1498,300 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <button onClick={exportCSV} style={{ marginTop: 8, background: C.surface, border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "9px 0", cursor: "pointer", fontSize: 13, width: "100%" }}>Exportar CSV</button>
               </div>
             )}
+            {gastosView === "resumen" && (() => {
+              const claveMes = (g) => g.mes_corresponde || g.fecha.slice(0, 7);
+              const mesesDisp = [...new Set([...gastos.map(claveMes), mesActual])].sort().reverse();
+              const mesSel = resumenInsMes && mesesDisp.includes(resumenInsMes) ? resumenInsMes : mesActual;
+              const [yy, mm] = mesSel.split("-").map(Number);
+              const dPrev = new Date(yy, mm - 2, 1);
+              const mesPrev = `${dPrev.getFullYear()}-${String(dPrev.getMonth() + 1).padStart(2, "0")}`;
+              const gSel = gastos.filter((g) => claveMes(g) === mesSel);
+              const gPrev = gastos.filter((g) => claveMes(g) === mesPrev);
+              const catDe = (g) => categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto);
+              const grupos = [
+                { id: "costo_ventas", titulo: "Costo de ventas", color: C.green, nota: "Ingredientes y envases" },
+                { id: "operacional", titulo: "Operacionales", color: C.blue, nota: "Gas, limpieza, consumibles" },
+                { id: "fijo", titulo: "Costos fijos", color: C.purple, nota: "Patente, contador, arriendo…" },
+                { id: "sin_clasificar", titulo: "Sin clasificar", color: C.orange, nota: "Reclasifícalos en el Historial" },
+                { id: "inversion", titulo: "Inversiones", color: C.muted, nota: "No restan del resultado" },
+                { id: "pago_gustavo", titulo: "Pagos a Gustavo", color: C.muted, nota: "No restan: su sueldo sale de la fórmula" },
+                { id: "retiro", titulo: "Retiros de caja", color: C.muted, nota: "No restan del resultado" },
+              ];
+              const sumar = (arr) => arr.reduce((a, g) => a + g.monto, 0);
+              const totalSel = sumar(gSel);
+              const totalPrev = sumar(gPrev);
+              const fmtPrecio = (pr) => (pr < 100 ? "$" + pr.toFixed(2).replace(".", ",") : fmt(Math.round(pr)));
+              const deltaTxt = (a, b) => { if (!b) return a ? "nuevo" : ""; const d = a - b; const pct = Math.round((d / b) * 100); return `${d >= 0 ? "▲" : "▼"} ${fmt(Math.abs(d))} (${pct > 0 ? "+" : ""}${pct}%)`; };
+              const deltaColor = (a, b) => (!b ? C.muted : a > b ? C.red : a < b ? C.green : C.muted);
+              const dmy3 = (f) => f.split("-").reverse().join("-");
+              const UMBRAL_PRECIO = 0.10; // alerta si el precio cambia más de 10%
+              const insDe = (nombre) => { const ref = resolverInsumo(nombre) || nombre; return insumosPrecio.find((i) => i.nombre === ref) || insumosPrecio.find((i) => normNombre(i.nombre) === normNombre(nombre)) || null; };
+
+              // ---- filas por insumo (con datos del mes anterior)
+              const filasDe = (cat) => {
+                const m = {};
+                gSel.filter((g) => catDe(g) === cat).forEach((g) => {
+                  const k = nombreCanonico(g.insumo);
+                  if (!m[k]) m[k] = { nombre: k, monto: 0, qty: 0, compras: 0, unidades: new Set(), items: [] };
+                  const r = m[k];
+                  r.monto += g.monto; r.compras += 1; r.items.push(g);
+                  if (g.cantidad && !isNaN(Number(g.cantidad))) { r.qty += Number(g.cantidad); r.unidades.add(g.unidad || "unidad"); }
+                });
+                const prev = {};
+                gPrev.filter((g) => catDe(g) === cat).forEach((g) => {
+                  const k = nombreCanonico(g.insumo);
+                  if (!prev[k]) prev[k] = { monto: 0, qty: 0, unidades: new Set() };
+                  prev[k].monto += g.monto;
+                  if (g.cantidad && !isNaN(Number(g.cantidad))) { prev[k].qty += Number(g.cantidad); prev[k].unidades.add(g.unidad || "unidad"); }
+                });
+                return Object.values(m).map((r) => ({ ...r, prev: prev[r.nombre]?.monto || 0, prevData: prev[r.nombre] || null })).sort((a, b) => b.monto - a.monto);
+              };
+
+              // ---- 1) alertas de precio (solo ingredientes)
+              const alertas = [];
+              filasDe("costo_ventas").forEach((r) => {
+                const unid = r.unidades.size === 1 ? [...r.unidades][0] : null;
+                if (!unid || r.qty <= 0) return;
+                const precioHoy = r.monto / r.qty;
+                const textos = [];
+                const pd = r.prevData;
+                if (pd && pd.unidades.size === 1 && [...pd.unidades][0] === unid && pd.qty > 0) {
+                  const precioPrev = pd.monto / pd.qty;
+                  const cambio = precioHoy / precioPrev - 1;
+                  if (Math.abs(cambio) > UMBRAL_PRECIO) textos.push(`${cambio > 0 ? "subió" : "bajó"} ${Math.abs(Math.round(cambio * 100))}% vs ${nombreMes(mesPrev)} (${fmtPrecio(precioPrev)} → ${fmtPrecio(precioHoy)}/${unid})`);
+                }
+                const reg = insDe(r.nombre);
+                if (reg && reg.nombre !== "Mayonesa Casera" && reg.unidad === unid && reg.precio_por_kg > 0) {
+                  const factor = MERMA_INSUMOS[reg.nombre] || 0;
+                  const precioComparable = precioHoy / (1 - factor);
+                  const dif = precioComparable / reg.precio_por_kg - 1;
+                  if (Math.abs(dif) > UMBRAL_PRECIO) textos.push(`compraste a ${fmtPrecio(precioComparable)}/${unid} y en Recetas tienes ${fmtPrecio(reg.precio_por_kg)} (${dif > 0 ? "+" : ""}${Math.round(dif * 100)}%)`);
+                }
+                if (textos.length > 0) alertas.push({ nombre: r.nombre, textos });
+              });
+
+              // ---- 2) compras vs consumo (según ventas y recetas del mes)
+              const consumoMes = {};
+              ventas.filter((v) => v.fecha.startsWith(mesSel)).forEach((v) => {
+                const rec = recetas.find((r) => r.nombre_producto === v.producto);
+                if (!rec || !rec.ingredientes) return;
+                ingredientesEfectivos(rec, parseNota(v)).forEach((ing) => { consumoMes[ing.insumo] = (consumoMes[ing.insumo] || 0) + (ing.gramos || 0) * v.cantidad; });
+              });
+              const comprasMes = {};
+              gSel.filter((g) => catDe(g) === "costo_ventas").forEach((g) => { const k = nombreCanonico(g.insumo); comprasMes[k] = (comprasMes[k] || 0) + aGramos(g.cantidad, g.unidad); });
+              const filasConsumo = Object.keys(comprasMes).map((nombre) => {
+                const reg = insDe(nombre);
+                if (!reg || !(consumoMes[reg.nombre] > 0)) return null;
+                const factor = MERMA_INSUMOS[reg.nombre] || 0;
+                const consumido = consumoMes[reg.nombre] / (1 - factor);
+                const comprado = comprasMes[nombre];
+                const kgL = reg.unidad === "kg" || reg.unidad === "litro";
+                return { nombre: reg.nombre, comprado, consumido, dif: comprado - consumido, kgL, unidad: reg.unidad };
+              }).filter(Boolean).sort((a, b) => Math.abs(b.dif) - Math.abs(a.dif));
+              const fmtQ = (x, kgL, unidad) => (kgL ? `${(x / 1000).toFixed(2)} ${unidad}` : `${Math.round(x)} und`);
+
+              // ---- 3) por proveedor (solo compras: sin retiros ni pagos a Gustavo)
+              const esCompra = (g) => !["retiro", "pago_gustavo"].includes(catDe(g));
+              const proveedoresDe = (arr) => { const m = {}; arr.filter(esCompra).forEach((g) => { const k = g.proveedor ? normProv(g.proveedor) : "Sin proveedor"; if (!m[k]) m[k] = { nombre: k, monto: 0, compras: 0, items: [] }; m[k].monto += g.monto; m[k].compras += 1; m[k].items.push(g); }); return m; };
+              const provSel = proveedoresDe(gSel);
+              const provPrev = proveedoresDe(gPrev);
+              const filasProv = Object.values(provSel).map((p) => ({ ...p, prev: provPrev[p.nombre]?.monto || 0 })).sort((a, b) => b.monto - a.monto);
+              const totalProv = filasProv.reduce((a, p) => a + p.monto, 0);
+
+              // ---- 5) bebidas de la botillería (costo imputado por venta)
+              const insBebida = insumosPrecio.find((i) => normNombre(i.nombre).startsWith("bebida"));
+              const filasBebida = ventas.filter((v) => v.fecha.startsWith(mesSel) && recetas.find((r) => r.nombre_producto === v.producto)?.categoria === "bebidas");
+              const undBebida = filasBebida.reduce((a, v) => a + v.cantidad, 0);
+              const costoBebida = Math.round(filasBebida.reduce((a, v) => {
+                const rec = recetas.find((r) => r.nombre_producto === v.producto);
+                const porIng = calcularCosto(rec?.ingredientes, insumosPrecio);
+                return a + v.cantidad * (porIng > 0 ? porIng : (insBebida?.precio_por_kg || 0));
+              }, 0));
+
+              // ---- 4) exportar CSV del mes
+              const exportarMes = () => {
+                const esc = (v) => { const t = String(v ?? ""); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+                const nombresCat = { costo_ventas: "Costo de ventas", operacional: "Operacional", fijo: "Costo fijo", sin_clasificar: "Sin clasificar", inversion: "Inversión", pago_gustavo: "Pago Gustavo", retiro: "Retiro de caja" };
+                const header = ["Mes", "Fecha de pago", "Categoría", "Insumo", "Cantidad", "Unidad", "Monto", "Proveedor", "Persona", "Fondo", "Nota"];
+                const rows = [...gSel].sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).map((g) => [mesSel, g.fecha, nombresCat[catDe(g)], nombreCanonico(g.insumo), g.cantidad || "", g.unidad || "", g.monto, g.proveedor ? normProv(g.proveedor) : "", g.persona, g.fondo, g.nota || ""].map(esc).join(","));
+                const csv = "\uFEFF" + [header.map(esc).join(","), ...rows].join("\n");
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+                a.download = `gastos_${mesSel}.csv`;
+                a.click();
+              };
+
+              const vistaBtn = (id, label) => (
+                <button key={id} onClick={() => { setResumenInsVista(id); setResumenInsAbierto(null); }} style={{ flex: 1, background: resumenInsVista === id ? C.mustard : C.tag, color: resumenInsVista === id ? C.bg : C.muted, border: "none", borderRadius: 8, padding: "7px 0", cursor: "pointer", fontWeight: resumenInsVista === id ? 700 : 400, fontSize: 12 }}>{label}</button>
+              );
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={S.card}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                      <div style={{ color: C.muted, fontSize: 12, whiteSpace: "nowrap" }}>Mes:</div>
+                      <select value={mesSel} onChange={(e) => { setResumenInsMes(e.target.value); setResumenInsAbierto(null); }} style={S.inp}>
+                        {mesesDisp.map((m) => <option key={m} value={m}>{nombreMes(m)}{m === mesActual ? " (en curso)" : ""}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                      <span style={{ color: C.muted, fontSize: 12 }}>Total ingresado en Gastos</span>
+                      <span style={{ fontWeight: 800, fontSize: 20, color: C.mustard }}>{fmt(totalSel)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 3 }}>
+                      <span style={{ color: C.muted }}>vs {nombreMes(mesPrev)}: {fmt(totalPrev)}</span>
+                      <span style={{ color: deltaColor(totalSel, totalPrev), fontWeight: 700 }}>{deltaTxt(totalSel, totalPrev)}</span>
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 10, marginTop: 8 }}>Incluye todo lo ingresado con ese mes (también retiros, pagos e inversiones). Los grupos suman este total.</div>
+                    <button onClick={exportarMes} disabled={gSel.length === 0} style={{ marginTop: 10, background: C.surface, border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 0", cursor: gSel.length ? "pointer" : "default", fontSize: 12, width: "100%" }}>⬇️ Exportar el mes a CSV</button>
+                  </div>
+
+                  {alertas.length > 0 && (
+                    <div style={{ ...S.card, borderLeft: `4px solid ${C.orange}` }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>⚠️ Alertas de precio ({alertas.length})</div>
+                      {alertas.map((a) => (
+                        <div key={a.nombre} style={{ padding: "5px 0", borderTop: `1px solid ${C.border}` }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{a.nombre}</div>
+                          {a.textos.map((t, i) => <div key={i} style={{ fontSize: 11, color: C.orange }}>• {t}</div>)}
+                        </div>
+                      ))}
+                      <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>Cambios de más de {Math.round(UMBRAL_PRECIO * 100)}%. Si el precio nuevo es el real, actualízalo en Recetas → Insumos para que los costos de las recetas queden al día.</div>
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {vistaBtn("insumos", "Por insumo")}{vistaBtn("proveedor", "Por proveedor")}{vistaBtn("consumo", "Compras vs uso")}
+                  </div>
+
+                  {gSel.length === 0 && <div style={{ color: C.muted, textAlign: "center", padding: 30 }}>Sin gastos en este mes</div>}
+
+                  {resumenInsVista === "insumos" && (
+                    <>
+                      {grupos.map((gr) => {
+                        const filas = filasDe(gr.id);
+                        if (filas.length === 0) return null;
+                        const totGr = filas.reduce((a, r) => a + r.monto, 0);
+                        const totGrPrev = sumar(gPrev.filter((g) => catDe(g) === gr.id));
+                        return (
+                          <div key={gr.id} style={{ ...S.card, borderLeft: `4px solid ${gr.color}` }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                              <div style={{ fontWeight: 700, fontSize: 14 }}>{gr.titulo}</div>
+                              <div style={{ fontWeight: 800, fontSize: 16, color: gr.color === C.muted ? C.text : gr.color }}>{fmt(totGr)}</div>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginBottom: 6 }}>
+                              <span>{gr.nota}</span>
+                              <span style={{ color: deltaColor(totGr, totGrPrev) }}>{deltaTxt(totGr, totGrPrev)}</span>
+                            </div>
+                            {filas.map((r) => {
+                              const clave = gr.id + "|" + r.nombre;
+                              const abierto = resumenInsAbierto === clave;
+                              const unid = r.unidades.size === 1 ? [...r.unidades][0] : null;
+                              const pct = totGr > 0 ? Math.round((r.monto / totGr) * 100) : 0;
+                              const conAlerta = alertas.some((a) => a.nombre === r.nombre);
+                              return (
+                                <div key={clave}>
+                                  <div onClick={() => setResumenInsAbierto(abierto ? null : clave)} style={{ cursor: "pointer", padding: "7px 0", borderTop: `1px solid ${C.border}` }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                                      <span style={{ fontSize: 13 }}><span style={{ color: C.muted, fontSize: 10 }}>{abierto ? "▼" : "▶"}</span> {r.nombre}{conAlerta ? " ⚠️" : ""}</span>
+                                      <span style={{ fontWeight: 700, color: C.mustard, whiteSpace: "nowrap" }}>{fmt(r.monto)} <span style={{ color: C.muted, fontWeight: 400, fontSize: 10 }}>({pct}%)</span></span>
+                                    </div>
+                                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginTop: 2, gap: 8 }}>
+                                      <span>{unid ? `${Number(r.qty.toFixed(2))} ${unid} · ` : ""}{r.compras} {r.compras === 1 ? "compra" : "compras"}{unid && r.qty > 0 ? ` · ${fmtPrecio(r.monto / r.qty)}/${unid}` : ""}</span>
+                                      <span style={{ color: deltaColor(r.monto, r.prev), whiteSpace: "nowrap" }}>{deltaTxt(r.monto, r.prev)}</span>
+                                    </div>
+                                  </div>
+                                  {abierto && (
+                                    <div style={{ background: C.bg, borderRadius: 8, padding: "6px 10px", margin: "2px 0 8px" }}>
+                                      {[...r.items].sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).map((g) => (
+                                        <div key={g.id} style={{ padding: "4px 0", borderBottom: `1px solid ${C.border}33` }}>
+                                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, gap: 8 }}>
+                                            <span>{dmy3(g.fecha)}{g.cantidad ? ` · ${g.cantidad} ${g.unidad || ""}` : ""}</span>
+                                            <span style={{ fontWeight: 700, color: C.mustard }}>{fmt(g.monto)}</span>
+                                          </div>
+                                          <div style={{ color: C.muted, fontSize: 10 }}>{g.proveedor ? normProv(g.proveedor) : "sin proveedor"} · {g.persona} · {g.fondo}{g.mes_corresponde && g.mes_corresponde !== g.fecha.slice(0, 7) ? ` · pagado el ${dmy3(g.fecha)}` : ""}</div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      {undBebida > 0 && (
+                        <div style={{ ...S.card, borderLeft: `4px solid ${C.orange}` }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                            <div style={{ fontWeight: 700, fontSize: 14 }}>🥤 Bebidas (botillería)</div>
+                            <div style={{ fontWeight: 800, fontSize: 16, color: C.orange }}>{fmt(costoBebida)}</div>
+                          </div>
+                          <div style={{ color: C.muted, fontSize: 11, marginTop: 4 }}>{undBebida} bebidas vendidas en el mes{insBebida ? ` · costo ${fmt(insBebida.precio_por_kg)} c/u (${insBebida.nombre})` : ""}</div>
+                          <div style={{ color: C.orange, fontSize: 11, marginTop: 4 }}>Por pagar a botillería: <span style={{ fontWeight: 700 }}>{fmt(costoBebida)}</span></div>
+                          <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>No es una compra del foodtruck: se calcula por cada bebida vendida y no está en el total de arriba. Sí entra al costo de ventas del estado de resultados.</div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {resumenInsVista === "proveedor" && (
+                    <div style={S.card}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>Compras por proveedor</div>
+                        <div style={{ fontWeight: 800, fontSize: 16, color: C.mustard }}>{fmt(totalProv)}</div>
+                      </div>
+                      <div style={{ color: C.muted, fontSize: 10, marginBottom: 6 }}>Sin retiros de caja ni pagos a Gustavo, que no son compras.</div>
+                      {filasProv.length === 0 && <Empty />}
+                      {filasProv.map((p) => {
+                        const clave = "prov|" + p.nombre;
+                        const abierto = resumenInsAbierto === clave;
+                        const porInsumo = {};
+                        p.items.forEach((g) => { const k = nombreCanonico(g.insumo); porInsumo[k] = (porInsumo[k] || 0) + g.monto; });
+                        return (
+                          <div key={clave}>
+                            <div onClick={() => setResumenInsAbierto(abierto ? null : clave)} style={{ cursor: "pointer", padding: "7px 0", borderTop: `1px solid ${C.border}` }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                                <span style={{ fontSize: 13 }}><span style={{ color: C.muted, fontSize: 10 }}>{abierto ? "▼" : "▶"}</span> {p.nombre}</span>
+                                <span style={{ fontWeight: 700, color: C.mustard, whiteSpace: "nowrap" }}>{fmt(p.monto)} <span style={{ color: C.muted, fontWeight: 400, fontSize: 10 }}>({totalProv > 0 ? Math.round((p.monto / totalProv) * 100) : 0}%)</span></span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: C.muted, marginTop: 2 }}>
+                                <span>{p.compras} {p.compras === 1 ? "compra" : "compras"}</span>
+                                <span style={{ color: deltaColor(p.monto, p.prev) }}>{deltaTxt(p.monto, p.prev)}</span>
+                              </div>
+                            </div>
+                            {abierto && (
+                              <div style={{ background: C.bg, borderRadius: 8, padding: "6px 10px", margin: "2px 0 8px" }}>
+                                {Object.entries(porInsumo).sort((a, b) => b[1] - a[1]).map(([n, mo]) => (
+                                  <div key={n} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}><span>{n}</span><span style={{ fontWeight: 700, color: C.mustard }}>{fmt(mo)}</span></div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {resumenInsVista === "consumo" && (
+                    <div style={S.card}>
+                      <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Compras vs uso del mes</div>
+                      <div style={{ color: C.muted, fontSize: 10, marginBottom: 8 }}>Lo comprado en el mes frente a lo que se usó según las ventas y las recetas. No es la merma: la merma real se mide al ajustar el inventario.</div>
+                      {filasConsumo.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>No hay insumos con compras y consumo en este mes.</div>}
+                      {filasConsumo.map((f) => {
+                        const exceso = f.dif >= 0;
+                        return (
+                          <div key={f.nombre} style={{ padding: "7px 0", borderTop: `1px solid ${C.border}` }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                              <span style={{ fontSize: 13 }}>{f.nombre}</span>
+                              <span style={{ fontWeight: 700, color: exceso ? C.orange : C.blue, whiteSpace: "nowrap" }}>{exceso ? "+" : "−"}{fmtQ(Math.abs(f.dif), f.kgL, f.unidad)}</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>Compraste {fmtQ(f.comprado, f.kgL, f.unidad)} · se usó {fmtQ(f.consumido, f.kgL, f.unidad)} · {exceso ? "quedó de más en stock (o es merma)" : "usaste stock de antes"}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             {gastosView === "stock" && (() => {
               const stock = calcularStock(gastos, ventas, recetas, insumosPrecio);
               const alertColor = { verde: C.green, naranja: C.orange, rojo: C.red };
