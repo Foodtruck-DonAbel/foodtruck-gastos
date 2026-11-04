@@ -836,10 +836,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     if (!reclasTipo) { showToast("Elige el tipo"); return; }
     const nRec = parseInt(cuotasN, 10);
     if (reclasTipo === "cuotas" && !(nRec >= 2 && nRec <= 60)) { showToast("Indica entre 2 y 60 meses"); return; }
-    const { error } = await supabase.from("gastos").update({ tipo_gasto: reclasTipo === "cuotas" ? `cuotas:${nRec}` : reclasTipo }).eq("id", reclasModal.id);
+    const idsRec = reclasModal.bulk ? reclasModal.ids : [reclasModal.id];
+    const nuevoTipo = reclasTipo === "__auto__" ? null : (reclasTipo === "cuotas" ? `cuotas:${nRec}` : reclasTipo);
+    const { error } = await supabase.from("gastos").update({ tipo_gasto: nuevoTipo }).in("id", idsRec);
     if (error) { console.error("Error al reclasificar:", error); showToast("❌ Error: " + error.message); return; }
     setReclasModal(null); setReclasTipo(""); setAdminClave(""); setAdminError(false);
-    showToast("✓ Gasto reclasificado");
+    showToast(idsRec.length > 1 ? `✓ ${idsRec.length} gastos reclasificados` : "✓ Gasto reclasificado");
     cargarGastos();
   };
 
@@ -1590,12 +1592,14 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>🏷️ Reclasificar gasto</div>
-            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>{reclasModal.insumo} · {fmt(reclasModal.monto)} · {reclasModal.fecha}</div>
+            <div style={{ color: C.muted, fontSize: 12, marginBottom: 12 }}>{reclasModal.bulk ? `${reclasModal.ids.length} gastos · ${fmt(reclasModal.total)} · ${reclasModal.insumos.slice(0, 4).join(", ")}${reclasModal.insumos.length > 4 ? "…" : ""}` : `${reclasModal.insumo} · ${fmt(reclasModal.monto)} · ${reclasModal.fecha}`}</div>
+            {reclasModal.bulk && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Se aplicará el mismo tipo a todos los gastos de la lista (los retiros de caja y pagos a Gustavo no se tocan).</div>}
             <select value={reclasTipo} onChange={(e) => setReclasTipo(e.target.value)} style={{ ...S.inp, marginBottom: 6 }}>
               <option value="">Elige el tipo…</option>
               {TIPOS_GASTO_CON_CUOTAS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              <option value="__auto__">Automático (según el nombre del insumo)</option>
             </select>
-            <div style={{ color: C.muted, fontSize: 10, marginBottom: 12 }}>{reclasTipo ? TIPOS_GASTO_CON_CUOTAS.find((t) => t.id === reclasTipo)?.ayuda : "Define en qué parte del estado de resultados entra."}</div>
+            <div style={{ color: C.muted, fontSize: 10, marginBottom: 12 }}>{reclasTipo === "__auto__" ? "Quita la clasificación manual: vuelve a la que corresponde por el nombre (por ejemplo, Pan para completo = costo de ventas)." : reclasTipo ? TIPOS_GASTO_CON_CUOTAS.find((t) => t.id === reclasTipo)?.ayuda : "Define en qué parte del estado de resultados entra."}</div>
             {reclasTipo === "cuotas" && (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>¿En cuántos meses?</div>
@@ -1967,6 +1971,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       Asignar proveedor a estos {gastosFiltrados.length}
                     </button>
                   )}
+                  {(filtro.insumo || filtro.sinProv || filtro.revisar || filtro.persona) && (() => {
+                    const editables = gastosFiltrados.filter((g) => !["retiro", "pago_gustavo"].includes(categoriaGasto(g.insumo, nombresInsumosTodos, g.tipo_gasto)));
+                    if (editables.length === 0) return null;
+                    return (
+                      <button onClick={() => { setReclasModal({ bulk: true, ids: editables.map((g) => g.id), total: editables.reduce((a, g) => a + g.monto, 0), insumos: [...new Set(editables.map((g) => nombreCanonico(g.insumo)))] }); setReclasTipo(""); setAdminClave(""); setAdminError(false); }} style={{ flexBasis: "100%", background: C.purple, color: "#fff", border: "none", borderRadius: 8, padding: "8px 0", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+                        Reclasificar estos {editables.length}
+                      </button>
+                    );
+                  })()}
                   <select value={filtro.mes} onChange={(e) => setFiltro({ ...filtro, mes: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 110 }}><option value="">Todos los meses</option>{meses.map((m) => <option key={m}>{m}</option>)}</select>
                   <select value={filtro.insumo} onChange={(e) => setFiltro({ ...filtro, insumo: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 120 }}><option value="">Todos los insumos</option>{[...new Set(gastos.map((g) => nombreCanonico(g.insumo)))].sort((a, b) => a.localeCompare(b, "es")).map((i) => <option key={i}>{i}</option>)}</select>
                   <select value={filtro.persona} onChange={(e) => setFiltro({ ...filtro, persona: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 100 }}><option value="">Todos</option>{PERSONAS.map((p) => <option key={p}>{p}</option>)}</select>
