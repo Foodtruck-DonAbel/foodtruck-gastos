@@ -489,29 +489,47 @@ export default function App() {
   }, [view]);
 
   // Búsqueda en la hoja de la botillería (misma consulta que usa el buscador de precios)
+  const botSinEspera = useRef(false); // true cuando la búsqueda viene del escáner: se hace al tiro
+  const botCache = useRef({}); // resultados recientes: { texto: { t, grupos } }
   useEffect(() => {
     if (!botilleriaMode) return;
     const q = botQ.trim();
-    if (q.length < 2) { setBotResultados(null); setBotError(""); return; }
+    if (q.length < 2) { setBotResultados(null); setBotError(""); setBotCargando(false); return; }
+    const clave = q.toLowerCase();
+    const enCache = botCache.current[clave];
+    if (enCache && Date.now() - enCache.t < 10 * 60 * 1000) { setBotResultados(enCache.grupos); setBotError(""); setBotCargando(false); return; }
     let vigente = true;
+    const controlador = new AbortController();
+    const espera = botSinEspera.current ? 0 : 400;
+    botSinEspera.current = false;
+    if (espera === 0) setBotCargando(true);
     const t = setTimeout(async () => {
       setBotCargando(true); setBotError("");
+      const limite = setTimeout(() => controlador.abort(), 15000);
       try {
-        const res = await fetch(BOTILLERIA_URL + "?codigo=" + encodeURIComponent(q) + "&proveedor=ALL");
+        const res = await fetch(BOTILLERIA_URL + "?codigo=" + encodeURIComponent(q) + "&proveedor=ALL", { signal: controlador.signal });
         const data = await res.json();
         if (!vigente) return;
         const grupos = {};
         (Array.isArray(data) ? data : []).forEach((r) => { const n = r.nombre || "—"; (grupos[n] = grupos[n] || []).push(r); });
-        setBotResultados(Object.entries(grupos).map(([nombre, registros]) => ({ nombre, registros })));
+        const lista = Object.entries(grupos).map(([nombre, registros]) => ({ nombre, registros }));
+        if (lista.length > 0) botCache.current[clave] = { t: Date.now(), grupos: lista };
+        setBotResultados(lista);
       } catch (e) {
         if (!vigente) return;
-        setBotError("No se pudo consultar la botillería. Intenta de nuevo.");
+        setBotError(e && e.name === "AbortError" ? "La botillería tardó demasiado en responder. Intenta de nuevo." : "No se pudo consultar la botillería. Intenta de nuevo.");
         setBotResultados(null);
       }
+      clearTimeout(limite);
       if (vigente) setBotCargando(false);
-    }, 400);
-    return () => { vigente = false; clearTimeout(t); };
+    }, espera);
+    return () => { vigente = false; clearTimeout(t); controlador.abort(); };
   }, [botQ, botilleriaMode]);
+
+  // Al abrir el modo botillería se "despierta" el script de Google, para que la primera búsqueda no parta en frío
+  useEffect(() => {
+    if (botilleriaMode) fetch(BOTILLERIA_URL + "?codigo=__ping__&proveedor=ALL").catch(() => {});
+  }, [botilleriaMode]);
 
   // La cámara se apaga al salir del modo botillería, de la pantalla de gastos o de la app
   useEffect(() => { if (!botilleriaMode || view !== "gastos") { stopCamHardware(); setBotCamAbierta(false); } }, [botilleriaMode, view]);
@@ -973,7 +991,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     await new Promise((r) => setTimeout(r, 60)); // espera a que exista el <video>
     const video = botVideoRef.current;
     if (!video) return;
-    const alEncontrar = (valor) => { detenerCamBot(); setBotQ(String(valor)); };
+    const alEncontrar = (valor) => { detenerCamBot(); botSinEspera.current = true; setBotQ(String(valor)); };
     try {
       if ("BarcodeDetector" in window) {
         let stream;
@@ -986,7 +1004,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         botCamRef.current.interval = setInterval(async () => {
           if (video.readyState < 2) return;
           try { const codigos = await detector.detect(video); if (codigos.length > 0) alEncontrar(codigos[0].rawValue); } catch (e) {}
-        }, 500);
+        }, 300);
       } else {
         const ZX = await cargarZXing();
         const hints = new Map();
@@ -1983,6 +2001,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   <select value={filtro.mes} onChange={(e) => setFiltro({ ...filtro, mes: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 110 }}><option value="">Todos los meses</option>{meses.map((m) => <option key={m}>{m}</option>)}</select>
                   <select value={filtro.insumo} onChange={(e) => setFiltro({ ...filtro, insumo: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 120 }}><option value="">Todos los insumos</option>{[...new Set(gastos.map((g) => nombreCanonico(g.insumo)))].sort((a, b) => a.localeCompare(b, "es")).map((i) => <option key={i}>{i}</option>)}</select>
                   <select value={filtro.persona} onChange={(e) => setFiltro({ ...filtro, persona: e.target.value })} style={{ ...S.inp, flex: 1, minWidth: 100 }}><option value="">Todos</option>{PERSONAS.map((p) => <option key={p}>{p}</option>)}</select>
+                  {!filtro.mes && !filtro.insumo && !filtro.persona && !filtro.revisar && !filtro.sinProv && <div style={{ flexBasis: "100%", color: C.muted, fontSize: 11 }}>💡 Elige un insumo (o una persona) para reclasificar o asignar proveedor a varios gastos a la vez.</div>}
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, color: C.muted, fontSize: 12 }}>
                   <span>{gastosFiltrados.length} registros</span>
