@@ -13,7 +13,7 @@ const FONDOS = ["Efectivo foodtruck", "Efectivo Don Abel", "Tarjeta foodtruck", 
 // Buscador de precios de la botillería (Apps Script). Devuelve [{ nombre, codigo, proveedor, costoReal, fecha }]
 const BOTILLERIA_URL = "https://script.google.com/macros/s/AKfycbwcNig7G26Th8jJzdpnJkt5Ic8qIMYDtk_6iZ_gUaJxFbpsxRT4mFyd9NfWOdsoGtGU/exec";
 const INSUMOS_BASE = [
-  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla Caramelizada","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa Casera","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Pago sueldo Gustavo","Toalla nova","Guantes","Reparaciones","Otro",
+  "Aceite para Freir","Aceite para Mayonesa Casera","Ají en Pasta","Cebolla","Chicken Fingers","Chucrut","Churrascos","Ciboulette","Cilantro","Empanadas de Queso","Envase para Papas / Sandwich/ PY","Envases para completos","Gas / combustible","Ketchup","Limpieza","Mayonesa","Mayonesa en Polvo","Mostaza","Palta","Pan para completo","Pan para Sandwich Castaño","Papas fritas","Pepinillo","Queso cheddar","Queso Normal","Retiro de Caja","Salchichas 17 cm","Salsa Americana","Salsa BBQ","Servilletas / bolsas","Tocino","Tomate","Patente y permisos","Contador","Publicidad","Internet y celular","Seguros","Mantención camión","Arriendo lugar","Inversión / equipamiento","Pago sueldo Gustavo","Toalla nova","Guantes","Reparaciones","Otro",
 ];
 const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
@@ -38,7 +38,7 @@ const UNIDAD_DEFAULT_INSUMO = {
 
 // Unidad de respaldo para todos los insumos de la lista de gastos (se usa si Recetas → Insumos no la tiene)
 const UNIDAD_RESPALDO = {
-  "Aceite para Freir": "litro", "Aceite para Mayonesa Casera": "litro", "Ají en Pasta": "kg", "Cebolla Caramelizada": "kg",
+  "Aceite para Freir": "litro", "Aceite para Mayonesa Casera": "litro", "Ají en Pasta": "kg", "Cebolla Caramelizada": "kg", "Cebolla": "kg",
   "Chicken Fingers": "unidad", "Chucrut": "kg", "Churrascos": "unidad", "Ciboulette": "unidad", "Cilantro": "unidad",
   "Empanadas de Queso": "unidad", "Envase para Papas / Sandwich/ PY": "unidad", "Envases para completos": "unidad",
   "Gas / combustible": "unidad", "Ketchup": "kg", "Limpieza": "unidad", "Mayonesa": "kg", "Mayonesa Casera": "kg",
@@ -82,6 +82,7 @@ const MAPA_INSUMOS = {
   "papas fritas": "Papas fritas",
   "salsa americana": "Salsa Americana",
   "salsa bbq": "Salsa BBQ",
+  "cebolla": "Cebolla",
   "cebolla caramelizada": "Cebolla Caramelizada",
   "aceite para freir": "Aceite para Freir",
   "empanadas de queso": "Empanadas de Queso",
@@ -125,9 +126,11 @@ const calcularMermasBase = (historial, gastosData, ventasData, recetasData, insu
       const base = aGramos(prev.cantidad, prev.unidad);
       let compras = 0;
       gastosData.forEach((g) => {
-        if (resolverInsumo(g.insumo) !== nombre) return;
+        const ref = resolverInsumo(g.insumo);
+        const esCebollaCruda = nombre === "Cebolla Caramelizada" && ref === "Cebolla";
+        if (ref !== nombre && !esCebollaCruda) return;
         if (g.created_at < prev.created_at || g.created_at >= cur.created_at) return;
-        compras += aGramos(g.cantidad, g.unidad);
+        compras += aGramos(g.cantidad, g.unidad) * (esCebollaCruda ? RENDIMIENTO_CEBOLLA_CARAMELIZADA : 1);
       });
       let consumo = 0;
       ventasData.forEach((v) => {
@@ -143,7 +146,9 @@ const calcularMermasBase = (historial, gastosData, ventasData, recetasData, insu
       const contado = aGramos(cur.cantidad, cur.unidad);
       const dif = esperado - contado;
       if (Math.abs(dif) < 0.5) continue;
-      const costoUnit = (ins.unidad === "unidad" ? ins.precio_por_kg : ins.precio_por_kg / 1000) * (factor > 0 ? 1 - factor : 1);
+      const cebCruda = nombre === "Cebolla Caramelizada" ? insumosData.find((i) => i.nombre === "Cebolla") : null;
+      const precioBase = cebCruda ? cebCruda.precio_por_kg / RENDIMIENTO_CEBOLLA_CARAMELIZADA : ins.precio_por_kg;
+      const costoUnit = (ins.unidad === "unidad" ? precioBase : precioBase / 1000) * (factor > 0 ? 1 - factor : 1);
       out.push({ id: cur.id, insumo: nombre, fecha: cur.fecha, persona: cur.persona, motivo: cur.motivo || "", unidad: ins.unidad, esperado, contado, dif, costo: Math.round(dif * costoUnit) });
     }
   });
@@ -250,11 +255,14 @@ const INGREDIENTES_BASE = {
 const RECETA_MAYONESA_CASERA = [
   { insumo: "Mayonesa en Polvo", gramos: 25 },
   { insumo: "Aceite para Mayonesa Casera", gramos: 500 },
-  { insumo: "Ciboulette", gramos: 1 },
-  { insumo: "Cilantro", gramos: 1 },
+  { insumo: "Ciboulette", gramos: 1 / 3 }, // un ramo alcanza para 3 tandas
+  { insumo: "Cilantro", gramos: 1 / 3 }, // un ramo alcanza para 3 tandas
   { insumo: "Mostaza", gramos: 10 },
 ];
 const RENDIMIENTO_MAYONESA_CASERA_G = 600; // rinde 600g
+// Cebolla caramelizada: se compra "Cebolla" cruda y se cocina en la plancha hasta caramelizar.
+// Medido: 750 g crudos -> 358 g caramelizados (47,7%). Su costo y su stock salen de la cebolla cruda.
+const RENDIMIENTO_CEBOLLA_CARAMELIZADA = 358 / 750;
 
 const RECETAS_EJEMPLO = [
   { nombre_producto: "Italiano", categoria: "completos", precio_venta: 4100, precio_py: 5535, ingredientes: [{ insumo: "Pan para completo", gramos: 80 },{ insumo: "Vienesa", gramos: 80 },{ insumo: "Palta", gramos: 40 },{ insumo: "Tomate", gramos: 30 },{ insumo: "Mayonesa casera", gramos: 25 }] },
@@ -379,6 +387,7 @@ export default function App() {
   const [botCamError, setBotCamError] = useState("");
   const botVideoRef = useRef(null);
   const botCamRef = useRef({ stream: null, interval: null, reader: null });
+  const cebollaSembrada = useRef(false);
   // Destino de los retiros de caja
   const [retiroDestino, setRetiroDestino] = useState("sueldo"); // "sueldo" | "socio"
   const [retiroSocio, setRetiroSocio] = useState("");
@@ -389,6 +398,7 @@ export default function App() {
   const [provModal, setProvModal] = useState(null); // gasto al que se le asigna proveedor
   const [provModalValor, setProvModalValor] = useState("");
   const [provModalNuevo, setProvModalNuevo] = useState("");
+  const [insumoUsoAbierto, setInsumoUsoAbierto] = useState(null); // insumo cuyo uso en productos se está viendo
   const [inversionModo, setInversionModo] = useState("aparte"); // "aparte" | "mes" | "cuotas": cómo se refleja una compra de equipamiento
   const [cuotasN, setCuotasN] = useState("12"); // meses en que se reparte un gasto
   const [verEstadoResultados, setVerEstadoResultados] = useState(false);
@@ -581,6 +591,13 @@ export default function App() {
       const { data: ins2 } = await supabase.from("insumos_precio").select("*").order("nombre");
       setInsumosPrecio(ins2 || []);
     } else setInsumosPrecio(ins || []);
+    // Insumo base de la cebolla cruda: la caramelizada se calcula a partir de él (se crea una sola vez si falta)
+    if (ins && ins.length > 0 && !ins.some((i) => i.nombre === "Cebolla") && !cebollaSembrada.current) {
+      cebollaSembrada.current = true;
+      const { error: errCeb } = await supabase.from("insumos_precio").insert([{ nombre: "Cebolla", precio_por_kg: 1840, unidad: "kg" }]);
+      if (errCeb) { cebollaSembrada.current = false; console.error("No se pudo crear el insumo Cebolla:", errCeb); }
+      else { const { data: ins3 } = await supabase.from("insumos_precio").select("*").order("nombre"); if (ins3) setInsumosPrecio(ins3); }
+    }
     if (rec && rec.length === 0) {
       await supabase.from("recetas").insert(RECETAS_EJEMPLO);
       const { data: rec2 } = await supabase.from("recetas").select("*").order("nombre_producto");
@@ -739,12 +756,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     // 2. Sumar compras DESDE el momento exacto del último ajuste DE ESE INSUMO (no de otros)
     const compras = {};
     gastosData.forEach((g) => {
-      const insumoRef = resolverInsumo(g.insumo);
+      let insumoRef = resolverInsumo(g.insumo);
       if (!insumoRef) return;
+      let gr = aGramos(g.cantidad, g.unidad);
+      // La cebolla se compra cruda y se consume caramelizada: se convierte con el rendimiento
+      if (insumoRef === "Cebolla") { insumoRef = "Cebolla Caramelizada"; gr = gr * RENDIMIENTO_CEBOLLA_CARAMELIZADA; }
       const corte = invInicialMap[insumoRef]?.corte;
       if (corte && g.created_at < corte) return;
       if (!compras[insumoRef]) compras[insumoRef] = 0;
-      compras[insumoRef] += aGramos(g.cantidad, g.unidad);
+      compras[insumoRef] += gr;
     });
 
     // 3. Sumar consumo DESDE el momento exacto del último ajuste DE ESE INSUMO
@@ -1047,6 +1067,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     cargarGastos(); setSaving(false);
   };
 
+  // Precio por kg de cebolla caramelizada: cebolla cruda / rendimiento (null si no existe el insumo "Cebolla")
+  const costoPorKgCebollaCaramelizada = (insumosLista) => {
+    const ceb = insumosLista.find((i) => i.nombre === "Cebolla");
+    return ceb ? ceb.precio_por_kg / RENDIMIENTO_CEBOLLA_CARAMELIZADA : null;
+  };
   const costoPorKgMayonesaCasera = (insumosLista) => {
     const costoTotal = RECETA_MAYONESA_CASERA.reduce((total, ing) => {
       const ins = insumosLista.find((i) => i.nombre === ing.insumo);
@@ -1064,6 +1089,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         const precioKg = costoPorKgMayonesaCasera(insumosLista);
         return total + (precioKg / 1000) * ing.gramos;
       }
+      if (ing.insumo === "Cebolla Caramelizada") {
+        const precioKg = costoPorKgCebollaCaramelizada(insumosLista);
+        if (precioKg !== null) return total + (precioKg / 1000) * (ing.gramos || 0);
+      }
       const ins = insumosLista.find((i) => i.nombre === ing.insumo);
       if (!ins) return total;
       if (ins.unidad === "unidad") return total + ins.precio_por_kg * (ing.gramos || 0);
@@ -1077,7 +1106,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     return calcularCosto(rec.ingredientes, insumosPrecio);
   };
 
-const precioProducto = (rec) => metodoPago === "Pedidos Ya"
+  const precioProducto = (rec) => metodoPago === "Pedidos Ya"
     ? calcPY(rec.precio_venta)
     : rec.precio_venta;
 
@@ -1216,7 +1245,7 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
     const data = {
       nombre_producto: formReceta.nombre_producto.trim(), categoria: formReceta.categoria,
       precio_venta: Number(formReceta.precio_venta),
-            precio_py: calcPY(formReceta.precio_venta),
+      precio_py: calcPY(formReceta.precio_venta),
       descripcion_menu: formReceta.descripcion_menu || "",
       ingredientes: esCombo ? [] : formReceta.ingredientes,
       productos_combo: esCombo ? formReceta.productos_combo : [],
@@ -1415,7 +1444,7 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Edita cuánto tienes físicamente de cada insumo ahora. El valor que ingreses reemplaza el stock actual (no se suma). Puedes usar coma o punto para decimales, ej: 0,5</div>
             {!persona && <div style={{ color: C.orange, fontSize: 12, marginBottom: 12, fontWeight: 700 }}>⚠️ Selecciona tu nombre arriba antes de guardar, para identificar quién hizo el ajuste.</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "45vh", overflowY: "auto" }}>
-              {[...new Set(Object.values(MAPA_INSUMOS))].sort().map((nombre) => {
+              {[...new Set(Object.values(MAPA_INSUMOS))].filter((n) => n !== "Cebolla").sort().map((nombre) => {
                 const ins = insumosPrecio.find((i) => i.nombre === nombre);
                 const invActual = inventarioInicial.find((i) => i.insumo === nombre);
                 const valorInput = ajusteValues[nombre] !== undefined ? ajusteValues[nombre] : (invActual ? String(invActual.cantidad) : "");
@@ -2125,7 +2154,7 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
                 ingredientesEfectivos(rec, parseNota(v)).forEach((ing) => { consumoMes[ing.insumo] = (consumoMes[ing.insumo] || 0) + (ing.gramos || 0) * v.cantidad; });
               });
               const comprasMes = {};
-              gSel.filter((g) => catDe(g) === "costo_ventas").forEach((g) => { const k = nombreCanonico(g.insumo); comprasMes[k] = (comprasMes[k] || 0) + aGramos(g.cantidad, g.unidad); });
+              gSel.filter((g) => catDe(g) === "costo_ventas").forEach((g) => { const k0 = nombreCanonico(g.insumo); const esCeb = k0 === "Cebolla"; const k = esCeb ? "Cebolla Caramelizada" : k0; comprasMes[k] = (comprasMes[k] || 0) + aGramos(g.cantidad, g.unidad) * (esCeb ? RENDIMIENTO_CEBOLLA_CARAMELIZADA : 1); });
               const filasConsumo = Object.keys(comprasMes).map((nombre) => {
                 const reg = insDe(nombre);
                 if (!reg || !(consumoMes[reg.nombre] > 0)) return null;
@@ -2441,7 +2470,7 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
                   ))}
                 </div>
                 <div style={S.card}>
-                  {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya {DESCUENTO_PY}%)</div>}
+                  {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (descuento {DESCUENTO_PY}%)</div>}
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {recetas.filter((r) => r.categoria === catActiva).sort(cmpOrden).map((rec) => (
@@ -2455,8 +2484,8 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
                             </button>
                             {(() => {
                               const precioAS = metodoPago === "Pedidos Ya"
-  ? calcPY(rec.variante_as.precio_venta)
-  : rec.variante_as.precio_venta;
+                                ? calcPY(rec.variante_as.precio_venta)
+                                : rec.variante_as.precio_venta;
                               return (
                                 <button onClick={() => agregarAlCarrito(rec, { variante: "as", precio: precioAS, nombre: rec.nombre_producto })} style={{ flex: 1, background: C.tag, border: `1px solid ${C.blue}`, borderRadius: 7, padding: "7px 4px", cursor: "pointer", textAlign: "center" }}>
                                   <div style={{ fontSize: 9, color: C.blue }}>AS (churrasco)</div>
@@ -3081,9 +3110,9 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
                               style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: ventaEdit !== undefined ? C.orange : C.border }} />
                           </div>
                           <div>
-  <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (−{DESCUENTO_PY}%)</div>
-  <div style={{ ...S.inp, fontSize: 13, color: C.orange, fontWeight: 700 }}>{fmt(pyGuardado)}</div>
-</div>
+                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (−{DESCUENTO_PY}%)</div>
+                            <div style={{ ...S.inp, fontSize: 13, color: C.orange, fontWeight: 700 }}>{fmt(pyGuardado)}</div>
+                          </div>
                           <div style={{ textAlign: "center" }}>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Ganancia</div>
                             <div style={{ fontWeight: 700, fontSize: 15, color: margen >= 0 ? C.green : C.red }}>{fmt(Math.round(margen))}</div>
@@ -3119,10 +3148,10 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
                                   onChange={(e) => setPrecioASEdit({ ...precioASEdit, [rec.id]: e.target.value })}
                                   style={{ width: 80, background: C.surface, border: `1px solid ${precioASEdit[rec.id] !== undefined ? C.orange : C.blue}`, borderRadius: 5, color: precioASEdit[rec.id] !== undefined ? C.orange : C.blue, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
                               </span>
-                             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-  <span style={{ fontSize: 10, color: C.orange }}>PY AS ($)</span>
-  <span style={{ fontWeight: 700, color: C.orange, fontSize: 12 }}>{fmt(calcPY(ventaAS))}</span>
-</span>
+                              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 10, color: C.orange }}>PY AS ($)</span>
+                                <span style={{ fontWeight: 700, color: C.orange, fontSize: 12 }}>{fmt(calcPY(ventaAS))}</span>
+                              </span>
                             </div>
                             {precioASEdit[rec.id] !== undefined && (
                               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -3215,28 +3244,61 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
                 </div>
                 {insumosPrecio.map((ins) => {
                   const esMayonesaCasera = ins.nombre === "Mayonesa Casera";
-                  const costoCalculado = esMayonesaCasera ? costoPorKgMayonesaCasera(insumosPrecio) : null;
+                  const esCebollaCaramelizada = ins.nombre === "Cebolla Caramelizada" && insumosPrecio.some((i) => i.nombre === "Cebolla");
+                  const esPreparado = esMayonesaCasera || esCebollaCaramelizada;
+                  const costoCalculado = esMayonesaCasera ? costoPorKgMayonesaCasera(insumosPrecio) : esCebollaCaramelizada ? costoPorKgCebollaCaramelizada(insumosPrecio) : null;
                   return (
-                    <div key={ins.id} style={{ ...S.card, display: "flex", alignItems: "center", gap: 10 }}>
+                    <div key={ins.id} style={{ ...S.card, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600 }}>{ins.nombre}</div>
-                        {esMayonesaCasera ? (
+                        {esPreparado ? (
                           <div style={{ color: C.green, fontSize: 12 }}>
-                            {fmt(Math.round(costoCalculado))} / kg <span style={{ color: C.muted }}>(calculado automáticamente)</span>
+                            {fmt(Math.round(costoCalculado))} / kg <span style={{ color: C.muted }}>{esCebollaCaramelizada ? `(calculado: cebolla cruda ÷ ${Math.round(RENDIMIENTO_CEBOLLA_CARAMELIZADA * 100)}% de rendimiento)` : "(calculado automáticamente)"}</span>
                           </div>
                         ) : (
                           <div style={{ color: C.muted, fontSize: 12 }}>{fmt(ins.precio_por_kg)} / {ins.unidad}</div>
                         )}
+                        <div onClick={() => setInsumoUsoAbierto(insumoUsoAbierto === ins.id ? null : ins.id)} style={{ color: C.blue, fontSize: 11, marginTop: 4, cursor: "pointer" }}>{insumoUsoAbierto === ins.id ? "▼ Ocultar uso en productos" : "▶ Ver en qué productos va"}</div>
                         {(ins.alerta_bajo != null || ins.alerta_critico != null) && (
                           <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>
                             Alertas: {ins.alerta_bajo != null && <span>🟡 {ins.alerta_bajo}</span>}{ins.alerta_bajo != null && ins.alerta_critico != null && " · "}{ins.alerta_critico != null && <span>🔴 {ins.alerta_critico}</span>} {ins.unidad === "unidad" ? "und" : ins.unidad}
                           </div>
                         )}
                       </div>
-                      {!esMayonesaCasera && (
+                      {!esPreparado && (
                         <button onClick={() => { setFormInsumo({ nombre: ins.nombre, precio_por_kg: ins.precio_por_kg, unidad: ins.unidad, alerta_bajo: ins.alerta_bajo ?? "", alerta_critico: ins.alerta_critico ?? "" }); setEditInsumoId(ins.id); }} style={{ background: C.tag, border: "none", color: C.mustard, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 12 }}>Editar</button>
                       )}
                       <button onClick={() => solicitarEliminacion("insumo", ins)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12 }}>✕</button>
+                      {insumoUsoAbierto === ins.id && (() => {
+                        const usos = recetas.map((r) => { const it = (r.ingredientes || []).find((x) => x.insumo === ins.nombre); return it ? { rec: r, gramos: it.gramos || 0 } : null; }).filter(Boolean);
+                        const unidadTxt = ins.unidad === "unidad" ? "und" : "g";
+                        const normal = esMayonesaCasera ? insumosPrecio.find((i) => i.nombre === "Mayonesa") : null;
+                        const filas = usos.map((u) => ({
+                          ...u,
+                          costo: calcularCosto([{ insumo: ins.nombre, gramos: u.gramos }], insumosPrecio),
+                          costoNormal: normal ? calcularCosto([{ insumo: "Mayonesa", gramos: u.gramos }], insumosPrecio) : null,
+                        })).sort((a, b) => b.costo - a.costo);
+                        return (
+                          <div style={{ flexBasis: "100%", background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
+                            {filas.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>No está en ninguna receta.</div>}
+                            {filas.map((f) => (
+                              <div key={f.rec.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 }}>
+                                <span>{f.rec.nombre_producto} <span style={{ color: C.muted, fontSize: 10 }}>{CATEGORIAS.find((c) => c.id === f.rec.categoria)?.label} · {f.gramos}{unidadTxt}</span></span>
+                                <span style={{ whiteSpace: "nowrap" }}>
+                                  <span style={{ fontWeight: 700, color: C.mustard }}>{fmt(Math.round(f.costo))}</span>
+                                  {f.costoNormal !== null && <span style={{ color: C.muted, fontSize: 10 }}> vs {fmt(Math.round(f.costoNormal))} con mayonesa normal (+{fmt(Math.round(f.costo - f.costoNormal))})</span>}
+                                </span>
+                              </div>
+                            ))}
+                            {esMayonesaCasera && normal && (
+                              <div style={{ color: C.muted, fontSize: 10, marginTop: 6, borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
+                                Casera {fmt(Math.round(costoCalculado))}/kg · Normal {fmt(normal.precio_por_kg)}/kg · Diferencia {fmt(Math.round(costoCalculado - normal.precio_por_kg))}/kg
+                              </div>
+                            )}
+                            {filas.length > 0 && <div style={{ color: C.muted, fontSize: 10, marginTop: 4 }}>Costo de este insumo dentro de cada producto, con el precio actual.</div>}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
