@@ -155,11 +155,15 @@ const calcularMermasBase = (historial, gastosData, ventasData, recetasData, insu
   return out;
 };
 
-// Comisión efectiva de Pedidos Ya: $142.931 sobre $509.920 de ventas (liquidación a oct-2026) = 28,0%
 // Gustavo: fijo mensual + comisión por cada completo vendido (cuentan los AS y los que van dentro de combos)
 const GUSTAVO_FIJO = 600000;
 const GUSTAVO_POR_COMPLETO = 225;
-const COMISION_PEDIDOS_YA = 0.28;
+// Pedidos Ya: lo que la plataforma retiene EN TOTAL sobre lo que paga el cliente (las ventas PY se registran a ese precio).
+// Liquidaciones 17-ago a 01-nov-2026 (70 pedidos): comisión 28% + IVA, costo plus, cargos por rechazo/demora y reclamos,
+// neto del reintegro = ~41,8%. La comisión sola es 28%, pero no es todo lo que se descuenta.
+const RETENCION_PY_DEFECTO = 0.418;
+const RETENCION_PY_POR_MES = {}; // para fijar otra tasa en un mes, ej: { "2026-12": 0.40 }
+const tasaPY = (mes) => RETENCION_PY_POR_MES[mes] ?? RETENCION_PY_DEFECTO;
 const DESCUENTO_PY = 45;
 const calcPY = (precioLocal) => Math.ceil((Number(precioLocal) || 0) / (1 - DESCUENTO_PY / 100) / 50) * 50;
 // Comisión Mercado Pago por tarjeta (con IVA 19% incluido): débito/prepago 2,19% + IVA, crédito 2,60% + IVA.
@@ -3522,7 +3526,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const fijoGustavoER = esMesParcialER ? Math.round(GUSTAVO_FIJO * diasTranscER / diasMesER) : GUSTAVO_FIJO;
               const gustavoER = fijoGustavoER + GUSTAVO_POR_COMPLETO * completosMes;
               const pagadoGustavoER = sumCat("pago_gustavo");
-              const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * COMISION_PEDIDOS_YA);
+              const tasaPYER = tasaPY(mesSel);
+              const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * tasaPYER);
               const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
               const resultadoER = margenBrutoER - operacionalER - fijosER - equipamientoER - cuotasER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
               const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos, g.tipo_gasto) === "sin_clasificar").map((g) => g.insumo))];
@@ -3629,7 +3634,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   )}
                   {equipamientoER > 0 && filaERDesglose("equipamiento", `(−) Equipamiento y reparaciones${pctER(equipamientoER)}`, fmt(equipamientoER), { color: C.red }, detalleInsumos(gastosDe("equipamiento"), equipamientoER))}
                   {filaER(`(−) Comisión tarjeta (${(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
-                  {filaER(`(−) Comisión Pedidos Ya (${Math.round(COMISION_PEDIDOS_YA * 100)}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
+                  {filaER(`(−) Pedidos Ya: comisión y cargos (${(tasaPYER * 100).toFixed(1).replace(".", ",")}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
+                  <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>Sobre ventas PY de {fmt(porMetodoER("Pedidos Ya"))}. Incluye comisión (28%) + IVA, costo plus, rechazos, demoras y reclamos, según las liquidaciones.</div>
                   {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
                     {esMesParcialER ? `${fmt(fijoGustavoER)} fijo proporcional (${diasTranscER} de ${diasMesER} días)` : `${fmt(GUSTAVO_FIJO)} fijo`} + {fmt(GUSTAVO_POR_COMPLETO)} × {completosMes} completos ({completosSueltos} sueltos + {completosCombo} en combo) = {fmt(GUSTAVO_POR_COMPLETO * completosMes)} variable
