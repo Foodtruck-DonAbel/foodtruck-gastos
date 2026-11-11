@@ -155,6 +155,8 @@ const calcularMermasBase = (historial, gastosData, ventasData, recetasData, insu
 const GUSTAVO_FIJO = 600000;
 const GUSTAVO_POR_COMPLETO = 225;
 const COMISION_PEDIDOS_YA = 0.28;
+const DESCUENTO_PY = 45;
+const calcPY = (precioLocal) => Math.ceil((Number(precioLocal) || 0) / (1 - DESCUENTO_PY / 100) / 50) * 50;
 // Comisión Mercado Pago por tarjeta (con IVA 19% incluido): débito/prepago 2,19% + IVA, crédito 2,60% + IVA.
 // La app no separa débito de crédito, así que se usa un promedio con la mezcla real del portal
 // (14-sep a 14-oct-2026): débito $443.980 + prepago $70.660 + crédito $103.080 = $617.720 → 16,69% crédito.
@@ -1075,8 +1077,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     return calcularCosto(rec.ingredientes, insumosPrecio);
   };
 
-  const precioProducto = (rec) => metodoPago === "Pedidos Ya"
-    ? (rec.precio_py || Math.round(rec.precio_venta * (1 + porcentajePY / 100)))
+const precioProducto = (rec) => metodoPago === "Pedidos Ya"
+    ? calcPY(rec.precio_venta)
     : rec.precio_venta;
 
   const agregarAlCarrito = (rec, optsExtra) => {
@@ -1214,7 +1216,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const data = {
       nombre_producto: formReceta.nombre_producto.trim(), categoria: formReceta.categoria,
       precio_venta: Number(formReceta.precio_venta),
-      precio_py: Number(formReceta.precio_py) || Math.round(Number(formReceta.precio_venta) * (1 + porcentajePY / 100)),
+            precio_py: calcPY(formReceta.precio_venta),
       descripcion_menu: formReceta.descripcion_menu || "",
       ingredientes: esCombo ? [] : formReceta.ingredientes,
       productos_combo: esCombo ? formReceta.productos_combo : [],
@@ -2439,7 +2441,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                   ))}
                 </div>
                 <div style={S.card}>
-                  {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (+{porcentajePY}%)</div>}
+                  {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (descuento {DESCUENTO_PY}%)</div>}
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {recetas.filter((r) => r.categoria === catActiva).sort(cmpOrden).map((rec) => (
@@ -2453,8 +2455,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                             </button>
                             {(() => {
                               const precioAS = metodoPago === "Pedidos Ya"
-                                ? (rec.variante_as.precio_py || Math.round(rec.variante_as.precio_venta * (1 + porcentajePY / 100)))
-                                : rec.variante_as.precio_venta;
+  ? calcPY(rec.variante_as.precio_venta)
+  : rec.variante_as.precio_venta;
                               return (
                                 <button onClick={() => agregarAlCarrito(rec, { variante: "as", precio: precioAS, nombre: rec.nombre_producto })} style={{ flex: 1, background: C.tag, border: `1px solid ${C.blue}`, borderRadius: 7, padding: "7px 4px", cursor: "pointer", textAlign: "center" }}>
                                   <div style={{ fontSize: 9, color: C.blue }}>AS (churrasco)</div>
@@ -3028,9 +3030,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     const venta = Number(ventaEdit !== undefined ? ventaEdit : rec.precio_venta);
                     const margen = venta - costo;
                     const margenPct = venta > 0 ? (margen / venta) * 100 : 0;
-                    const pyDefault = Math.round(venta * (1 + porcentajePY / 100));
-                    const pyGuardado = rec.precio_py || pyDefault;
-                    const pyPct = venta > 0 ? Math.round(((pyGuardado - venta) / venta) * 100) : porcentajePY;
+                    const pyGuardado = calcPY(venta);
                     const costoAS = rec.variante_as ? calcularCosto(ingredientesEfectivos(rec, { variante: "as" }), insumosPrecio) : null;
                     const ventaAS = rec.variante_as?.precio_venta ?? venta;
                     const margenAS = costoAS !== null ? ventaAS - costoAS : null;
@@ -3081,13 +3081,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                               style={{ ...S.inp, fontWeight: 700, fontSize: 13, borderColor: ventaEdit !== undefined ? C.orange : C.border }} />
                           </div>
                           <div>
-                            <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (+{pyPct}%)</div>
-                            <input type="number"
-                              defaultValue={pyGuardado}
-                              key={rec.id + "_py_" + rec.precio_py}
-                              onBlur={async (e) => { const val = Number(e.target.value); if (val !== pyGuardado) await guardarPrecioPY(rec.id, val); }}
-                              style={{ ...S.inp, fontSize: 13 }} />
-                          </div>
+  <div style={{ fontSize: 10, color: C.orange, marginBottom: 3 }}>PY (−{DESCUENTO_PY}%)</div>
+  <div style={{ ...S.inp, fontSize: 13, color: C.orange, fontWeight: 700 }}>{fmt(pyGuardado)}</div>
+</div>
                           <div style={{ textAlign: "center" }}>
                             <div style={{ fontSize: 10, color: C.muted, marginBottom: 3 }}>Ganancia</div>
                             <div style={{ fontWeight: 700, fontSize: 15, color: margen >= 0 ? C.green : C.red }}>{fmt(Math.round(margen))}</div>
@@ -3123,13 +3119,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                                   onChange={(e) => setPrecioASEdit({ ...precioASEdit, [rec.id]: e.target.value })}
                                   style={{ width: 80, background: C.surface, border: `1px solid ${precioASEdit[rec.id] !== undefined ? C.orange : C.blue}`, borderRadius: 5, color: precioASEdit[rec.id] !== undefined ? C.orange : C.blue, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
                               </span>
-                              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ fontSize: 10, color: C.orange }}>PY AS ($)</span>
-                                <input type="number" defaultValue={rec.variante_as.precio_py || Math.round(ventaAS * (1 + porcentajePY / 100))}
-                                  key={rec.id + "_pyAS_" + rec.variante_as.precio_py + "_" + rec.variante_as.precio_venta}
-                                  onBlur={(e) => { const val = Number(e.target.value); const actual = rec.variante_as.precio_py || Math.round(ventaAS * (1 + porcentajePY / 100)); if (val !== actual) actualizarPrecioPYVarianteAS(rec, e.target.value); }}
-                                  style={{ width: 80, background: C.surface, border: `1px solid ${C.orange}`, borderRadius: 5, color: C.orange, fontWeight: 700, fontSize: 12, padding: "3px 6px", textAlign: "center", outline: "none" }} />
-                              </span>
+                             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+  <span style={{ fontSize: 10, color: C.orange }}>PY AS ($)</span>
+  <span style={{ fontWeight: 700, color: C.orange, fontSize: 12 }}>{fmt(calcPY(ventaAS))}</span>
+</span>
                             </div>
                             {precioASEdit[rec.id] !== undefined && (
                               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -3192,7 +3185,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <div style={{ display: "flex", gap: 14, fontSize: 12 }}>
                           {rec.categoria !== "combos" && <span style={{ color: C.muted }}>Costo: <span style={{ color: C.red, fontWeight: 700 }}>{fmt(Math.round(costo))}</span></span>}
                           <span style={{ color: C.muted }}>Precio: <span style={{ color: C.mustard, fontWeight: 700 }}>{fmt(rec.precio_venta)}</span></span>
-                          <span style={{ color: C.muted }}>PY: <span style={{ color: C.orange, fontWeight: 700 }}>{fmt(rec.precio_py || Math.round(rec.precio_venta * (1 + porcentajePY / 100)))}</span></span>
+                          <span style={{ color: C.muted }}>PY: <span style={{ color: C.orange, fontWeight: 700 }}>{fmt(calcPY(rec.precio_venta))}</span></span>
                         </div>
                       </div>
                     );
@@ -3261,7 +3254,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </select>
                   </Fld>
                   <Fld label="Precio normal ($)"><input type="number" value={formReceta.precio_venta} onChange={(e) => setFormReceta({ ...formReceta, precio_venta: e.target.value })} style={S.inp} /></Fld>
-                  <Fld label="Precio PY ($)"><input type="number" placeholder={formReceta.precio_venta ? Math.round(Number(formReceta.precio_venta) * (1 + porcentajePY / 100)) : ""} value={formReceta.precio_py} onChange={(e) => setFormReceta({ ...formReceta, precio_py: e.target.value })} style={S.inp} /></Fld>
+                  <Fld label="Precio PY (automático)"><div style={{ ...S.inp, color: C.orange, fontWeight: 700 }}>{formReceta.precio_venta ? fmt(calcPY(formReceta.precio_venta)) : "—"}</div></Fld>
                 </div>
                 <Fld label="Descripción menú (visible en QR)" full>
                   <textarea placeholder="ej: Vienesa con palta, tomate y mayonesa casera" value={formReceta.descripcion_menu || ""} onChange={(e) => setFormReceta({ ...formReceta, descripcion_menu: e.target.value })} style={{ ...S.inp, minHeight: 60, resize: "vertical", fontFamily: "inherit" }} />
