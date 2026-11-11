@@ -260,6 +260,8 @@ const RECETA_MAYONESA_CASERA = [
   { insumo: "Mostaza", gramos: 10 },
 ];
 const RENDIMIENTO_MAYONESA_CASERA_G = 600; // rinde 600g
+// Insumos que solo se usan dentro de la mayonesa casera: no se lleva su stock (solo importa su precio)
+const SIN_STOCK_INSUMOS = ["Mayonesa Casera", "Mayonesa en Polvo", "Aceite para Mayonesa Casera", "Ciboulette", "Cilantro"];
 // Cebolla caramelizada: se compra "Cebolla" cruda y se cocina en la plancha hasta caramelizar.
 // Medido: 750 g crudos -> 358 g caramelizados (47,7%). Su costo y su stock salen de la cebolla cruda.
 const RENDIMIENTO_CEBOLLA_CARAMELIZADA = 358 / 750;
@@ -381,6 +383,8 @@ export default function App() {
   const [botRegistro, setBotRegistro] = useState(null);
   const [botCantidad, setBotCantidad] = useState("1");
   const [botTipo, setBotTipo] = useState("");
+  const [botInsumoReceta, setBotInsumoReceta] = useState(""); // si el producto de la botillería es un ingrediente de tus recetas
+  const [botContenido, setBotContenido] = useState(""); // contenido de cada unidad, en la unidad del insumo (ej: 0,9 litro)
   const [botTipoRecordado, setBotTipoRecordado] = useState(false); // la categoría viene de un consumo anterior
   const [botTipoSugerido, setBotTipoSugerido] = useState(false); // la categoría se sugirió por el nombre del producto
   const [botCamAbierta, setBotCamAbierta] = useState(false);
@@ -785,7 +789,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     });
 
     // 4. Calcular stock disponible
-    const insumosUnicos = [...new Set(Object.values(MAPA_INSUMOS))].filter((n) => n !== "Mayonesa Casera"); // la mayonesa casera no lleva stock
+    const insumosUnicos = [...new Set(Object.values(MAPA_INSUMOS))].filter((n) => !SIN_STOCK_INSUMOS.includes(n)); // la mayonesa casera y sus ingredientes no llevan stock
     return insumosUnicos.map((nombre) => {
       const ins = insumosData.find((i) => i.nombre === nombre);
       const inicial = invInicialMap[nombre]?.valor || 0;
@@ -953,32 +957,31 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     setRetiroSocio(""); setInversionModo("aparte"); setCuotasN("12");
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
-    const insumoRef = resolverInsumo(insumofinal);
-    const cantidad = Number(form.cantidad);
-    const monto = Number(form.monto);
-    if (insumoRef && cantidad > 0 && monto > 0) {
-      const ins = insumosPrecio.find((i) => i.nombre === insumoRef);
-      // El precio de Recetas es por kg / litro (o por unidad): la cantidad se lleva a esa misma base
-      const compatible = ins && (ins.unidad === "unidad" ? unidadFinal === "unidad" : unidadFinal !== "unidad");
-      if (ins && compatible) {
-        const cantBase = ins.unidad === "unidad" ? cantidad : aGramos(cantidad, unidadFinal) / 1000;
-        const merma = MERMA_INSUMOS[insumoRef] || 0;
-        const cantidadAprovechable = merma > 0 ? cantBase * (1 - merma) : cantBase;
-        const precioNuevo = Math.round(monto / cantidadAprovechable);
-        if (Math.abs(precioNuevo - ins.precio_por_kg) > 5) {
-          // Efecto sobre las preparaciones que usan este insumo (mayonesa casera, cebolla caramelizada)
-          let impacto = null;
-          if (RECETA_MAYONESA_CASERA.some((r) => r.insumo === insumoRef)) {
-            const antes = costoPorKgMayonesaCasera(insumosPrecio);
-            const despues = costoPorKgMayonesaCasera(insumosPrecio.map((i) => (i.id === ins.id ? { ...i, precio_por_kg: precioNuevo } : i)));
-            impacto = { nombre: "Mayonesa casera", antes, despues };
-          } else if (insumoRef === "Cebolla") {
-            impacto = { nombre: "Cebolla caramelizada", antes: ins.precio_por_kg / RENDIMIENTO_CEBOLLA_CARAMELIZADA, despues: precioNuevo / RENDIMIENTO_CEBOLLA_CARAMELIZADA };
-          }
-          setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo, cantidad: cantBase, cantidadAprovechable, merma, impacto });
-        }
-      }
+    proponerActualizarPrecio(resolverInsumo(insumofinal), Number(form.cantidad), Number(form.monto), unidadFinal);
+  };
+
+  // Si el precio de esta compra difiere del de Recetas → Insumos, propone actualizarlo (con el efecto en las preparaciones)
+  const proponerActualizarPrecio = (insumoRef, cantidad, monto, unidadFinal) => {
+    if (!(insumoRef && cantidad > 0 && monto > 0)) return;
+    const ins = insumosPrecio.find((i) => i.nombre === insumoRef);
+    // El precio de Recetas es por kg / litro (o por unidad): la cantidad se lleva a esa misma base
+    const compatible = ins && (ins.unidad === "unidad" ? unidadFinal === "unidad" : unidadFinal !== "unidad");
+    if (!(ins && compatible)) return;
+    const cantBase = ins.unidad === "unidad" ? cantidad : aGramos(cantidad, unidadFinal) / 1000;
+    const merma = MERMA_INSUMOS[insumoRef] || 0;
+    const cantidadAprovechable = merma > 0 ? cantBase * (1 - merma) : cantBase;
+    const precioNuevo = Math.round(monto / cantidadAprovechable);
+    if (Math.abs(precioNuevo - ins.precio_por_kg) <= 5) return;
+    // Efecto sobre las preparaciones que usan este insumo (mayonesa casera, cebolla caramelizada)
+    let impacto = null;
+    if (RECETA_MAYONESA_CASERA.some((r) => r.insumo === insumoRef)) {
+      const antes = costoPorKgMayonesaCasera(insumosPrecio);
+      const despues = costoPorKgMayonesaCasera(insumosPrecio.map((i) => (i.id === ins.id ? { ...i, precio_por_kg: precioNuevo } : i)));
+      impacto = { nombre: "Mayonesa casera", antes, despues };
+    } else if (insumoRef === "Cebolla") {
+      impacto = { nombre: "Cebolla caramelizada", antes: ins.precio_por_kg / RENDIMIENTO_CEBOLLA_CARAMELIZADA, despues: precioNuevo / RENDIMIENTO_CEBOLLA_CARAMELIZADA };
     }
+    setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo, cantidad: cantBase, cantidadAprovechable, merma, impacto });
   };
 
   const elegirProductoBot = (g) => {
@@ -991,6 +994,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     setBotTipo(previo ? previo.tipo_gasto : sugerido);
     setBotTipoRecordado(!!previo);
     setBotTipoSugerido(!!sugerido);
+    // Si este producto ya se registró como ingrediente, se recuerda a cuál y su contenido
+    const previoIng = gastos.find((x) => x.fondo === "Botillería" && (x.nota || "").includes(`Botillería: ${g.nombre} ·`) && (x.nota || "").includes("⟦ing="));
+    const mIng = previoIng ? /⟦ing=([^;]+);cont=([^⟧]+)⟧/.exec(previoIng.nota) : null;
+    setBotInsumoReceta(mIng ? mIng[1] : "");
+    setBotContenido(mIng ? mIng[2] : "");
   };
   // Sugerencia por nombre para lo que se suele sacar de la botillería (se puede cambiar siempre)
   const sugerirTipoBot = (nombre) => {
@@ -1055,26 +1063,33 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const guardarConsumoBotilleria = async () => {
     if (!persona) { showToast("Selecciona quién registra"); return; }
     if (!botProducto || !botRegistro) { showToast("Busca y elige un producto"); return; }
-    if (!botTipo) { showToast("Elige el tipo de gasto"); return; }
+    if (!botInsumoReceta && !botTipo) { showToast("Elige el tipo de gasto"); return; }
     if (!form.fecha) { showToast("Falta la fecha"); return; }
     const cant = Number(String(botCantidad).replace(",", "."));
     if (!cant || cant <= 0) { showToast("Completa la cantidad"); return; }
     const costo = Number(botRegistro.costoReal) || 0;
     if (costo <= 0) { showToast("Ese producto no tiene costo registrado"); return; }
+    const esIngrediente = !!botInsumoReceta;
+    const contenido = Number(String(botContenido).replace(",", "."));
+    if (esIngrediente && !(contenido > 0)) { showToast("Indica el contenido de cada unidad"); return; }
     setSaving(true);
     const monto = Math.round(costo * cant);
+    const unidadIns = esIngrediente ? (unidadFijaDe(botInsumoReceta) || "unidad") : "unidad";
+    const cantTotal = esIngrediente ? Math.round(cant * contenido * 1000) / 1000 : cant;
+    const detalleCosto = `costo real ${fmt(costo)} c/u (${botRegistro.proveedor || "s/prov"}, ${fechaBot(botRegistro.fecha)})`;
     const fila = {
-      fecha: form.fecha, insumo: botProducto.nombre, cantidad: String(cant), unidad: "unidad", fondo: "Botillería", proveedor: "Botillería", monto, persona,
-      nota: `Consumo de botillería · costo real ${fmt(costo)} c/u (${botRegistro.proveedor || "s/prov"}, ${fechaBot(botRegistro.fecha)})${form.nota ? " · " + form.nota : ""}`,
-      tipo_gasto: botTipo,
+      fecha: form.fecha, insumo: esIngrediente ? botInsumoReceta : botProducto.nombre, cantidad: String(cantTotal), unidad: unidadIns, fondo: "Botillería", proveedor: "Botillería", monto, persona,
+      nota: (esIngrediente ? `Botillería: ${botProducto.nombre} · ${cant} und × ${contenido} ${unidadIns} · ${detalleCosto}` : `Consumo de botillería · ${detalleCosto}`) + (form.nota ? " · " + form.nota : "") + (esIngrediente ? ` ⟦ing=${botInsumoReceta};cont=${contenido}⟧` : ""),
     };
+    if (!esIngrediente) fila.tipo_gasto = botTipo;
     if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) fila.mes_corresponde = form.mesCorresponde;
     const { error } = await supabase.from("gastos").insert([fila]);
     if (error) { console.error("Error al guardar consumo de botillería:", error); showToast("❌ Error: " + error.message); setSaving(false); return; }
     showToast(`✓ Consumo guardado — ${fmt(monto)}`);
-    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1"); setBotTipo(""); setBotTipoRecordado(false); setBotTipoSugerido(false);
+    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1"); setBotTipo(""); setBotTipoRecordado(false); setBotTipoSugerido(false); setBotInsumoReceta(""); setBotContenido("");
     setForm({ ...form, nota: "", mesCorresponde: "" });
     cargarGastos(); setSaving(false);
+    if (esIngrediente) proponerActualizarPrecio(botInsumoReceta, cantTotal, monto, unidadIns);
   };
 
   // Precio por kg de cebolla caramelizada: cebolla cruda / rendimiento (null si no existe el insumo "Cebolla")
@@ -1455,7 +1470,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Edita cuánto tienes físicamente de cada insumo ahora. El valor que ingreses reemplaza el stock actual (no se suma). Puedes usar coma o punto para decimales, ej: 0,5</div>
             {!persona && <div style={{ color: C.orange, fontSize: 12, marginBottom: 12, fontWeight: 700 }}>⚠️ Selecciona tu nombre arriba antes de guardar, para identificar quién hizo el ajuste.</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "45vh", overflowY: "auto" }}>
-              {[...new Set(Object.values(MAPA_INSUMOS))].filter((n) => n !== "Cebolla" && n !== "Mayonesa Casera").sort().map((nombre) => {
+              {[...new Set(Object.values(MAPA_INSUMOS))].filter((n) => n !== "Cebolla" && !SIN_STOCK_INSUMOS.includes(n)).sort().map((nombre) => {
                 const ins = insumosPrecio.find((i) => i.nombre === nombre);
                 const invActual = inventarioInicial.find((i) => i.insumo === nombre);
                 const valorInput = ajusteValues[nombre] !== undefined ? ajusteValues[nombre] : (invActual ? String(invActual.cantidad) : "");
@@ -1908,17 +1923,41 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                             })()}
                           </div>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                            <Fld label="Cantidad"><input type="text" inputMode="decimal" value={botCantidad} onChange={(e) => setBotCantidad(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} /></Fld>
-                            <Fld label="Tipo de gasto *">
+                            <Fld label={botInsumoReceta ? "Unidades del producto" : "Cantidad"}><input type="text" inputMode="decimal" value={botCantidad} onChange={(e) => setBotCantidad(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} /></Fld>
+                            <Fld label={botInsumoReceta ? "Tipo de gasto" : "Tipo de gasto *"}>
+                              {botInsumoReceta ? <div style={{ ...S.inp, color: C.green, fontWeight: 700 }}>Costo de ventas</div> : (
                               <select value={botTipo} onChange={(e) => { setBotTipo(e.target.value); setBotTipoRecordado(false); setBotTipoSugerido(false); }} style={S.inp}>
                                 <option value="">Elige el tipo…</option>
                                 {TIPOS_GASTO.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                                 <option value="revisar">No sé: lo revisa Alejandro</option>
-                              </select>
+                              </select>)}
                             </Fld>
                           </div>
                           <div style={{ color: botTipoRecordado ? C.green : botTipoSugerido ? C.orange : C.muted, fontSize: 10 }}>{botTipoRecordado ? "✓ Categoría recordada de un consumo anterior de este producto. Puedes cambiarla." : botTipoSugerido ? "Sugerida por el nombre del producto. Confírmala o cámbiala: la próxima vez queda recordada." : (TIPOS_GASTO.find((t) => t.id === botTipo)?.ayuda || "Producto nuevo: elige una vez el tipo y la próxima vez queda guardado.")}</div>
-                          {botTipo === "costo_ventas" && <div style={{ color: C.muted, fontSize: 10 }}>Si es un ingrediente de tus recetas (tocino, mayonesa…), conviene registrarlo como gasto normal con fondo "Botillería": así también suma a tu stock.</div>}
+                          {!botInsumoReceta && botTipo === "costo_ventas" && <div style={{ color: C.muted, fontSize: 10 }}>Si es un ingrediente de tus recetas (aceite, polvo, tocino…), elígelo abajo en "¿Es un ingrediente de tus recetas?": así actualiza su precio y suma a tu stock.</div>}
+                          <Fld label="¿Es un ingrediente de tus recetas?">
+                            <select value={botInsumoReceta} onChange={(e) => setBotInsumoReceta(e.target.value)} style={S.inp}>
+                              <option value="">No, es consumo interno</option>
+                              {insumosPrecio.filter((i) => !["Mayonesa Casera", "Cebolla Caramelizada"].includes(i.nombre)).map((i) => <option key={i.id} value={i.nombre}>{i.nombre}</option>)}
+                            </select>
+                          </Fld>
+                          {botInsumoReceta && (() => {
+                            const unidadIns = unidadFijaDe(botInsumoReceta) || "unidad";
+                            const cantU = Number(String(botCantidad).replace(",", ".")) || 0;
+                            const cont = Number(String(botContenido).replace(",", ".")) || 0;
+                            const total = cantU * cont;
+                            const costoU = Number(botRegistro?.costoReal) || 0;
+                            return (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                <Fld label={`Contenido de cada unidad (en ${unidadIns}) *`}>
+                                  <input type="text" inputMode="decimal" placeholder="ej: 0,9" value={botContenido} onChange={(e) => setBotContenido(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} />
+                                </Fld>
+                                <div style={{ color: C.muted, fontSize: 10 }}>Ej.: una botella de 900 ml = 0,9 litro. Si el insumo se cuenta por unidad, pon 1.</div>
+                                {total > 0 && costoU > 0 && <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>Total: <span style={{ fontWeight: 700 }}>{Math.round(total * 1000) / 1000} {unidadIns}</span> · <span style={{ color: C.mustard, fontWeight: 700 }}>{fmt(Math.round((costoU * cantU) / total))}</span> por {unidadIns}</div>}
+                                <div style={{ color: C.green, fontSize: 10 }}>Se guarda como compra de "{botInsumoReceta}" (costo de ventas, fondo Botillería) y te propone actualizar su precio en Recetas.</div>
+                              </div>
+                            );
+                          })()}
                           {botRegistro && Number(botRegistro.costoReal) > 0 && (
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
                               <span style={{ color: C.muted, fontSize: 12 }}>{fmt(Number(botRegistro.costoReal))} × {botCantidad || 0}</span>
