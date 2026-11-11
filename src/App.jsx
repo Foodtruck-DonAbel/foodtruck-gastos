@@ -261,6 +261,8 @@ const RECETA_MAYONESA_CASERA = [
 ];
 const RENDIMIENTO_MAYONESA_CASERA_G = 600; // rinde 600g
 // Insumos que solo se usan dentro de la mayonesa casera: no se lleva su stock (solo importa su precio)
+// Contenido habitual de cada unidad comprada (en la unidad del insumo): evita errores al registrar
+const CONTENIDO_DEFECTO_INSUMO = { "Aceite para Mayonesa Casera": 0.9, "Ciboulette": 1, "Cilantro": 1 }; // aceite: botella de 900 ml
 const SIN_STOCK_INSUMOS = ["Mayonesa Casera", "Mayonesa en Polvo", "Aceite para Mayonesa Casera", "Ciboulette", "Cilantro"];
 // Cebolla caramelizada: se compra "Cebolla" cruda y se cocina en la plancha hasta caramelizar.
 // Medido: 750 g crudos -> 358 g caramelizados (47,7%). Su costo y su stock salen de la cebolla cruda.
@@ -1072,6 +1074,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const esIngrediente = !!botInsumoReceta;
     const contenido = Number(String(botContenido).replace(",", "."));
     if (esIngrediente && !(contenido > 0)) { showToast("Indica el contenido de cada unidad"); return; }
+    if (esIngrediente) {
+      const uIns = unidadFijaDe(botInsumoReceta) || "unidad";
+      if ((uIns === "litro" || uIns === "kg") && contenido > 20) { showToast(`¿${contenido} ${uIns} por unidad? Parece mucho: ¿pusiste ml o gramos? (900 ml = 0,9 litro)`); return; }
+    }
     setSaving(true);
     const monto = Math.round(costo * cant);
     const unidadIns = esIngrediente ? (unidadFijaDe(botInsumoReceta) || "unidad") : "unidad";
@@ -1936,7 +1942,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                           <div style={{ color: botTipoRecordado ? C.green : botTipoSugerido ? C.orange : C.muted, fontSize: 10 }}>{botTipoRecordado ? "✓ Categoría recordada de un consumo anterior de este producto. Puedes cambiarla." : botTipoSugerido ? "Sugerida por el nombre del producto. Confírmala o cámbiala: la próxima vez queda recordada." : (TIPOS_GASTO.find((t) => t.id === botTipo)?.ayuda || "Producto nuevo: elige una vez el tipo y la próxima vez queda guardado.")}</div>
                           {!botInsumoReceta && botTipo === "costo_ventas" && <div style={{ color: C.muted, fontSize: 10 }}>Si es un ingrediente de tus recetas (aceite, polvo, tocino…), elígelo abajo en "¿Es un ingrediente de tus recetas?": así actualiza su precio y suma a tu stock.</div>}
                           <Fld label="¿Es un ingrediente de tus recetas?">
-                            <select value={botInsumoReceta} onChange={(e) => setBotInsumoReceta(e.target.value)} style={S.inp}>
+                            <select value={botInsumoReceta} onChange={(e) => { const v = e.target.value; setBotInsumoReceta(v); const d = CONTENIDO_DEFECTO_INSUMO[v]; setBotContenido(d !== undefined ? String(d).replace(".", ",") : ""); }} style={S.inp}>
                               <option value="">No, es consumo interno</option>
                               {insumosPrecio.filter((i) => !["Mayonesa Casera", "Cebolla Caramelizada"].includes(i.nombre)).map((i) => <option key={i.id} value={i.nombre}>{i.nombre}</option>)}
                             </select>
