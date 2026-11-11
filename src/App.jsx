@@ -2441,7 +2441,7 @@ const precioProducto = (rec) => metodoPago === "Pedidos Ya"
                   ))}
                 </div>
                 <div style={S.card}>
-                  {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya (descuento {DESCUENTO_PY}%)</div>}
+                  {metodoPago === "Pedidos Ya" && <div style={{ color: C.orange, fontSize: 11, marginBottom: 8 }}>Precios Pedidos Ya {DESCUENTO_PY}%)</div>}
                   {loadingRecetas && <div style={{ color: C.muted, fontSize: 12 }}>Cargando...</div>}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     {recetas.filter((r) => r.categoria === catActiva).sort(cmpOrden).map((rec) => (
