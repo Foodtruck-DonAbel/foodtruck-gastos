@@ -263,6 +263,7 @@ const RENDIMIENTO_MAYONESA_CASERA_G = 600; // rinde 600g
 // Insumos que solo se usan dentro de la mayonesa casera: no se lleva su stock (solo importa su precio)
 // Contenido habitual de cada unidad comprada (en la unidad del insumo): evita errores al registrar
 const CONTENIDO_DEFECTO_INSUMO = { "Aceite para Mayonesa Casera": 0.9, "Ciboulette": 1, "Cilantro": 1 }; // aceite: botella de 900 ml
+const AYUDA_CONTENIDO_INSUMO = { "Aceite para Mayonesa Casera": "Botella de 900 ml = 0,9 litro. Si compras otro tamaño, cámbialo.", "Ciboulette": "1 ramo = 1 unidad.", "Cilantro": "1 ramo = 1 unidad." };
 const SIN_STOCK_INSUMOS = ["Mayonesa Casera", "Mayonesa en Polvo", "Aceite para Mayonesa Casera", "Ciboulette", "Cilantro"];
 // Cebolla caramelizada: se compra "Cebolla" cruda y se cocina en la plancha hasta caramelizar.
 // Medido: 750 g crudos -> 358 g caramelizados (47,7%). Su costo y su stock salen de la cebolla cruda.
@@ -932,6 +933,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       if (form.insumo === "Retiro de Caja" && retiroDestino === "socio" && !retiroSocio) faltan.push("socio");
       if (faltan.length > 0) { setForm({ ...form, ...err }); showToast("Falta: " + faltan.join(", ")); return; }
     }
+    if (form.insumo === "Aceite para Mayonesa Casera" && Number(form.cantidad) > 20) { showToast(`¿${form.cantidad} litros de aceite? Parece mucho: ¿pusiste ml? (900 ml = 0,9)`); return; }
     const esRetiro = form.insumo === "Retiro de Caja";
     if (esRetiro && retiroDestino === "socio" && !retiroSocio) { showToast("Elige qué socio retira"); return; }
     // Un retiro para el sueldo de Gustavo se guarda como "Pago sueldo Gustavo" (no se cuenta dos veces como costo)
@@ -955,7 +957,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const { error: errGasto } = await supabase.from("gastos").insert([filaGasto]);
     if (errGasto) { console.error("Error al guardar gasto:", errGasto); showToast("❌ Error: " + errGasto.message); setSaving(false); return; }
     showToast("✓ Gasto guardado");
-    setForm({ ...form, cantidad: "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", tipoGasto: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false, _errorProveedor: false, _errorOtro: false, _errorTipo: false, _errorFecha: false });
+    setForm({ ...form, cantidad: CONTENIDO_DEFECTO_INSUMO[form.insumo] !== undefined ? String(CONTENIDO_DEFECTO_INSUMO[form.insumo]) : "", proveedor: "", proveedorCustom: "", monto: "", montoDisplay: "", nota: "", insumoCustom: "", tipoGasto: "", mesCorresponde: "", _errorMonto: false, _errorCantidad: false, _errorProveedor: false, _errorOtro: false, _errorTipo: false, _errorFecha: false });
     setRetiroSocio(""); setInversionModo("aparte"); setCuotasN("12");
     cargarGastos(); setSaving(false);
     // Verificar si hay diferencia de precio con insumos
@@ -2003,7 +2005,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         style={{ ...S.inp, borderColor: form._errorMonto ? C.red : C.border }} />
                       {form._errorMonto && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa el monto</div>}
                     </Fld>
-                    <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => { const unidadAuto = unidadFijaDe(e.target.value); setForm({ ...form, insumo: e.target.value, unidad: unidadAuto || form.unidad }); }} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
+                    <Fld label="Insumo" full><select value={form.insumo} onChange={(e) => { const unidadAuto = unidadFijaDe(e.target.value); const d = CONTENIDO_DEFECTO_INSUMO[e.target.value]; const veniaConDefecto = CONTENIDO_DEFECTO_INSUMO[form.insumo] !== undefined; setForm({ ...form, insumo: e.target.value, unidad: unidadAuto || form.unidad, cantidad: d !== undefined ? String(d) : (veniaConDefecto ? "" : form.cantidad), _errorCantidad: false }); }} style={S.inp}>{insumos.map((i) => <option key={i}>{i}</option>)}</select></Fld>
                     {form.insumo === "Otro" && <Fld label="¿Cuál? *" full><input value={form.insumoCustom} onChange={(e) => setForm({ ...form, insumoCustom: e.target.value, _errorOtro: false })} style={{ ...S.inp, borderColor: form._errorOtro ? C.red : C.border }} /></Fld>}
                     {form.insumo === "Otro" && (
                       <Fld label="Tipo de gasto *" full>
@@ -2052,6 +2054,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     <Fld label={INSUMOS_SIN_CANTIDAD.includes(form.insumo) ? "Cantidad (opcional)" : "Cantidad *"}>
                       <input type="number" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value, _errorCantidad: false })} style={{ ...S.inp, borderColor: form._errorCantidad ? C.red : C.border }} />
                       {form._errorCantidad && <div style={{ color: C.red, fontSize: 11, marginTop: 3 }}>Ingresa la cantidad</div>}
+                      {AYUDA_CONTENIDO_INSUMO[form.insumo] && <div style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{AYUDA_CONTENIDO_INSUMO[form.insumo]}</div>}
                     </Fld>
                     <Fld label="Unidad">{ unidadFijaDe(form.insumo) ? (<div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, color: C.mustard, padding: "8px 10px", fontSize: 13, fontWeight: 700 }}>{unidadFijaDe(form.insumo)} <span style={{ color: C.muted, fontWeight: 400, fontSize: 11 }}>(fija según el insumo)</span></div>) : (<select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value })} style={S.inp}>{["unidad","kg","g","litro","ml","paquete","caja","bolsa"].map((u) => <option key={u}>{u}</option>)}</select>) }</Fld>
                     <Fld label="Fondo"><select value={form.fondo} onChange={(e) => setForm({ ...form, fondo: e.target.value })} style={S.inp}>{FONDOS.map((f) => <option key={f}>{f}</option>)}</select></Fld>
