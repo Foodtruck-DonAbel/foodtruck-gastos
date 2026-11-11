@@ -594,7 +594,8 @@ export default function App() {
     // Insumo base de la cebolla cruda: la caramelizada se calcula a partir de él (se crea una sola vez si falta)
     if (ins && ins.length > 0 && !ins.some((i) => i.nombre === "Cebolla") && !cebollaSembrada.current) {
       cebollaSembrada.current = true;
-      const { error: errCeb } = await supabase.from("insumos_precio").insert([{ nombre: "Cebolla", precio_por_kg: 1840, unidad: "kg" }]);
+      const { data: yaExiste } = await supabase.from("insumos_precio").select("id").eq("nombre", "Cebolla").limit(1);
+      const { error: errCeb } = (yaExiste && yaExiste.length > 0) ? { error: null } : await supabase.from("insumos_precio").insert([{ nombre: "Cebolla", precio_por_kg: 1840, unidad: "kg" }]);
       if (errCeb) { cebollaSembrada.current = false; console.error("No se pudo crear el insumo Cebolla:", errCeb); }
       else { const { data: ins3 } = await supabase.from("insumos_precio").select("*").order("nombre"); if (ins3) setInsumosPrecio(ins3); }
     }
@@ -784,7 +785,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     });
 
     // 4. Calcular stock disponible
-    const insumosUnicos = [...new Set(Object.values(MAPA_INSUMOS))];
+    const insumosUnicos = [...new Set(Object.values(MAPA_INSUMOS))].filter((n) => n !== "Mayonesa Casera"); // la mayonesa casera no lleva stock
     return insumosUnicos.map((nombre) => {
       const ins = insumosData.find((i) => i.nombre === nombre);
       const inicial = invInicialMap[nombre]?.valor || 0;
@@ -965,7 +966,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         const cantidadAprovechable = merma > 0 ? cantBase * (1 - merma) : cantBase;
         const precioNuevo = Math.round(monto / cantidadAprovechable);
         if (Math.abs(precioNuevo - ins.precio_por_kg) > 5) {
-          setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo, cantidad: cantBase, cantidadAprovechable, merma });
+          // Efecto sobre las preparaciones que usan este insumo (mayonesa casera, cebolla caramelizada)
+          let impacto = null;
+          if (RECETA_MAYONESA_CASERA.some((r) => r.insumo === insumoRef)) {
+            const antes = costoPorKgMayonesaCasera(insumosPrecio);
+            const despues = costoPorKgMayonesaCasera(insumosPrecio.map((i) => (i.id === ins.id ? { ...i, precio_por_kg: precioNuevo } : i)));
+            impacto = { nombre: "Mayonesa casera", antes, despues };
+          } else if (insumoRef === "Cebolla") {
+            impacto = { nombre: "Cebolla caramelizada", antes: ins.precio_por_kg / RENDIMIENTO_CEBOLLA_CARAMELIZADA, despues: precioNuevo / RENDIMIENTO_CEBOLLA_CARAMELIZADA };
+          }
+          setModalActualizarPrecio({ insumoRef, ins, precioActual: ins.precio_por_kg, precioNuevo, cantidad: cantBase, cantidadAprovechable, merma, impacto });
         }
       }
     }
@@ -1232,6 +1242,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       if (error) { console.error("Error al actualizar insumo:", error); showToast("❌ Error: " + error.message); return; }
       showToast("✓ Actualizado"); setEditInsumoId(null);
     } else {
+      if (insumosPrecio.some((i) => normNombre(i.nombre) === normNombre(data.nombre))) { showToast(`Ya existe un insumo llamado "${data.nombre}"`); return; }
       const { error } = await supabase.from("insumos_precio").insert([data]);
       if (error) { console.error("Error al agregar insumo:", error); showToast("❌ Error: " + error.message); return; }
       showToast("✓ Agregado");
@@ -1444,7 +1455,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>Edita cuánto tienes físicamente de cada insumo ahora. El valor que ingreses reemplaza el stock actual (no se suma). Puedes usar coma o punto para decimales, ej: 0,5</div>
             {!persona && <div style={{ color: C.orange, fontSize: 12, marginBottom: 12, fontWeight: 700 }}>⚠️ Selecciona tu nombre arriba antes de guardar, para identificar quién hizo el ajuste.</div>}
             <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: "45vh", overflowY: "auto" }}>
-              {[...new Set(Object.values(MAPA_INSUMOS))].filter((n) => n !== "Cebolla").sort().map((nombre) => {
+              {[...new Set(Object.values(MAPA_INSUMOS))].filter((n) => n !== "Cebolla" && n !== "Mayonesa Casera").sort().map((nombre) => {
                 const ins = insumosPrecio.find((i) => i.nombre === nombre);
                 const invActual = inventarioInicial.find((i) => i.insumo === nombre);
                 const valorInput = ajusteValues[nombre] !== undefined ? ajusteValues[nombre] : (invActual ? String(invActual.cantidad) : "");
@@ -1727,6 +1738,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               )}
               <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio actual en recetas:</span><span style={{ fontWeight: 700 }}>{fmt(modalActualizarPrecio.precioActual)}/{modalActualizarPrecio.ins.unidad}</span></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.muted }}>Precio según esta compra:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(modalActualizarPrecio.precioNuevo)}/{modalActualizarPrecio.ins.unidad}</span></div>
+              {modalActualizarPrecio.impacto && (
+                <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
+                  <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>Efecto en la preparación</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                    <span>{modalActualizarPrecio.impacto.nombre}</span>
+                    <span><span style={{ fontWeight: 700 }}>{fmt(Math.round(modalActualizarPrecio.impacto.antes))}</span> → <span style={{ fontWeight: 800, color: modalActualizarPrecio.impacto.despues > modalActualizarPrecio.impacto.antes ? C.red : C.green }}>{fmt(Math.round(modalActualizarPrecio.impacto.despues))}</span> <span style={{ color: C.muted, fontSize: 10 }}>por kg</span></span>
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ color: C.muted, fontSize: 12, marginBottom: 16 }}>¿Actualizar el costo en recetas con el nuevo precio?</div>
             <div style={{ display: "flex", gap: 8 }}>
