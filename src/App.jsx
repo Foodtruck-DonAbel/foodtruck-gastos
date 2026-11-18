@@ -182,6 +182,36 @@ const COMISION_TARJETA_DEBITO = 0.0219 * 1.19;
 const COMISION_TARJETA_CREDITO = 0.026 * 1.19;
 const PCT_CREDITO_ESTIMADO = 0.1669; // proporción de crédito en las ventas con tarjeta (revisar cada tanto con el portal)
 const COMISION_TARJETA = COMISION_TARJETA_DEBITO * (1 - PCT_CREDITO_ESTIMADO) + COMISION_TARJETA_CREDITO * PCT_CREDITO_ESTIMADO;
+// Resume los pagos con tarjeta cobrados con Point: por tipo (débito, crédito, prepago).
+// Si Mercado Pago informó la comisión se usa esa (real); si solo se sabe el tipo, se estima con la tasa de ese tipo.
+const resumenTarjeta = (ventasLista) => {
+  const porTipo = {}; let feeReal = 0, cubiertoReal = 0, feeEstTipo = 0, cubiertoTipo = 0;
+  ventasLista.forEach((v) => {
+    if (v.metodo_pago !== "Tarjeta" && v.metodo_pago !== "Mixto") return;
+    const n = notaDe(v);
+    if (n.point_total === undefined && n.point_fee === undefined && !n.point_tipo) return;
+    const monto = Number(n.point_total) || 0;
+    const t = n.point_tipo || "otro";
+    if (!porTipo[t]) porTipo[t] = { n: 0, monto: 0, fee: 0, estimado: false };
+    porTipo[t].n += 1; porTipo[t].monto += monto;
+    if (n.point_fee !== undefined) { const f = Number(n.point_fee) || 0; porTipo[t].fee += f; feeReal += f; cubiertoReal += monto; }
+    else {
+      const tasa = t === "credit_card" ? COMISION_TARJETA_CREDITO : (t === "debit_card" || t === "prepaid_card") ? COMISION_TARJETA_DEBITO : COMISION_TARJETA;
+      const f = Math.round(monto * tasa); porTipo[t].fee += f; porTipo[t].estimado = true; feeEstTipo += f; cubiertoTipo += monto;
+    }
+  });
+  return { porTipo, feeReal, cubiertoReal, feeEstTipo, cubiertoTipo };
+};
+// Texto corto con el reparto débito/crédito de una lista de ventas (para el correo de cierre de caja)
+const textoDesgloseTarjeta = (lista) => {
+  const total = lista.reduce((a, v) => a + montoMetodo(v, "Tarjeta"), 0);
+  if (total <= 0) return "";
+  const r = resumenTarjeta(lista);
+  const partes = Object.entries(r.porTipo).map(([t, d]) => `${TIPO_TARJETA_TXT[t] || t} ${fmt(d.monto)}`);
+  const sin = Math.max(total - r.cubiertoReal - r.cubiertoTipo, 0);
+  if (sin > 0) partes.push(`sin dato de tipo ${fmt(sin)}`);
+  return partes.length ? ` (${partes.join(" · ")})` : "";
+};
 
 // Meses recientes (YYYY-MM) y nombre legible, para elegir a qué mes corresponde un gasto
 const mesesRecientes = (n = 12) => { const out = []; const d = new Date(); for (let i = 0; i < n; i++) { const x = new Date(d.getFullYear(), d.getMonth() - i, 1); out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`); } return out; };
@@ -415,6 +445,9 @@ export default function App() {
   const [puntoEstado, setPuntoEstado] = useState(null); // estado del cobro en curso (null = ninguno)
   const [puntoPendiente, setPuntoPendiente] = useState(null); // cobro iniciado que quedó sin registrar
   const [puntoTipo, setPuntoTipo] = useState(""); // medio permitido en la terminal: "" (cualquiera) | debit_card | credit_card | qr
+  const [dashTarjetaAbierta, setDashTarjetaAbierta] = useState(false); // desglose débito/crédito en el dashboard
+  const [cierreTarjetaAbierta, setCierreTarjetaAbierta] = useState(false); // ... en el cierre de caja
+  const [cajaTarjetaAbierta, setCajaTarjetaAbierta] = useState(null); // ... en el historial de caja (id del turno)
   const [efectivoParcial, setEfectivoParcial] = useState(""); // parte del pedido que paga en efectivo (el resto va con tarjeta)
   // Destino de los retiros de caja
   const [retiroDestino, setRetiroDestino] = useState("sueldo"); // "sueldo" | "socio"
@@ -733,6 +766,14 @@ Diferencia con cierre anterior: ${fmt(diferencia)}` : ""}`;
     return { ventasTurno, efectivo, tarjeta, py, cortesiasTurno, gastosTurno, efectivoEsperado };
   };
 
+  // Ventas hechas entre la apertura y el cierre de un turno ya cerrado (para ver su reparto débito/crédito)
+  const ventasDeTurnoCerrado = (cierre) => {
+    const i = historialTurnos.findIndex((x) => x.id === cierre.id);
+    const ap = historialTurnos.slice(i + 1).find((x) => x.tipo === "apertura");
+    if (!ap) return [];
+    return ventas.filter((v) => !esComponente(v) && v.created_at >= ap.created_at && v.created_at <= cierre.created_at);
+  };
+
   const cerrarCaja = async (saldoFinal) => {
     const resumen = calcularResumenTurno();
     if (!resumen) return;
@@ -751,7 +792,7 @@ Gastos efectivo: ${fmt(resumenTurno.gastosTurno)}
 Efectivo esperado: ${fmt(resumenTurno.efectivoEsperado)}
 Saldo final contado: ${fmt(saldoFinal)}
 Diferencia: ${fmt(diferencia)}
-Tarjeta: ${fmt(resumenTurno.tarjeta)}
+Tarjeta: ${fmt(resumenTurno.tarjeta)}${textoDesgloseTarjeta(resumenTurno.ventasTurno)}
 Pedidos Ya: ${fmt(resumenTurno.py)}
 Cortesías: ${resumen.cortesiasTurno.length}`;
     await enviarEmail("🔴 Cierre", msg);
@@ -1349,9 +1390,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         } catch { /* la comisión real es opcional: si falla, se estima */ }
       }
       const rows = construirFilasVenta(pend.items, { fecha: pend.fecha, quien: pend.quien, efectivo: pend.efectivo, extraNota: { point_order: pend.orderId, ...(pagoId ? { point_payment: String(pagoId) } : {}) } });
-      if (fee !== null && rows.length > 0) {
+      if ((fee !== null || tipoTarjeta) && rows.length > 0) {
         let n = {}; try { n = JSON.parse(rows[0].nota || "{}"); } catch { n = {}; }
-        rows[0].nota = JSON.stringify({ ...n, point_fee: fee, point_total: pend.monto, ...(tipoTarjeta ? { point_tipo: tipoTarjeta } : {}) });
+        rows[0].nota = JSON.stringify({ ...n, point_total: pend.monto, ...(fee !== null ? { point_fee: fee } : {}), ...(tipoTarjeta ? { point_tipo: tipoTarjeta } : {}) });
       }
       const { error } = await supabase.from("ventas").insert(rows);
       if (error) {
@@ -1360,7 +1401,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         return;
       }
       limpiarPuntoPendiente(); setPuntoEstado(null);
-      if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); }
+      if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); }
       const tiposEsperados = ["debit_card", "credit_card", "prepaid_card", "account_money", "bank_transfer"];
       if (tipoTarjeta && !tiposEsperados.includes(tipoTarjeta)) showToast(`⚠️ Se pagó con "${tipoTarjeta}" en la terminal: revisa que sea tarjeta o QR`);
       else showToast(`✓ Cobrado con Point — ${fmt(pend.monto)}`);
@@ -1753,7 +1794,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>+ Ventas efectivo:</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(resumenTurno.efectivo)}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>- Gastos efectivo:</span><span style={{ fontWeight: 700, color: C.red }}>{fmt(resumenTurno.gastosTurno)}</span></div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}><span style={{ fontWeight: 700 }}>Efectivo esperado:</span><span style={{ fontWeight: 800, fontSize: 16, color: C.mustard }}>{fmt(resumenTurno.efectivoEsperado)}</span></div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4 }}><span style={{ color: C.muted }}>Tarjeta:</span><span style={{ fontWeight: 700, color: C.blue }}>{fmt(resumenTurno.tarjeta)}</span></div>
+                <div onClick={() => setCierreTarjetaAbierta(!cierreTarjetaAbierta)} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginTop: 4, cursor: "pointer" }}><span style={{ color: C.muted }}>{cierreTarjetaAbierta ? "▼" : "▶"} Tarjeta:</span><span style={{ fontWeight: 700, color: C.blue }}>{fmt(resumenTurno.tarjeta)}</span></div>
+                {cierreTarjetaAbierta && <DesgloseTarjeta lista={resumenTurno.ventasTurno} />}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Pedidos Ya:</span><span style={{ fontWeight: 700, color: C.orange }}>{fmt(resumenTurno.py)}</span></div>
                 {resumenTurno.cortesiasTurno.length > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.muted }}>Cortesías:</span><span style={{ fontWeight: 700 }}>{resumenTurno.cortesiasTurno.length}</span></div>}
               </div>
@@ -2848,12 +2890,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         </label>
                         {puntoModo && (
                           <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: 12, color: C.muted, marginBottom: 5 }}>¿Con qué va a pagar el cliente?</div>
                             <div style={{ display: "flex", gap: 6 }}>
-                              {[{ id: "debit_card", label: "Débito" }, { id: "credit_card", label: "Crédito" }, { id: "qr", label: "QR" }, { id: "", label: "Cualquiera" }].map((t) => (
+                              {[{ id: "debit_card", label: "Débito" }, { id: "credit_card", label: "Crédito" }, { id: "qr", label: "QR" }, { id: "", label: "Que elija" }].map((t) => (
                                 <button key={t.id || "any"} onClick={() => setPuntoTipo(t.id)} style={{ flex: 1, background: puntoTipo === t.id ? C.blue : C.tag, color: puntoTipo === t.id ? "#fff" : C.muted, border: "none", borderRadius: 7, padding: "7px 2px", cursor: "pointer", fontSize: 11, fontWeight: puntoTipo === t.id ? 700 : 400 }}>{t.label}</button>
                               ))}
                             </div>
-                            <div style={{ color: puntoTipo ? C.green : C.orange, fontSize: 10, marginTop: 4 }}>{puntoTipo ? "La terminal solo aceptará este medio: no ofrecerá efectivo." : "Cualquiera: el cliente elige en la terminal y puede aparecer la opción de efectivo."}</div>
+                            <div style={{ color: puntoTipo ? C.green : C.orange, fontSize: 10, marginTop: 4 }}>{puntoTipo === "debit_card" ? "La terminal solo aceptará tarjeta de DÉBITO. No ofrecerá efectivo." : puntoTipo === "credit_card" ? "La terminal solo aceptará tarjeta de CRÉDITO. No ofrecerá efectivo." : puntoTipo === "qr" ? "La terminal solo aceptará pago con QR. Una tarjeta no funcionará." : "El cliente elige cómo pagar en la terminal (puede aparecer la opción de efectivo)."}</div>
                           </div>
                         )}
                       </>
@@ -3033,11 +3076,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     {metodosPeriodo.length === 0 && <Empty />}
                     {metodosPeriodo.map((x) => (
                       <div key={x.m} style={{ marginBottom: 10 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: metodoPagoColors[x.m], display: "inline-block" }} />{x.m}</span>
+                        <div onClick={x.m === "Tarjeta" ? () => setDashTarjetaAbierta(!dashTarjetaAbierta) : undefined} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4, cursor: x.m === "Tarjeta" ? "pointer" : "default" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 8, height: 8, borderRadius: "50%", background: metodoPagoColors[x.m], display: "inline-block" }} />{x.m}{x.m === "Tarjeta" && <span style={{ color: C.muted, fontSize: 11 }}>{dashTarjetaAbierta ? "▼ débito / crédito" : "▶ débito / crédito"}</span>}</span>
                           <span style={{ fontWeight: 700, color: metodoPagoColors[x.m] }}>{fmt(x.t)}</span>
                         </div>
                         <Bar value={x.t} max={Math.max(...metodosPeriodo.map((v) => v.t)) || 1} color={metodoPagoColors[x.m]} />
+                        {x.m === "Tarjeta" && dashTarjetaAbierta && <DesgloseTarjeta lista={ventasPeriodo} conComision={persona === "Alejandro"} />}
                       </div>
                     ))}
                   </div>
@@ -3332,9 +3376,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <div>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 12, marginBottom: 6 }}>
                             <div><span style={{ color: C.muted }}>Efectivo: </span><span style={{ color: C.green, fontWeight: 700 }}>{fmt(t.ventas_efectivo)}</span></div>
-                            <div><span style={{ color: C.muted }}>Tarjeta: </span><span style={{ color: C.blue, fontWeight: 700 }}>{fmt(t.ventas_tarjeta)}</span></div>
+                            <div onClick={() => setCajaTarjetaAbierta(cajaTarjetaAbierta === t.id ? null : t.id)} style={{ cursor: "pointer" }}><span style={{ color: C.muted }}>{cajaTarjetaAbierta === t.id ? "▼" : "▶"} Tarjeta: </span><span style={{ color: C.blue, fontWeight: 700 }}>{fmt(t.ventas_tarjeta)}</span></div>
                             <div><span style={{ color: C.muted }}>PY: </span><span style={{ color: C.orange, fontWeight: 700 }}>{fmt(t.ventas_py)}</span></div>
                           </div>
+                          {cajaTarjetaAbierta === t.id && <DesgloseTarjeta lista={ventasDeTurnoCerrado(t)} conComision />}
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: diferenciaGrande ? (C.red + "22") : C.bg, borderRadius: 8, padding: "8px 10px" }}>
                             <span style={{ fontSize: 12, color: C.muted }}>Saldo final contado: <span style={{ color: C.text, fontWeight: 700 }}>{fmt(t.saldo_final)}</span></span>
                             <span style={{ fontSize: 13, fontWeight: 800, color: t.diferencia === 0 ? C.muted : t.diferencia < 0 ? C.red : C.green }}>
@@ -3778,14 +3823,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const pagadoGustavoER = sumCat("pago_gustavo");
               const tasaPYER = tasaPY(mesSel);
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * tasaPYER);
-              // Comisión de tarjeta: real (de Mercado Pago, guardada al cobrar con Point) donde existe; estimada para el resto
-              const ventasTarjetaER = vMes.filter((v) => v.metodo_pago === "Tarjeta" || v.metodo_pago === "Mixto");
-              const feeRealER = ventasTarjetaER.reduce((acc, v) => acc + (Number(parseNota(v).point_fee) || 0), 0);
-              const cubiertoER = ventasTarjetaER.reduce((acc, v) => { const n = parseNota(v); return acc + (n.point_fee !== undefined ? (Number(n.point_total) || 0) : 0); }, 0);
-              const porTipoER = {};
-              ventasTarjetaER.forEach((v) => { const n = parseNota(v); if (n.point_fee === undefined) return; const t = n.point_tipo || "otro"; if (!porTipoER[t]) porTipoER[t] = { n: 0, monto: 0, fee: 0 }; porTipoER[t].n += 1; porTipoER[t].monto += Number(n.point_total) || 0; porTipoER[t].fee += Number(n.point_fee) || 0; });
+              // Comisión de tarjeta: real (de Mercado Pago, al cobrar con Point) donde existe; por tipo (débito/crédito) donde solo se sabe el tipo; estimada para el resto
+              const resTarjetaER = resumenTarjeta(vMes);
+              const porTipoER = resTarjetaER.porTipo;
+              const cubiertoER = resTarjetaER.cubiertoReal + resTarjetaER.cubiertoTipo;
               const estimadoBaseER = Math.max(porMetodoER("Tarjeta") - cubiertoER, 0);
-              const comisionTarjetaER = Math.round(feeRealER + estimadoBaseER * COMISION_TARJETA);
+              const comisionTarjetaER = Math.round(resTarjetaER.feeReal + resTarjetaER.feeEstTipo + estimadoBaseER * COMISION_TARJETA);
               const montoPointER = Object.values(porTipoER).reduce((acc, d) => acc + d.monto, 0);
               const pctCreditoRealER = montoPointER > 0 ? Math.round(((porTipoER.credit_card ? porTipoER.credit_card.monto : 0) / montoPointER) * 100) : null;
               const resultadoER = margenBrutoER - operacionalER - fijosER - equipamientoER - cuotasER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
@@ -3838,8 +3881,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </select>
                   </div>
                   {filaER("Ventas brutas", fmt(totalVentasER), { color: C.green })}
-                  <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>
-                    Efectivo {fmt(porMetodoER("Efectivo"))} · Tarjeta {fmt(porMetodoER("Tarjeta"))} · Pedidos Ya {fmt(porMetodoER("Pedidos Ya"))}
+                  <div style={{ padding: "2px 0 6px 12px", borderBottom: `1px solid ${C.border}` }}>
+                    <div style={{ fontSize: 11, color: C.muted }}>
+                      Efectivo {fmt(porMetodoER("Efectivo"))} · <span onClick={() => setErAbierto({ ...erAbierto, ventasTarjeta: !erAbierto.ventasTarjeta })} style={{ color: C.blue, cursor: "pointer", fontWeight: 700 }}>{erAbierto.ventasTarjeta ? "▼" : "▶"} Tarjeta {fmt(porMetodoER("Tarjeta"))}</span> · Pedidos Ya {fmt(porMetodoER("Pedidos Ya"))}
+                    </div>
+                    {erAbierto.ventasTarjeta && <DesgloseTarjeta lista={vMes} conComision />}
                   </div>
                   {filaERDesglose("costo", `(−) Costo de ventas${pctER(costoVentasTotalER)}`, fmt(costoVentasTotalER), { color: C.red },
                     detalleInsumos(gastosDe("costo_ventas"), costoVentasTotalER, costoBebidasER > 0 ? (
@@ -3892,23 +3938,23 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                   )}
                   {equipamientoER > 0 && filaERDesglose("equipamiento", `(−) Equipamiento y reparaciones${pctER(equipamientoER)}`, fmt(equipamientoER), { color: C.red }, detalleInsumos(gastosDe("equipamiento"), equipamientoER))}
-                  {filaERDesglose("tarjeta", `(−) Comisión tarjeta (${(porMetodoER("Tarjeta") > 0 ? (comisionTarjetaER / porMetodoER("Tarjeta")) * 100 : COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red },
-                    <div>
+                  {filaER(`(−) Comisión tarjeta (${(porMetodoER("Tarjeta") > 0 ? (comisionTarjetaER / porMetodoER("Tarjeta")) * 100 : COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
+                  <div style={{ padding: "2px 0 6px 12px", borderBottom: `1px solid ${C.border}` }}>
                       {Object.entries(porTipoER).sort((x, y) => y[1].monto - x[1].monto).map(([t, d]) => (
                         <div key={t} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 }}>
                           <span>{TIPO_TARJETA_TXT[t] || t} <span style={{ color: C.muted, fontSize: 10 }}>{d.n} {d.n === 1 ? "pago" : "pagos"} · {fmt(d.monto)}</span></span>
-                          <span style={{ whiteSpace: "nowrap" }}><span style={{ fontWeight: 700 }}>{fmt(d.fee)}</span> <span style={{ color: C.muted, fontSize: 10 }}>({d.monto > 0 ? ((d.fee / d.monto) * 100).toFixed(2).replace(".", ",") : "0,00"}%)</span></span>
+                          <span style={{ whiteSpace: "nowrap" }}><span style={{ fontWeight: 700 }}>{fmt(d.fee)}</span> <span style={{ color: C.muted, fontSize: 10 }}>({d.monto > 0 ? ((d.fee / d.monto) * 100).toFixed(2).replace(".", ",") : "0,00"}%{d.estimado ? ", estimada" : ""})</span></span>
                         </div>
                       ))}
                       {estimadoBaseER > 0 && (
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 }}>
-                          <span>Sin dato de Point <span style={{ color: C.muted, fontSize: 10 }}>{fmt(estimadoBaseER)} · estimado al {(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%</span></span>
+                          <span>Sin dato del tipo de tarjeta <span style={{ color: C.muted, fontSize: 10 }}>{fmt(estimadoBaseER)} · estimada al promedio {(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%</span></span>
                           <span style={{ fontWeight: 700 }}>{fmt(Math.round(estimadoBaseER * COMISION_TARJETA))}</span>
                         </div>
                       )}
                       {Object.keys(porTipoER).length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Aún no hay pagos cobrados con Point este mes: todo se estima.</div>}
                       {pctCreditoRealER !== null && <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>Mezcla real con Point: {pctCreditoRealER}% crédito (la estimación usa {Math.round(PCT_CREDITO_ESTIMADO * 100)}%). Cuando haya varios pagos, conviene ajustar esa cifra en el código.</div>}
-                    </div>)}
+                    </div>
                   {filaER(`(−) Pedidos Ya: comisión y cargos (${(tasaPYER * 100).toFixed(1).replace(".", ",")}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>Sobre ventas PY de {fmt(porMetodoER("Pedidos Ya"))}. Incluye comisión (28%) + IVA, costo plus, rechazos, demoras y reclamos, según las liquidaciones.</div>
                   {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
@@ -4137,6 +4183,34 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   );
 }
 
+// Reparto del total con tarjeta en débito / crédito / prepago (y lo que no tiene dato de tipo). `lista` = ventas sin filas de componentes de combos.
+function DesgloseTarjeta({ lista, conComision }) {
+  const total = lista.reduce((a, v) => a + montoMetodo(v, "Tarjeta"), 0);
+  if (total <= 0) return null;
+  const r = resumenTarjeta(lista);
+  const sinDato = Math.max(total - r.cubiertoReal - r.cubiertoTipo, 0);
+  const filas = Object.entries(r.porTipo).sort((a, b) => b[1].monto - a[1].monto);
+  const fila = { display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 };
+  return (
+    <div style={{ background: C.bg, borderRadius: 8, padding: "6px 10px", margin: "4px 0" }}>
+      {filas.map(([t, d]) => (
+        <div key={t} style={fila}>
+          <span style={{ color: C.text }}>{TIPO_TARJETA_TXT[t] || t} <span style={{ color: C.muted, fontSize: 10 }}>{d.n} {d.n === 1 ? "pago" : "pagos"}</span></span>
+          <span style={{ whiteSpace: "nowrap" }}>
+            <span style={{ fontWeight: 700, color: C.blue }}>{fmt(d.monto)}</span>
+            {conComision && <span style={{ color: C.muted, fontSize: 10 }}> · comisión {fmt(d.fee)}{d.estimado ? " (est.)" : ""}</span>}
+          </span>
+        </div>
+      ))}
+      {sinDato > 0 && (
+        <div style={fila}>
+          <span style={{ color: C.muted }}>Sin dato de tipo <span style={{ fontSize: 10 }}>(a mano o antes de Point)</span></span>
+          <span style={{ fontWeight: 700, color: C.muted }}>{fmt(sinDato)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 function Fld({ label, children, full }) {
   return <div style={{ gridColumn: full ? "1 / -1" : undefined }}><div style={{ color: "#8A8496", fontSize: 11, marginBottom: 5 }}>{label}</div>{children}</div>;
 }
