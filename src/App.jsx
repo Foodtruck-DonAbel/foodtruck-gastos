@@ -402,7 +402,7 @@ export default function App() {
   const [ventaView, setVentaView] = useState("registrar");
   const [catActiva, setCatActiva] = useState("completos");
   const [carrito, setCarrito] = useState([]);
-  const [metodoPago, setMetodoPago] = useState("Efectivo");
+  const [metodoPago, setMetodoPago] = useState("Tarjeta"); // lo más frecuente: por defecto siempre Tarjeta
   const [fechaVenta, setFechaVenta] = useState(today());
   const [savingVenta, setSavingVenta] = useState(false);
   const [filtroVentas, setFiltroVentas] = useState({ mes: "", metodo: "" });
@@ -560,7 +560,7 @@ export default function App() {
   useEffect(() => {
     if (view === "home") { cargarGastos(); cargarVentas(); cargarRecetas(); }
     if (view === "gastos") { cargarGastos(); cargarVentas(); cargarInventarioInicial(); if (recetas.length === 0) cargarRecetas(); setForm((f) => ({ ...f, fecha: today() })); }
-    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); setFechaVenta(today()); if (persona === "Alejandro") cargarHistorialTurnos(); }
+    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); setFechaVenta(today()); setMetodoPago("Tarjeta"); if (persona === "Alejandro") cargarHistorialTurnos(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); cargarRecetas(); cargarInventarioInicial(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
@@ -1416,7 +1416,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         return;
       }
       limpiarPuntoPendiente(); setPuntoEstado(null);
-      if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); }
+      if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); setMetodoPago("Tarjeta"); }
       const etiquetaTipo = TIPO_TARJETA_TXT[tipoDetectado] || null;
       showToast(comoEfectivo ? `✓ Registrado como EFECTIVO — ${fmt(pend.monto)}` : `✓ Cobrado con Point — ${fmt(pend.monto)}${etiquetaTipo ? " · " + etiquetaTipo : ""}`);
       cargarVentas();
@@ -1510,7 +1510,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const rows = construirFilasVenta(carrito, { fecha: fechaVenta, quien: persona, efectivo });
     const { error } = await supabase.from("ventas").insert(rows);
     if (error) showToast("Error al guardar");
-    else { showToast(`✓ Venta — ${fmt(totalCarrito)}`); setCarrito([]); setEfectivoParcial(""); cargarVentas(); }
+    else { showToast(`✓ Venta — ${fmt(totalCarrito)}`); setCarrito([]); setEfectivoParcial(""); setMetodoPago("Tarjeta"); cargarVentas(); }
     setSavingVenta(false);
   };
 
@@ -2970,7 +2970,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     <button onClick={registrarVenta} disabled={savingVenta || (puntoDisponible && puntoModo && carrito.some((c) => c.metodo_pago === "Tarjeta") && !puntoTipo)} style={{ marginTop: 10, background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "12px 0", fontWeight: 700, fontSize: 15, cursor: "pointer", width: "100%" }}>
                       {savingVenta ? "Guardando..." : (puntoDisponible && puntoModo && carrito.some((c) => c.metodo_pago === "Tarjeta") && !puntoTipo) ? "Elige débito, crédito o QR para cobrar" : (puntoDisponible && puntoModo && carrito.length > 0 && carrito.some((c) => c.metodo_pago === "Tarjeta")) ? `💳 Cobrar ${fmt(Math.max(totalCarrito - (carrito.every((c) => c.metodo_pago === "Tarjeta") ? (Number(efectivoParcial) || 0) : 0), 0))} con Point` : "✓ Confirmar venta"}
                     </button>
-                    <button onClick={() => { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); }} style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 12, width: "100%" }}>Cancelar pedido</button>
+                    <button onClick={() => { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); setMetodoPago("Tarjeta"); }} style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 12, width: "100%" }}>Cancelar pedido</button>
                   </div>
                 )}
               </div>
