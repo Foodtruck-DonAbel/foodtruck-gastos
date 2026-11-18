@@ -55,7 +55,13 @@ export default async function handler(req, res) {
 
       case "pago":
         return res.status(200).json(await llamarMP("GET", `/v1/payments/${encodeURIComponent(p.id)}`));
-
+      case "modo": {
+        if (process.env.PERMITIR_CAMBIO_MODO !== "1") return res.status(200).json({ ok: false, error: "cambio_de_modo_deshabilitado" });
+        const id = p.id || process.env.MP_TERMINAL_ID;
+        if (!id) return res.status(200).json({ ok: false, error: "sin_terminal" });
+        const modo = p.modo === "STANDALONE" ? "STANDALONE" : "PDV";
+        return res.status(200).json(await llamarMP("PATCH", "/terminals/v1/setup", { terminals: [{ id, operating_mode: modo }] }));
+      }
       default:
         return res.status(200).json({ ok: false, error: "accion" });
     }
