@@ -414,6 +414,7 @@ export default function App() {
   const [puntoModo, setPuntoModo] = useState(true); // con tarjeta: cobrar con Point (true) o registrar a mano (false)
   const [puntoEstado, setPuntoEstado] = useState(null); // estado del cobro en curso (null = ninguno)
   const [puntoPendiente, setPuntoPendiente] = useState(null); // cobro iniciado que quedó sin registrar
+  const [puntoTipo, setPuntoTipo] = useState(""); // medio permitido en la terminal: "" (cualquiera) | debit_card | credit_card | qr
   const [efectivoParcial, setEfectivoParcial] = useState(""); // parte del pedido que paga en efectivo (el resto va con tarjeta)
   // Destino de los retiros de caja
   const [retiroDestino, setRetiroDestino] = useState("sueldo"); // "sueldo" | "socio"
@@ -1360,7 +1361,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       }
       limpiarPuntoPendiente(); setPuntoEstado(null);
       if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); }
-      showToast(`✓ Cobrado con Point — ${fmt(pend.monto)}`); cargarVentas();
+      const tiposEsperados = ["debit_card", "credit_card", "prepaid_card", "account_money", "bank_transfer"];
+      if (tipoTarjeta && !tiposEsperados.includes(tipoTarjeta)) showToast(`⚠️ Se pagó con "${tipoTarjeta}" en la terminal: revisa que sea tarjeta o QR`);
+      else showToast(`✓ Cobrado con Point — ${fmt(pend.monto)}`);
+      cargarVentas();
       return;
     }
     if (res.fase === "canceled") { limpiarPuntoPendiente(); setPuntoEstado({ fase: "canceled", monto: pend.monto, mensaje: "Cobro cancelado. No se registró ninguna venta." }); return; }
@@ -1378,7 +1382,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     puntoCancelar.current = false;
     setPuntoEstado({ fase: "creando", monto, efectivo });
     let crear = null;
-    try { crear = await llamarPunto({ accion: "crear", monto: String(monto), ref: `DA-${Date.now()}`, idem: nuevoUuid() }); }
+    try { crear = await llamarPunto({ accion: "crear", monto: String(monto), ref: `DA-${Date.now()}`, idem: nuevoUuid(), ...(puntoTipo ? { tipo: puntoTipo } : {}) }); }
     catch { crear = null; }
     if (!crear) { setPuntoEstado({ fase: "error", monto, mensaje: "No se pudo contactar el servicio de cobro. Revisa internet, o desactiva 'Cobrar con Point' para registrar a mano." }); setSavingVenta(false); return; }
     if (!crear.ok || !crear.data || !crear.data.id) {
@@ -2837,10 +2841,22 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       </div>
                     )}
                     {puntoDisponible && carrito.some((c) => c.metodo_pago === "Tarjeta") && (
-                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: C.muted, cursor: "pointer" }}>
-                        <input type="checkbox" checked={puntoModo} onChange={(e) => setPuntoModo(e.target.checked)} />
-                        Cobrar con Point (la venta se guarda al aprobarse el pago)
-                      </label>
+                      <>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: C.muted, cursor: "pointer" }}>
+                          <input type="checkbox" checked={puntoModo} onChange={(e) => setPuntoModo(e.target.checked)} />
+                          Cobrar con Point (la venta se guarda al aprobarse el pago)
+                        </label>
+                        {puntoModo && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {[{ id: "debit_card", label: "Débito" }, { id: "credit_card", label: "Crédito" }, { id: "qr", label: "QR" }, { id: "", label: "Cualquiera" }].map((t) => (
+                                <button key={t.id || "any"} onClick={() => setPuntoTipo(t.id)} style={{ flex: 1, background: puntoTipo === t.id ? C.blue : C.tag, color: puntoTipo === t.id ? "#fff" : C.muted, border: "none", borderRadius: 7, padding: "7px 2px", cursor: "pointer", fontSize: 11, fontWeight: puntoTipo === t.id ? 700 : 400 }}>{t.label}</button>
+                              ))}
+                            </div>
+                            <div style={{ color: puntoTipo ? C.green : C.orange, fontSize: 10, marginTop: 4 }}>{puntoTipo ? "La terminal solo aceptará este medio: no ofrecerá efectivo." : "Cualquiera: el cliente elige en la terminal y puede aparecer la opción de efectivo."}</div>
+                          </div>
+                        )}
+                      </>
                     )}
                     <button onClick={registrarVenta} disabled={savingVenta} style={{ marginTop: 10, background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "12px 0", fontWeight: 700, fontSize: 15, cursor: "pointer", width: "100%" }}>
                       {savingVenta ? "Guardando..." : (puntoDisponible && puntoModo && carrito.length > 0 && carrito.some((c) => c.metodo_pago === "Tarjeta")) ? `💳 Cobrar ${fmt(Math.max(totalCarrito - (carrito.every((c) => c.metodo_pago === "Tarjeta") ? (Number(efectivoParcial) || 0) : 0), 0))} con Point` : "✓ Confirmar venta"}
