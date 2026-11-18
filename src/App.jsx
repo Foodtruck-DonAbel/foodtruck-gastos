@@ -164,6 +164,10 @@ const GUSTAVO_POR_COMPLETO = 225;
 const RETENCION_PY_DEFECTO = 0.418;
 const RETENCION_PY_POR_MES = {}; // para fijar otra tasa en un mes, ej: { "2026-12": 0.40 }
 const tasaPY = (mes) => RETENCION_PY_POR_MES[mes] ?? RETENCION_PY_DEFECTO;
+// Cobro con Mercado Pago Point, a través de la función de Vercel api/point.mjs.
+// Se activa sola cuando esa función está configurada en Vercel; si no, la app funciona como antes.
+const PUNTO_URL = "/api/point";
+const PUNTO_CLAVE = ""; // opcional: la misma clave que la variable APP_CLAVE de Vercel
 const DESCUENTO_PY = 45;
 const calcPY = (precioLocal) => Math.ceil((Number(precioLocal) || 0) / (1 - DESCUENTO_PY / 100) / 50) * 50;
 // Comisión Mercado Pago por tarjeta (con IVA 19% incluido): débito/prepago 2,19% + IVA, crédito 2,60% + IVA.
@@ -399,6 +403,12 @@ export default function App() {
   const botVideoRef = useRef(null);
   const botCamRef = useRef({ stream: null, interval: null, reader: null });
   const cebollaSembrada = useRef(false);
+  const puntoCancelar = useRef(false);
+  const ventasRef = useRef([]);
+  const [puntoDisponible, setPuntoDisponible] = useState(false); // el servidor de cobro está configurado
+  const [puntoModo, setPuntoModo] = useState(true); // con tarjeta: cobrar con Point (true) o registrar a mano (false)
+  const [puntoEstado, setPuntoEstado] = useState(null); // estado del cobro en curso (null = ninguno)
+  const [puntoPendiente, setPuntoPendiente] = useState(null); // cobro iniciado que quedó sin registrar
   // Destino de los retiros de caja
   const [retiroDestino, setRetiroDestino] = useState("sueldo"); // "sueldo" | "socio"
   const [retiroSocio, setRetiroSocio] = useState("");
@@ -1225,30 +1235,160 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
 
   const totalCarrito = carrito.reduce((s, c) => s + c.total, 0);
 
-  const registrarVenta = async () => {
-    if (carrito.length === 0) { showToast("Agrega productos"); return; }
-    if (!turnoActivo) { showToast("⚠️ Debes abrir la caja antes de registrar ventas"); return; }
-    if (!persona) { showToast("Selecciona quién registra la venta"); return; }
-    if (!fechaVenta) { showToast("Falta la fecha de la venta"); return; }
-    setSavingVenta(true);
+  // Arma las filas de la venta (combos con sus productos internos). `extraNota` se suma a la nota de cada fila.
+  const construirFilasVenta = (items, { fecha, quien, extraNota }) => {
     const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
     const rows = [];
-    carrito.forEach((c) => {
+    items.forEach((c) => {
       if (c.productos_combo && c.productos_combo.length > 0) {
         // Combo: registrar el combo como una línea + cada producto interno
-        rows.push({ fecha: fechaVenta, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ combo: c.combo, productos: c.productos_combo }) });
+        rows.push({ fecha, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: quien || null, nota: JSON.stringify({ combo: c.combo, productos: c.productos_combo }) });
         // Registrar cada producto del combo con precio 0 para stock
         const sumaNormal = c.productos_combo.reduce((s, p) => { const r = recetas.find((r) => r.nombre_producto === p); return s + (r ? r.precio_venta : 0); }, 0);
         c.productos_combo.forEach((nombreProd) => {
           const r = recetas.find((r) => r.nombre_producto === nombreProd);
           if (!r) return;
           const precioProp = sumaNormal > 0 ? Math.round((r.precio_venta / sumaNormal) * c.precio_unitario) : 0;
-          rows.push({ fecha: fechaVenta, hora, producto: nombreProd, cantidad: c.cantidad, precio_unitario: precioProp, total: precioProp * c.cantidad, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ combo: c.combo, es_componente: true }) });
+          rows.push({ fecha, hora, producto: nombreProd, cantidad: c.cantidad, precio_unitario: precioProp, total: precioProp * c.cantidad, metodo_pago: c.metodo_pago, persona: quien || null, nota: JSON.stringify({ combo: c.combo, es_componente: true }) });
         });
       } else {
-        rows.push({ fecha: fechaVenta, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: persona || null, nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}), ...(c.variante ? { variante: c.variante } : {}) }) || null });
+        rows.push({ fecha, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: quien || null, nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}), ...(c.variante ? { variante: c.variante } : {}) }) || null });
       }
     });
+    if (extraNota) rows.forEach((r) => { let n = {}; try { n = JSON.parse(r.nota || "{}"); } catch { n = {}; } r.nota = JSON.stringify({ ...n, ...extraNota }); });
+    return rows;
+  };
+
+  const validarAntesDeVender = () => {
+    if (carrito.length === 0) { showToast("Agrega productos"); return false; }
+    if (!turnoActivo) { showToast("⚠️ Debes abrir la caja antes de registrar ventas"); return false; }
+    if (!persona) { showToast("Selecciona quién registra la venta"); return false; }
+    if (!fechaVenta) { showToast("Falta la fecha de la venta"); return false; }
+    return true;
+  };
+
+  // ===== Cobro con Mercado Pago Point =====
+  const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+  const nuevoUuid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16); }));
+  const llamarPunto = async (params) => {
+    const qs = new URLSearchParams({ ...params, clave: PUNTO_CLAVE, t: String(Date.now()) });
+    const res = await fetch(PUNTO_URL + "?" + qs.toString(), { cache: "no-store" });
+    return res.json();
+  };
+  const limpiarPuntoPendiente = () => { try { localStorage.removeItem("puntoPendiente"); } catch {} setPuntoPendiente(null); };
+
+  // Consulta la orden cada 3 s (hasta 17 min). Devuelve cuando queda aprobada, falla, expira o se cancela.
+  const esperarCobroPoint = async (pend) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < 17 * 60 * 1000) {
+      if (puntoCancelar.current) return { fase: "canceled" };
+      let r = null;
+      try { r = await llamarPunto({ accion: "estado", id: pend.orderId }); } catch { r = null; }
+      const st = r && r.data ? r.data.status : null;
+      if (st) {
+        setPuntoEstado((e) => ({ ...(e || {}), fase: "esperando", monto: pend.monto, orderId: pend.orderId, estadoMP: st }));
+        if (st === "processed") {
+          const pago = r.data.transactions && r.data.transactions.payments ? r.data.transactions.payments[0] : null;
+          const montoOk = pago && Number(pago.amount) === pend.monto;
+          if (r.data.status_detail === "accredited" && montoOk) return { fase: "aprobado", orden: r.data };
+          return { fase: "revisar", orden: r.data };
+        }
+        if (st === "failed" || st === "expired" || st === "canceled") return { fase: st, orden: r.data };
+      }
+      await dormir(3000);
+    }
+    return { fase: "expired" };
+  };
+
+  // Espera el cobro y, solo si quedó aprobado por el monto exacto, registra la venta.
+  const resolverCobroPoint = async (pend, { limpiarCarrito } = {}) => {
+    puntoCancelar.current = false;
+    setPuntoEstado({ fase: "esperando", monto: pend.monto, orderId: pend.orderId });
+    const res = await esperarCobroPoint(pend);
+    if (res.fase === "aprobado") {
+      if (ventasRef.current.some((v) => parseNota(v).point_order === pend.orderId)) {
+        limpiarPuntoPendiente(); setPuntoEstado(null); showToast("Ese cobro ya estaba registrado"); return;
+      }
+      const pagoId = res.orden && res.orden.transactions && res.orden.transactions.payments ? res.orden.transactions.payments[0].id : null;
+      let fee = null; let tipoTarjeta = null;
+      if (pagoId) {
+        try {
+          const pg = await llamarPunto({ accion: "pago", id: pagoId });
+          if (pg && pg.ok && pg.data) {
+            tipoTarjeta = pg.data.payment_type_id || null;
+            const suma = (pg.data.fee_details || []).filter((f) => !f.fee_payer || f.fee_payer === "collector").reduce((acc, f) => acc + Number(f.amount || 0), 0);
+            if (suma > 0) fee = Math.round(suma);
+          }
+        } catch { /* la comisión real es opcional: si falla, se estima */ }
+      }
+      const rows = construirFilasVenta(pend.items, { fecha: pend.fecha, quien: pend.quien, extraNota: { point_order: pend.orderId, ...(pagoId ? { point_payment: String(pagoId) } : {}) } });
+      if (fee !== null && rows.length > 0) {
+        let n = {}; try { n = JSON.parse(rows[0].nota || "{}"); } catch { n = {}; }
+        rows[0].nota = JSON.stringify({ ...n, point_fee: fee, point_total: pend.monto, ...(tipoTarjeta ? { point_tipo: tipoTarjeta } : {}) });
+      }
+      const { error } = await supabase.from("ventas").insert(rows);
+      if (error) {
+        console.error("Cobro aprobado pero no se pudo guardar:", error);
+        setPuntoEstado({ fase: "sin_registrar", monto: pend.monto, orderId: pend.orderId, mensaje: "El cliente YA pagó, pero no se pudo guardar la venta. No cobres de nuevo: reintenta guardar." });
+        return;
+      }
+      limpiarPuntoPendiente(); setPuntoEstado(null);
+      if (limpiarCarrito) setCarrito([]);
+      showToast(`✓ Cobrado con Point — ${fmt(pend.monto)}`); cargarVentas();
+      return;
+    }
+    if (res.fase === "canceled") { limpiarPuntoPendiente(); setPuntoEstado({ fase: "canceled", monto: pend.monto, mensaje: "Cobro cancelado. No se registró ninguna venta." }); return; }
+    if (res.fase === "failed") { limpiarPuntoPendiente(); setPuntoEstado({ fase: "failed", monto: pend.monto, mensaje: "El pago no se completó (rechazado o falló). No se registró la venta." }); return; }
+    if (res.fase === "expired") { limpiarPuntoPendiente(); setPuntoEstado({ fase: "expired", monto: pend.monto, mensaje: "El cobro expiró sin pago. No se registró la venta." }); return; }
+    // processed pero con estado o monto distinto al esperado
+    setPuntoEstado({ fase: "revisar", monto: pend.monto, orderId: pend.orderId, mensaje: "El pago quedó procesado pero no coincide con lo esperado (estado o monto). Revísalo en Mercado Pago antes de registrar la venta." });
+  };
+
+  const cobrarConPoint = async () => {
+    const monto = Math.round(totalCarrito);
+    if (monto < 500) showToast("Monto bajo: Point está probado desde $500");
+    setSavingVenta(true);
+    puntoCancelar.current = false;
+    setPuntoEstado({ fase: "creando", monto });
+    let crear = null;
+    try { crear = await llamarPunto({ accion: "crear", monto: String(monto), ref: `DA-${Date.now()}`, idem: nuevoUuid() }); }
+    catch { crear = null; }
+    if (!crear) { setPuntoEstado({ fase: "error", monto, mensaje: "No se pudo contactar el servicio de cobro. Revisa internet, o desactiva 'Cobrar con Point' para registrar a mano." }); setSavingVenta(false); return; }
+    if (!crear.ok || !crear.data || !crear.data.id) {
+      const txt = JSON.stringify(crear.data || crear.error || {});
+      const enCola = /already_queued_order_on_terminal/.test(txt);
+      setPuntoEstado({ fase: "error", monto, mensaje: enCola ? "La terminal ya tiene un cobro en cola. Espera a que expire (unos 15 min) o cancélalo en la terminal." : crear.error === "clave" ? "La clave del script no coincide con la de la app." : "No se pudo enviar el cobro a la terminal. Revisa que esté encendida, con internet y en modo PDV." });
+      setSavingVenta(false); return;
+    }
+    const pend = { orderId: crear.data.id, monto, items: carrito, fecha: fechaVenta, quien: persona, t: Date.now() };
+    try { localStorage.setItem("puntoPendiente", JSON.stringify(pend)); } catch {}
+    setPuntoPendiente(pend);
+    await resolverCobroPoint(pend, { limpiarCarrito: true });
+    setSavingVenta(false);
+  };
+
+  const cancelarCobroPoint = async () => {
+    puntoCancelar.current = true;
+    const id = puntoEstado && puntoEstado.orderId;
+    if (!id) { setPuntoEstado(null); setSavingVenta(false); return; }
+    try { await llamarPunto({ accion: "cancelar", id, idem: nuevoUuid() }); } catch {}
+  };
+
+  ventasRef.current = ventas;
+  useEffect(() => { try { const raw = localStorage.getItem("puntoPendiente"); if (raw) setPuntoPendiente(JSON.parse(raw)); } catch {} }, []);
+  useEffect(() => { fetch(PUNTO_URL + "?accion=ping", { cache: "no-store" }).then((r) => r.json()).then((j) => setPuntoDisponible(!!(j && j.configurado))).catch(() => setPuntoDisponible(false)); }, []);
+
+  const registrarVenta = async () => {
+    if (!validarAntesDeVender()) return;
+    // Con tarjeta + Point: el cobro se hace en la terminal y la venta se registra solo cuando queda aprobado
+    const hayTarjeta = carrito.some((c) => c.metodo_pago === "Tarjeta");
+    const todoTarjeta = carrito.every((c) => c.metodo_pago === "Tarjeta");
+    if (puntoDisponible && puntoModo && hayTarjeta) {
+      if (!todoTarjeta) { showToast("Point cobra pedidos 100% con tarjeta: separa el pedido o desactiva 'Cobrar con Point'"); return; }
+      if (Math.round(totalCarrito) > 0) { await cobrarConPoint(); return; }
+    }
+    setSavingVenta(true);
+    const rows = construirFilasVenta(carrito, { fecha: fechaVenta, quien: persona });
     const { error } = await supabase.from("ventas").insert(rows);
     if (error) showToast("Error al guardar");
     else { showToast(`✓ Venta — ${fmt(totalCarrito)}`); setCarrito([]); cargarVentas(); }
@@ -1704,6 +1844,36 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         </div>
       )}
 
+      {puntoEstado && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ ...S.card, maxWidth: 360, width: "100%", textAlign: "center", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ fontSize: 34 }}>{puntoEstado.fase === "esperando" || puntoEstado.fase === "creando" ? "💳" : puntoEstado.fase === "revisar" || puntoEstado.fase === "sin_registrar" ? "⚠️" : "✖️"}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: C.mustard }}>{fmt(puntoEstado.monto)}</div>
+            {puntoEstado.fase === "creando" && <div style={{ color: C.muted, fontSize: 13 }}>Enviando el cobro a la terminal…</div>}
+            {puntoEstado.fase === "esperando" && (
+              <>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Cobra en la terminal Point</div>
+                <div style={{ color: C.muted, fontSize: 12 }}>Pídele al cliente que pague. <b>No entregues el pedido hasta ver el pago aprobado.</b></div>
+                {puntoEstado.estadoMP && <div style={{ color: C.muted, fontSize: 11 }}>Estado: {puntoEstado.estadoMP === "at_terminal" ? "en la terminal" : puntoEstado.estadoMP === "created" ? "enviado, esperando a la terminal" : puntoEstado.estadoMP}. Si no aparece, toca "Actualizar" en la terminal.</div>}
+                <button onClick={cancelarCobroPoint} style={{ background: "none", border: `1px solid ${C.red}`, color: C.red, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>Cancelar cobro</button>
+              </>
+            )}
+            {puntoEstado.mensaje && <div style={{ color: puntoEstado.fase === "revisar" || puntoEstado.fase === "sin_registrar" ? C.orange : C.muted, fontSize: 13 }}>{puntoEstado.mensaje}</div>}
+            {puntoEstado.fase === "sin_registrar" && (
+              <button onClick={() => puntoPendiente && resolverCobroPoint(puntoPendiente, { limpiarCarrito: true })} style={{ background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Reintentar guardar la venta</button>
+            )}
+            {["failed", "expired", "canceled", "error"].includes(puntoEstado.fase) && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { setPuntoEstado(null); setSavingVenta(false); }} style={{ flex: 1, background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "10px 0", cursor: "pointer" }}>Cerrar</button>
+                {puntoEstado.fase !== "error" && <button onClick={() => { setPuntoEstado(null); cobrarConPoint(); }} style={{ flex: 1, background: C.mustard, border: "none", color: C.bg, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>Reintentar cobro</button>}
+              </div>
+            )}
+            {(puntoEstado.fase === "revisar" || puntoEstado.fase === "sin_registrar") && (
+              <button onClick={() => { setPuntoEstado(null); setSavingVenta(false); }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 12 }}>Cerrar (el cobro queda pendiente)</button>
+            )}
+          </div>
+        </div>
+      )}
       {descuentoModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300 }}>
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 24, maxWidth: 340, width: "90%" }}>
@@ -2512,6 +2682,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
 
             {ventaView === "registrar" && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {puntoPendiente && !puntoEstado && (
+                <div style={{ ...S.card, borderColor: C.orange, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 180, fontSize: 12 }}>
+                    <div style={{ fontWeight: 700, color: C.orange }}>Cobro con Point sin registrar · {fmt(puntoPendiente.monto)}</div>
+                    <div style={{ color: C.muted }}>Iniciado hace {Math.max(1, Math.round((Date.now() - puntoPendiente.t) / 60000))} min. Revísalo antes de cobrar de nuevo.</div>
+                  </div>
+                  <button onClick={() => resolverCobroPoint(puntoPendiente)} style={{ background: C.mustard, color: C.bg, border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Revisar</button>
+                  <button onClick={() => { if (window.confirm("¿Descartar este cobro? Si el cliente ya pagó, deberás registrar la venta a mano.")) limpiarPuntoPendiente(); }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12 }}>Descartar</button>
+                </div>
+              )}
               {/* Banner caja */}
               {!turnoActivo ? (
                 <div style={{ background: C.red + "22", border: `1px solid ${C.red}`, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2612,8 +2792,14 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       <span style={{ fontWeight: 700 }}>Total</span>
                       <span style={{ fontWeight: 800, fontSize: 22, color: C.green }}>{fmt(totalCarrito)}</span>
                     </div>
+                    {puntoDisponible && carrito.some((c) => c.metodo_pago === "Tarjeta") && (
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: C.muted, cursor: "pointer" }}>
+                        <input type="checkbox" checked={puntoModo} onChange={(e) => setPuntoModo(e.target.checked)} />
+                        Cobrar con Point (la venta se guarda al aprobarse el pago)
+                      </label>
+                    )}
                     <button onClick={registrarVenta} disabled={savingVenta} style={{ marginTop: 10, background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "12px 0", fontWeight: 700, fontSize: 15, cursor: "pointer", width: "100%" }}>
-                      {savingVenta ? "Guardando..." : "✓ Confirmar venta"}
+                      {savingVenta ? "Guardando..." : (puntoDisponible && puntoModo && carrito.length > 0 && carrito.some((c) => c.metodo_pago === "Tarjeta")) ? `💳 Cobrar ${fmt(totalCarrito)} con Point` : "✓ Confirmar venta"}
                     </button>
                     <button onClick={() => setCarrito([])} style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 12, width: "100%" }}>Cancelar pedido</button>
                   </div>
@@ -3528,7 +3714,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const pagadoGustavoER = sumCat("pago_gustavo");
               const tasaPYER = tasaPY(mesSel);
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * tasaPYER);
-              const comisionTarjetaER = Math.round(porMetodoER("Tarjeta") * COMISION_TARJETA);
+              // Comisión de tarjeta: real (de Mercado Pago, guardada al cobrar con Point) donde existe; estimada para el resto
+              const ventasTarjetaER = vMes.filter((v) => v.metodo_pago === "Tarjeta");
+              const feeRealER = ventasTarjetaER.reduce((acc, v) => acc + (Number(parseNota(v).point_fee) || 0), 0);
+              const cubiertoER = ventasTarjetaER.reduce((acc, v) => { const n = parseNota(v); return acc + (n.point_fee !== undefined ? (Number(n.point_total) || 0) : 0); }, 0);
+              const comisionTarjetaER = Math.round(feeRealER + Math.max(porMetodoER("Tarjeta") - cubiertoER, 0) * COMISION_TARJETA);
               const resultadoER = margenBrutoER - operacionalER - fijosER - equipamientoER - cuotasER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
               const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos, g.tipo_gasto) === "sin_clasificar").map((g) => g.insumo))];
               const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
@@ -3633,7 +3823,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                   )}
                   {equipamientoER > 0 && filaERDesglose("equipamiento", `(−) Equipamiento y reparaciones${pctER(equipamientoER)}`, fmt(equipamientoER), { color: C.red }, detalleInsumos(gastosDe("equipamiento"), equipamientoER))}
-                  {filaER(`(−) Comisión tarjeta (${(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
+                  {filaER(`(−) Comisión tarjeta (${(porMetodoER("Tarjeta") > 0 ? (comisionTarjetaER / porMetodoER("Tarjeta")) * 100 : COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
+                  {cubiertoER > 0 && <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>Comisión real de Mercado Pago en {fmt(cubiertoER)} de {fmt(porMetodoER("Tarjeta"))} cobrados con tarjeta; el resto se estima al {(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%.</div>}
                   {filaER(`(−) Pedidos Ya: comisión y cargos (${(tasaPYER * 100).toFixed(1).replace(".", ",")}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>Sobre ventas PY de {fmt(porMetodoER("Pedidos Ya"))}. Incluye comisión (28%) + IVA, costo plus, rechazos, demoras y reclamos, según las liquidaciones.</div>
                   {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
