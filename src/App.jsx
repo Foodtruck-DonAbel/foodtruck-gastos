@@ -178,11 +178,13 @@ const PUNTO_URL = "/api/point";
 const PUNTO_CLAVE = ""; // opcional: la misma clave que la variable APP_CLAVE de Vercel
 const DESCUENTO_PY = 45;
 const calcPY = (precioLocal) => Math.ceil((Number(precioLocal) || 0) / (1 - DESCUENTO_PY / 100) / 50) * 50;
-// Comisión Mercado Pago por tarjeta (con IVA 19% incluido): débito/prepago 2,19% + IVA, crédito 2,60% + IVA.
-// La app no separa débito de crédito, así que se usa un promedio con la mezcla real del portal
-// (14-sep a 14-oct-2026): débito $443.980 + prepago $70.660 + crédito $103.080 = $617.720 → 16,69% crédito.
-const COMISION_TARJETA_DEBITO = 0.0219 * 1.19;
-const COMISION_TARJETA_CREDITO = 0.026 * 1.19;
+// Comisión de Mercado Pago por tarjeta, con liberación "al instante": débito 2,19% y crédito 2,69%.
+// Se asume que son tasas + IVA (19%). Si Mercado Pago las informa con el IVA ya incluido, poner IVA_SOBRE_COMISION = 1.
+// Se usan solo para estimar cuando Mercado Pago no informó la comisión real de un pago (los cobros con Point traen la real).
+// La mezcla débito/crédito de referencia sale del portal (14-sep a 14-oct-2026): débito $443.980 + prepago $70.660 + crédito $103.080 = $617.720 → 16,69% crédito.
+const IVA_SOBRE_COMISION = 1.19;
+const COMISION_TARJETA_DEBITO = 0.0219 * IVA_SOBRE_COMISION;
+const COMISION_TARJETA_CREDITO = 0.0269 * IVA_SOBRE_COMISION;
 const PCT_CREDITO_ESTIMADO = 0.1669; // proporción de crédito en las ventas con tarjeta (revisar cada tanto con el portal)
 const COMISION_TARJETA = COMISION_TARJETA_DEBITO * (1 - PCT_CREDITO_ESTIMADO) + COMISION_TARJETA_CREDITO * PCT_CREDITO_ESTIMADO;
 // Resume los pagos con tarjeta cobrados con Point: por tipo (débito, crédito, prepago).
