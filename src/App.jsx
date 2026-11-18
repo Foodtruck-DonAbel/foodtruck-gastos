@@ -433,6 +433,7 @@ export default function App() {
   const [botCantidad, setBotCantidad] = useState("1");
   const [botTipo, setBotTipo] = useState("");
   const [botInsumoReceta, setBotInsumoReceta] = useState(""); // si el producto de la botillería es un ingrediente de tus recetas
+  const [botUnidadesEnvase, setBotUnidadesEnvase] = useState(""); // unidades que trae cada envase (ej: 8 panes por paquete)
   const [botContenido, setBotContenido] = useState(""); // contenido de cada unidad, en la unidad del insumo (ej: 0,9 litro)
   const [botTipoRecordado, setBotTipoRecordado] = useState(false); // la categoría viene de un consumo anterior
   const [botTipoSugerido, setBotTipoSugerido] = useState(false); // la categoría se sugirió por el nombre del producto
@@ -1069,6 +1070,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     const mIng = previoIng ? /⟦ing=([^;]+);cont=([^⟧]+)⟧/.exec(previoIng.nota) : null;
     setBotInsumoReceta(mIng ? mIng[1] : "");
     setBotContenido(mIng ? mIng[2] : "");
+    const previoUpe = gastos.find((x) => x.fondo === "Botillería" && normNombre(x.insumo) === normNombre(g.nombre) && (x.nota || "").includes("⟦upe="));
+    const mUpe = previoUpe ? /⟦upe=([^⟧]+)⟧/.exec(previoUpe.nota) : null;
+    setBotUnidadesEnvase(mUpe ? mUpe[1] : "");
   };
   // Sugerencia por nombre para lo que se suele sacar de la botillería (se puede cambiar siempre)
   const sugerirTipoBot = (nombre) => {
@@ -1149,18 +1153,20 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     setSaving(true);
     const monto = Math.round(costo * cant);
     const unidadIns = esIngrediente ? (unidadFijaDe(botInsumoReceta) || "unidad") : "unidad";
-    const cantTotal = esIngrediente ? Math.round(cant * contenido * 1000) / 1000 : cant;
+    const upe = esIngrediente ? 1 : (Number(String(botUnidadesEnvase).replace(",", ".")) || 1);
+    if (!esIngrediente && upe <= 0) { showToast("Las unidades por envase deben ser mayores a 0"); setSaving(false); return; }
+    const cantTotal = esIngrediente ? Math.round(cant * contenido * 1000) / 1000 : Math.round(cant * upe * 1000) / 1000;
     const detalleCosto = `costo real ${fmt(costo)} c/u (${botRegistro.proveedor || "s/prov"}, ${fechaBot(botRegistro.fecha)})`;
     const fila = {
       fecha: form.fecha, insumo: esIngrediente ? botInsumoReceta : botProducto.nombre, cantidad: String(cantTotal), unidad: unidadIns, fondo: "Botillería", proveedor: "Botillería", monto, persona,
-      nota: (esIngrediente ? `Botillería: ${botProducto.nombre} · ${cant} und × ${contenido} ${unidadIns} · ${detalleCosto}` : `Consumo de botillería · ${detalleCosto}`) + (form.nota ? " · " + form.nota : "") + (esIngrediente ? ` ⟦ing=${botInsumoReceta};cont=${contenido}⟧` : ""),
+      nota: (esIngrediente ? `Botillería: ${botProducto.nombre} · ${cant} und × ${contenido} ${unidadIns} · ${detalleCosto}` : `Consumo de botillería${upe > 1 ? ` · ${cant} envases × ${upe} und` : ""} · ${detalleCosto}`) + (form.nota ? " · " + form.nota : "") + (esIngrediente ? ` ⟦ing=${botInsumoReceta};cont=${contenido}⟧` : (upe > 1 ? ` ⟦upe=${upe}⟧` : "")),
     };
     if (!esIngrediente) fila.tipo_gasto = botTipo;
     if (form.mesCorresponde && form.mesCorresponde !== form.fecha.slice(0, 7)) fila.mes_corresponde = form.mesCorresponde;
     const { error } = await supabase.from("gastos").insert([fila]);
     if (error) { console.error("Error al guardar consumo de botillería:", error); showToast("❌ Error: " + error.message); setSaving(false); return; }
-    showToast(`✓ Consumo guardado — ${fmt(monto)}`);
-    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1"); setBotTipo(""); setBotTipoRecordado(false); setBotTipoSugerido(false); setBotInsumoReceta(""); setBotContenido("");
+    showToast(`✓ Consumo guardado — ${fmt(monto)}${upe > 1 ? ` (${cantTotal} und)` : ""}`);
+    setBotProducto(null); setBotRegistro(null); setBotQ(""); setBotResultados(null); setBotCantidad("1"); setBotTipo(""); setBotTipoRecordado(false); setBotTipoSugerido(false); setBotInsumoReceta(""); setBotContenido(""); setBotUnidadesEnvase("");
     setForm({ ...form, nota: "", mesCorresponde: "" });
     cargarGastos(); setSaving(false);
     if (esIngrediente) proponerActualizarPrecio(botInsumoReceta, cantTotal, monto, unidadIns);
@@ -1358,7 +1364,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       try { r = await llamarPunto({ accion: "estado", id: pend.orderId }); } catch { r = null; }
       const st = r && r.data ? r.data.status : null;
       if (st) {
-        setPuntoEstado((e) => ({ ...(e || {}), fase: "esperando", monto: pend.monto, orderId: pend.orderId, estadoMP: st }));
+        setPuntoEstado((e) => ({ ...(e || {}), fase: "esperando", monto: pend.monto, orderId: pend.orderId, estadoMP: st, desde: (e && e.desde) || Date.now() }));
         if (st === "processed") {
           const pago = r.data.transactions && r.data.transactions.payments ? r.data.transactions.payments[0] : null;
           const montoOk = pago && Number(pago.amount) === pend.monto;
@@ -1977,6 +1983,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 {puntoEstado.tipo && <div style={{ color: C.blue, fontSize: 12, fontWeight: 700 }}>La terminal acepta solo: {TIPO_TARJETA_TXT[puntoEstado.tipo] || puntoEstado.tipo}</div>}
                 <div style={{ color: C.muted, fontSize: 12 }}>Pídele al cliente que pague. <b>No entregues el pedido hasta ver el pago aprobado.</b></div>
                 {puntoEstado.estadoMP && <div style={{ color: C.muted, fontSize: 11 }}>Estado: {puntoEstado.estadoMP === "at_terminal" ? "en la terminal" : puntoEstado.estadoMP === "created" ? "enviado, esperando a la terminal" : puntoEstado.estadoMP}. Si no aparece, toca "Actualizar" en la terminal.</div>}
+                {puntoEstado.estadoMP === "created" && puntoEstado.desde && Date.now() - puntoEstado.desde > 6000 && (
+                  <div style={{ background: C.orange + "22", border: `1px solid ${C.orange}`, borderRadius: 8, padding: "8px 10px", color: C.orange, fontSize: 12, fontWeight: 700 }}>📟 La terminal aún no recibió el cobro. Si la pantalla está apagada o en reposo: presiona su botón para despertarla y toca «Actualizar».</div>
+                )}
                 <button onClick={cancelarCobroPoint} style={{ background: "none", border: `1px solid ${C.red}`, color: C.red, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>Cancelar cobro</button>
                 {puntoEstado.tipo && (
                   <>
@@ -2247,7 +2256,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                             })()}
                           </div>
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                            <Fld label={botInsumoReceta ? "Unidades del producto" : "Cantidad"}><input type="text" inputMode="decimal" value={botCantidad} onChange={(e) => setBotCantidad(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} /></Fld>
+                            <Fld label={botInsumoReceta ? "Envases comprados" : "Cantidad de envases"}><input type="text" inputMode="decimal" value={botCantidad} onChange={(e) => setBotCantidad(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} /></Fld>
                             <Fld label={botInsumoReceta ? "Tipo de gasto" : "Tipo de gasto *"}>
                               {botInsumoReceta ? <div style={{ ...S.inp, color: C.green, fontWeight: 700 }}>Costo de ventas</div> : (
                               <select value={botTipo} onChange={(e) => { setBotTipo(e.target.value); setBotTipoRecordado(false); setBotTipoSugerido(false); }} style={S.inp}>
@@ -2265,6 +2274,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                               {insumosPrecio.filter((i) => !["Mayonesa Casera", "Cebolla Caramelizada"].includes(i.nombre)).map((i) => <option key={i.id} value={i.nombre}>{i.nombre}</option>)}
                             </select>
                           </Fld>
+                          {!botInsumoReceta && (
+                            <Fld label="Unidades por envase (opcional)">
+                              <input type="text" inputMode="decimal" placeholder="ej: 8" value={botUnidadesEnvase} onChange={(e) => setBotUnidadesEnvase(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} />
+                              <div style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>Si el precio es por paquete y cada uno trae varias unidades (ej: 8 panes), anótalas acá. Déjalo vacío si se vende suelto.</div>
+                            </Fld>
+                          )}
                           {botInsumoReceta && (() => {
                             const unidadIns = unidadFijaDe(botInsumoReceta) || "unidad";
                             const cantU = Number(String(botCantidad).replace(",", ".")) || 0;
@@ -2273,10 +2288,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                             const costoU = Number(botRegistro?.costoReal) || 0;
                             return (
                               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                <Fld label={`Contenido de cada unidad (en ${unidadIns}) *`}>
+                                <Fld label={(unidadIns === "unidad" ? "Unidades por envase" : `Contenido de cada envase (en ${unidadIns})`) + " *"}>
                                   <input type="text" inputMode="decimal" placeholder="ej: 0,9" value={botContenido} onChange={(e) => setBotContenido(e.target.value.replace(/[^0-9.,]/g, ""))} style={S.inp} />
                                 </Fld>
-                                <div style={{ color: C.muted, fontSize: 10 }}>Ej.: una botella de 900 ml = 0,9 litro. Si el insumo se cuenta por unidad, pon 1.</div>
+                                <div style={{ color: C.muted, fontSize: 10 }}>{unidadIns === "unidad" ? "Unidades que trae cada envase. Ej.: un paquete con 8 panes = 8 (si se vende suelto, 1)." : "Ej.: una botella de 900 ml = 0,9 litro."}</div>
                                 {total > 0 && costoU > 0 && <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>Total: <span style={{ fontWeight: 700 }}>{Math.round(total * 1000) / 1000} {unidadIns}</span> · <span style={{ color: C.mustard, fontWeight: 700 }}>{fmt(Math.round((costoU * cantU) / total))}</span> por {unidadIns}</div>}
                                 <div style={{ color: C.green, fontSize: 10 }}>Se guarda como compra de "{botInsumoReceta}" (costo de ventas, fondo Botillería) y te propone actualizar su precio en Recetas.</div>
                               </div>
@@ -2284,7 +2299,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                           })()}
                           {botRegistro && Number(botRegistro.costoReal) > 0 && (
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
-                              <span style={{ color: C.muted, fontSize: 12 }}>{fmt(Number(botRegistro.costoReal))} × {botCantidad || 0}</span>
+                              <span style={{ color: C.muted, fontSize: 12 }}>
+                                {fmt(Number(botRegistro.costoReal))} × {botCantidad || 0}
+                                {(() => { const u = Number(String(botUnidadesEnvase).replace(",", ".")) || 1; if (botInsumoReceta || u <= 1) return null; const c = Number(String(botCantidad).replace(",", ".")) || 0; return <div style={{ fontSize: 10 }}>= {Math.round(c * u * 1000) / 1000} unidades · {fmt(Math.round(Number(botRegistro.costoReal) / u))} c/u</div>; })()}
+                              </span>
                               <span style={{ fontWeight: 800, fontSize: 18, color: C.mustard }}>{fmt(Math.round(Number(botRegistro.costoReal) * (Number(String(botCantidad).replace(",", ".")) || 0)))}</span>
                             </div>
                           )}
