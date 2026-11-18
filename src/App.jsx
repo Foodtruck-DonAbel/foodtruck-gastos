@@ -2888,17 +2888,6 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                           <input type="checkbox" checked={puntoModo} onChange={(e) => setPuntoModo(e.target.checked)} />
                           Cobrar con Point (la venta se guarda al aprobarse el pago)
                         </label>
-                        {puntoModo && (
-                          <div style={{ marginTop: 8 }}>
-                            <div style={{ fontSize: 12, color: C.muted, marginBottom: 5 }}>¿Con qué va a pagar el cliente?</div>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              {[{ id: "debit_card", label: "Débito" }, { id: "credit_card", label: "Crédito" }, { id: "qr", label: "QR" }, { id: "", label: "Que elija" }].map((t) => (
-                                <button key={t.id || "any"} onClick={() => setPuntoTipo(t.id)} style={{ flex: 1, background: puntoTipo === t.id ? C.blue : C.tag, color: puntoTipo === t.id ? "#fff" : C.muted, border: "none", borderRadius: 7, padding: "7px 2px", cursor: "pointer", fontSize: 11, fontWeight: puntoTipo === t.id ? 700 : 400 }}>{t.label}</button>
-                              ))}
-                            </div>
-                            <div style={{ color: puntoTipo ? C.green : C.orange, fontSize: 10, marginTop: 4 }}>{puntoTipo === "debit_card" ? "La terminal solo aceptará tarjeta de DÉBITO. No ofrecerá efectivo." : puntoTipo === "credit_card" ? "La terminal solo aceptará tarjeta de CRÉDITO. No ofrecerá efectivo." : puntoTipo === "qr" ? "La terminal solo aceptará pago con QR. Una tarjeta no funcionará." : "El cliente elige cómo pagar en la terminal (puede aparecer la opción de efectivo)."}</div>
-                          </div>
-                        )}
                       </>
                     )}
                     <button onClick={registrarVenta} disabled={savingVenta} style={{ marginTop: 10, background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "12px 0", fontWeight: 700, fontSize: 15, cursor: "pointer", width: "100%" }}>
