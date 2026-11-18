@@ -19,9 +19,14 @@ const fondoColors = {
   "Efectivo foodtruck": "#6B9FD4", "Efectivo Don Abel": "#5BAD7F",
   "Tarjeta foodtruck": "#C97DDB", "Tarjeta Don Abel": "#E8B84B", "Pago personal": "#FF6B35", "Botillería": "#4CC9C0",
 };
-const metodoPagoColors = { "Efectivo": "#5BAD7F", "Tarjeta": "#6B9FD4", "Pedidos Ya": "#FF6B35" };
+const metodoPagoColors = { "Efectivo": "#5BAD7F", "Tarjeta": "#6B9FD4", "Pedidos Ya": "#FF6B35", "Mixto": "#C97DDB" };
 const personColor = (n) => ({ Raul: "#6B9FD4", Pepe: "#E8B84B", Alejandro: "#5BAD7F", Gustavo: "#C97DDB" }[n] || C.muted);
 const fmt = (n) => "$" + Number(n || 0).toLocaleString("es-CL");
+// Venta pagada con dos métodos (ej: parte en efectivo y parte con tarjeta): metodo_pago = "Mixto" y el reparto va en nota.pagos
+const notaDe = (v) => { try { return JSON.parse(v.nota || "{}"); } catch { return {}; } };
+const montoMetodo = (v, m) => { if (v.metodo_pago === "Mixto") { const n = notaDe(v); return n.pagos ? Number(n.pagos[m]) || 0 : 0; } return v.metodo_pago === m ? v.total : 0; };
+// Tipo de tarjeta que informa Mercado Pago (payment_type_id)
+const TIPO_TARJETA_TXT = { debit_card: "Débito", credit_card: "Crédito", prepaid_card: "Prepago", otro: "Otro" };
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 // Mayúscula inicial por palabra; reconoce ñ y tildes (con \b\w, "castaño" salía "CastañO")
 const normProv = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/(^|\s)(\p{L})/gu, (m, sep, c) => sep + c.toUpperCase());
@@ -409,6 +414,7 @@ export default function App() {
   const [puntoModo, setPuntoModo] = useState(true); // con tarjeta: cobrar con Point (true) o registrar a mano (false)
   const [puntoEstado, setPuntoEstado] = useState(null); // estado del cobro en curso (null = ninguno)
   const [puntoPendiente, setPuntoPendiente] = useState(null); // cobro iniciado que quedó sin registrar
+  const [efectivoParcial, setEfectivoParcial] = useState(""); // parte del pedido que paga en efectivo (el resto va con tarjeta)
   // Destino de los retiros de caja
   const [retiroDestino, setRetiroDestino] = useState("sueldo"); // "sueldo" | "socio"
   const [retiroSocio, setRetiroSocio] = useState("");
@@ -717,9 +723,9 @@ Diferencia con cierre anterior: ${fmt(diferencia)}` : ""}`;
       if (esComponente(v)) return false;
       return new Date(v.created_at) >= new Date(turnoActivo.created_at);
     });
-    const efectivo = ventasTurno.filter((v) => v.metodo_pago === "Efectivo").reduce((s, v) => s + v.total, 0);
-    const tarjeta = ventasTurno.filter((v) => v.metodo_pago === "Tarjeta").reduce((s, v) => s + v.total, 0);
-    const py = ventasTurno.filter((v) => v.metodo_pago === "Pedidos Ya").reduce((s, v) => s + v.total, 0);
+    const efectivo = ventasTurno.reduce((s, v) => s + montoMetodo(v, "Efectivo"), 0);
+    const tarjeta = ventasTurno.reduce((s, v) => s + montoMetodo(v, "Tarjeta"), 0);
+    const py = ventasTurno.reduce((s, v) => s + montoMetodo(v, "Pedidos Ya"), 0);
     const cortesiasTurno = ventasTurno.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "cortesia"; } catch { return false; } });
     const gastosTurno = gastos.filter((g) => g.fondo === "Efectivo foodtruck" && new Date(g.created_at) >= new Date(turnoActivo.created_at)).reduce((s, g) => s + g.monto, 0);
     const efectivoEsperado = turnoActivo.saldo_inicial + efectivo - gastosTurno;
@@ -1236,7 +1242,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const totalCarrito = carrito.reduce((s, c) => s + c.total, 0);
 
   // Arma las filas de la venta (combos con sus productos internos). `extraNota` se suma a la nota de cada fila.
-  const construirFilasVenta = (items, { fecha, quien, extraNota }) => {
+  const construirFilasVenta = (items, { fecha, quien, extraNota, efectivo }) => {
     const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
     const rows = [];
     items.forEach((c) => {
@@ -1255,6 +1261,26 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         rows.push({ fecha, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: quien || null, nota: JSON.stringify({ ...(c.descuento || {}), ...(c.combo ? { combo: c.combo } : {}), ...(c.variante ? { variante: c.variante } : {}) }) || null });
       }
     });
+    // Pago mixto: el efectivo se reparte en proporción al valor de cada fila; el resto es tarjeta
+    const efectivoMixto = Math.round(Number(efectivo) || 0);
+    if (efectivoMixto > 0) {
+      const esComp = (r) => { try { return JSON.parse(r.nota || "{}").es_componente === true; } catch { return false; } };
+      const principales = rows.filter((r) => !esComp(r));
+      const totalVenta = principales.reduce((a, r) => a + r.total, 0);
+      if (totalVenta > 0) {
+        let asignado = 0;
+        const partes = rows.map((r) => Math.round(r.total * efectivoMixto / totalVenta));
+        rows.forEach((r, i) => { if (!esComp(r)) asignado += partes[i]; });
+        // el redondeo se corrige en la última fila principal con valor
+        for (let i = rows.length - 1; i >= 0; i--) { if (!esComp(rows[i]) && rows[i].total > 0) { partes[i] += efectivoMixto - asignado; break; } }
+        rows.forEach((r, i) => {
+          let n = {}; try { n = JSON.parse(r.nota || "{}"); } catch { n = {}; }
+          const ef = Math.max(Math.min(partes[i], r.total), 0);
+          r.metodo_pago = "Mixto";
+          r.nota = JSON.stringify({ ...n, pagos: { Efectivo: ef, Tarjeta: r.total - ef } });
+        });
+      }
+    }
     if (extraNota) rows.forEach((r) => { let n = {}; try { n = JSON.parse(r.nota || "{}"); } catch { n = {}; } r.nota = JSON.stringify({ ...n, ...extraNota }); });
     return rows;
   };
@@ -1303,7 +1329,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   // Espera el cobro y, solo si quedó aprobado por el monto exacto, registra la venta.
   const resolverCobroPoint = async (pend, { limpiarCarrito } = {}) => {
     puntoCancelar.current = false;
-    setPuntoEstado({ fase: "esperando", monto: pend.monto, orderId: pend.orderId });
+    setPuntoEstado({ fase: "esperando", monto: pend.monto, orderId: pend.orderId, efectivo: pend.efectivo || 0 });
     const res = await esperarCobroPoint(pend);
     if (res.fase === "aprobado") {
       if (ventasRef.current.some((v) => parseNota(v).point_order === pend.orderId)) {
@@ -1321,7 +1347,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
           }
         } catch { /* la comisión real es opcional: si falla, se estima */ }
       }
-      const rows = construirFilasVenta(pend.items, { fecha: pend.fecha, quien: pend.quien, extraNota: { point_order: pend.orderId, ...(pagoId ? { point_payment: String(pagoId) } : {}) } });
+      const rows = construirFilasVenta(pend.items, { fecha: pend.fecha, quien: pend.quien, efectivo: pend.efectivo, extraNota: { point_order: pend.orderId, ...(pagoId ? { point_payment: String(pagoId) } : {}) } });
       if (fee !== null && rows.length > 0) {
         let n = {}; try { n = JSON.parse(rows[0].nota || "{}"); } catch { n = {}; }
         rows[0].nota = JSON.stringify({ ...n, point_fee: fee, point_total: pend.monto, ...(tipoTarjeta ? { point_tipo: tipoTarjeta } : {}) });
@@ -1333,7 +1359,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         return;
       }
       limpiarPuntoPendiente(); setPuntoEstado(null);
-      if (limpiarCarrito) setCarrito([]);
+      if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); }
       showToast(`✓ Cobrado con Point — ${fmt(pend.monto)}`); cargarVentas();
       return;
     }
@@ -1345,11 +1371,12 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   const cobrarConPoint = async () => {
-    const monto = Math.round(totalCarrito);
+    const efectivo = Math.round(Number(efectivoParcial) || 0);
+    const monto = Math.round(totalCarrito) - efectivo; // Point cobra solo la parte con tarjeta
     if (monto < 500) showToast("Monto bajo: Point está probado desde $500");
     setSavingVenta(true);
     puntoCancelar.current = false;
-    setPuntoEstado({ fase: "creando", monto });
+    setPuntoEstado({ fase: "creando", monto, efectivo });
     let crear = null;
     try { crear = await llamarPunto({ accion: "crear", monto: String(monto), ref: `DA-${Date.now()}`, idem: nuevoUuid() }); }
     catch { crear = null; }
@@ -1360,7 +1387,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       setPuntoEstado({ fase: "error", monto, mensaje: enCola ? "La terminal ya tiene un cobro en cola. Espera a que expire (unos 15 min) o cancélalo en la terminal." : crear.error === "clave" ? "La clave del script no coincide con la de la app." : "No se pudo enviar el cobro a la terminal. Revisa que esté encendida, con internet y en modo PDV." });
       setSavingVenta(false); return;
     }
-    const pend = { orderId: crear.data.id, monto, items: carrito, fecha: fechaVenta, quien: persona, t: Date.now() };
+    const pend = { orderId: crear.data.id, monto, efectivo, items: carrito, fecha: fechaVenta, quien: persona, t: Date.now() };
     try { localStorage.setItem("puntoPendiente", JSON.stringify(pend)); } catch {}
     setPuntoPendiente(pend);
     await resolverCobroPoint(pend, { limpiarCarrito: true });
@@ -1383,15 +1410,17 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     // Con tarjeta + Point: el cobro se hace en la terminal y la venta se registra solo cuando queda aprobado
     const hayTarjeta = carrito.some((c) => c.metodo_pago === "Tarjeta");
     const todoTarjeta = carrito.every((c) => c.metodo_pago === "Tarjeta");
+    const efectivo = todoTarjeta ? Math.round(Number(efectivoParcial) || 0) : 0;
+    if (efectivo > 0 && efectivo >= Math.round(totalCarrito)) { showToast("El efectivo debe ser menor al total: si paga todo en efectivo, usa ese método"); return; }
     if (puntoDisponible && puntoModo && hayTarjeta) {
       if (!todoTarjeta) { showToast("Point cobra pedidos 100% con tarjeta: separa el pedido o desactiva 'Cobrar con Point'"); return; }
       if (Math.round(totalCarrito) > 0) { await cobrarConPoint(); return; }
     }
     setSavingVenta(true);
-    const rows = construirFilasVenta(carrito, { fecha: fechaVenta, quien: persona });
+    const rows = construirFilasVenta(carrito, { fecha: fechaVenta, quien: persona, efectivo });
     const { error } = await supabase.from("ventas").insert(rows);
     if (error) showToast("Error al guardar");
-    else { showToast(`✓ Venta — ${fmt(totalCarrito)}`); setCarrito([]); cargarVentas(); }
+    else { showToast(`✓ Venta — ${fmt(totalCarrito)}`); setCarrito([]); setEfectivoParcial(""); cargarVentas(); }
     setSavingVenta(false);
   };
 
@@ -1551,7 +1580,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   });
   const ventasFiltradas = ventas.filter((v) => {
     if (filtroVentas.mes && !v.fecha.startsWith(filtroVentas.mes)) return false;
-    if (filtroVentas.metodo && v.metodo_pago !== filtroVentas.metodo) return false;
+    if (filtroVentas.metodo && !(v.metodo_pago === filtroVentas.metodo || montoMetodo(v, filtroVentas.metodo) > 0)) return false;
     // Ocultar componentes internos de combos
     try { const nota = JSON.parse(v.nota || "{}"); if (nota.es_componente) return false; } catch {}
     return true;
@@ -1571,8 +1600,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   ).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total);
 
   const ventasPorMetodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({
-    m, t: ventasMesActual.filter((v) => v.metodo_pago === m).reduce((s, v) => s + v.total, 0),
-    c: ventasMesActual.filter((v) => v.metodo_pago === m).length,
+    m, t: ventasMesActual.reduce((s, v) => s + montoMetodo(v, m), 0),
+    c: ventasMesActual.filter((v) => montoMetodo(v, m) > 0).length,
   })).filter((x) => x.t > 0);
 
   const cortesiasMes = ventasMesActual.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "cortesia"; } catch { return false; } });
@@ -1849,6 +1878,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
           <div style={{ ...S.card, maxWidth: 360, width: "100%", textAlign: "center", display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ fontSize: 34 }}>{puntoEstado.fase === "esperando" || puntoEstado.fase === "creando" ? "💳" : puntoEstado.fase === "revisar" || puntoEstado.fase === "sin_registrar" ? "⚠️" : "✖️"}</div>
             <div style={{ fontSize: 26, fontWeight: 800, color: C.mustard }}>{fmt(puntoEstado.monto)}</div>
+            {puntoEstado.efectivo > 0 && <div style={{ color: C.muted, fontSize: 12 }}>+ {fmt(puntoEstado.efectivo)} en efectivo: recíbelo del cliente</div>}
             {puntoEstado.fase === "creando" && <div style={{ color: C.muted, fontSize: 13 }}>Enviando el cobro a la terminal…</div>}
             {puntoEstado.fase === "esperando" && (
               <>
@@ -2792,6 +2822,20 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       <span style={{ fontWeight: 700 }}>Total</span>
                       <span style={{ fontWeight: 800, fontSize: 22, color: C.green }}>{fmt(totalCarrito)}</span>
                     </div>
+                    {carrito.length > 0 && carrito.every((c) => c.metodo_pago === "Tarjeta") && (
+                      <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, padding: "10px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12, color: C.muted, flex: 1 }}>¿Paga una parte en efectivo?</span>
+                          <input type="text" inputMode="numeric" placeholder="$ efectivo" value={efectivoParcial ? Number(efectivoParcial).toLocaleString("es-CL") : ""} onChange={(e) => setEfectivoParcial(e.target.value.replace(/[^0-9]/g, ""))} style={{ ...S.inp, width: 110, textAlign: "right" }} />
+                        </div>
+                        {Number(efectivoParcial) > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 6 }}>
+                            <span style={{ color: C.green, fontWeight: 700 }}>Efectivo {fmt(Number(efectivoParcial))}</span>
+                            <span style={{ color: C.blue, fontWeight: 700 }}>Tarjeta {fmt(Math.max(totalCarrito - Number(efectivoParcial), 0))}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {puntoDisponible && carrito.some((c) => c.metodo_pago === "Tarjeta") && (
                       <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontSize: 12, color: C.muted, cursor: "pointer" }}>
                         <input type="checkbox" checked={puntoModo} onChange={(e) => setPuntoModo(e.target.checked)} />
@@ -2799,9 +2843,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       </label>
                     )}
                     <button onClick={registrarVenta} disabled={savingVenta} style={{ marginTop: 10, background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "12px 0", fontWeight: 700, fontSize: 15, cursor: "pointer", width: "100%" }}>
-                      {savingVenta ? "Guardando..." : (puntoDisponible && puntoModo && carrito.length > 0 && carrito.some((c) => c.metodo_pago === "Tarjeta")) ? `💳 Cobrar ${fmt(totalCarrito)} con Point` : "✓ Confirmar venta"}
+                      {savingVenta ? "Guardando..." : (puntoDisponible && puntoModo && carrito.length > 0 && carrito.some((c) => c.metodo_pago === "Tarjeta")) ? `💳 Cobrar ${fmt(Math.max(totalCarrito - (carrito.every((c) => c.metodo_pago === "Tarjeta") ? (Number(efectivoParcial) || 0) : 0), 0))} con Point` : "✓ Confirmar venta"}
                     </button>
-                    <button onClick={() => setCarrito([])} style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 12, width: "100%" }}>Cancelar pedido</button>
+                    <button onClick={() => { setCarrito([]); setEfectivoParcial(""); }} style={{ marginTop: 8, background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 0", cursor: "pointer", fontSize: 12, width: "100%" }}>Cancelar pedido</button>
                   </div>
                 )}
               </div>
@@ -2844,7 +2888,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const margenOperacional = totalPeriodo > 0 && gastosPeriodo > 0 ? Math.round((utilidadPeriodo / totalPeriodo) * 100) : null;
               const ventasDia = diasGrafico.map((d) => ({ dia: d.slice(8), fecha: d, total: ventas.filter((v) => v.fecha === d && !esComponente(v)).reduce((s, v) => s + v.total, 0) }));
               const maxDia = Math.max(...ventasDia.map((d) => d.total), 1);
-              const metodosPeriodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({ m, t: ventasPeriodo.filter((v) => v.metodo_pago === m).reduce((s, v) => s + v.total, 0) })).filter((x) => x.t > 0);
+              const metodosPeriodo = ["Efectivo", "Tarjeta", "Pedidos Ya"].map((m) => ({ m, t: ventasPeriodo.reduce((s, v) => s + montoMetodo(v, m), 0) })).filter((x) => x.t > 0);
               const productosTodos = Object.entries(ventasPeriodo.reduce((acc, v) => { acc[v.producto] = acc[v.producto] || { total: 0, cantidad: 0, as: 0 }; acc[v.producto].total += v.total; acc[v.producto].cantidad += v.cantidad; if (parseNota(v).variante === "as") acc[v.producto].as += v.cantidad; return acc; }, {})).map(([n, d]) => ({ n, ...d })).sort((a, b) => b.total - a.total);
               const productosPeriodo = dashVerTodosProd ? productosTodos : productosTodos.slice(0, 8);
               const cortesiasPeriodo = ventasPeriodo.filter((v) => { try { return JSON.parse(v.nota || "{}").tipo === "cortesia"; } catch { return false; } });
@@ -3042,6 +3086,10 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         <span>{v.fecha}{v.hora ? ` · ${v.hora}` : ""}</span>
                         <span>{v.cantidad} und</span>
                         <Tag text={v.metodo_pago} color={(metodoPagoColors[v.metodo_pago] || C.muted) + "33"} textColor={metodoPagoColors[v.metodo_pago] || C.muted} />
+                        {(() => { const n = notaDe(v); return (<>
+                          {v.metodo_pago === "Mixto" && n.pagos && <Tag text={`Efectivo ${fmt(n.pagos.Efectivo)} · Tarjeta ${fmt(n.pagos.Tarjeta)}`} color={C.purple + "33"} textColor={C.purple} />}
+                          {n.point_tipo && <Tag text={`${TIPO_TARJETA_TXT[n.point_tipo] || n.point_tipo}${n.point_fee ? ` · comisión ${fmt(n.point_fee)}` : ""}`} color={C.blue + "33"} textColor={C.blue} />}
+                        </>); })()}
                         {v.nota && (() => { try { const d = JSON.parse(v.nota); if (d.tipo === "cortesia") return <Tag text={`🎁 ${d.autorizado_por}`} color={C.green + "33"} textColor={C.green} />; if (d.tipo === "personal") return <Tag text={`${d.porcentaje}% off`} color={C.blue + "33"} textColor={C.blue} />; if (d.combo) return <Tag text={`🎁 ${d.combo}`} color={C.purple + "33"} textColor={C.purple} />; if (d.variante === "as") return <Tag text="AS (churrasco)" color={C.blue + "33"} textColor={C.blue} />; return null; } catch { return null; } })()}
                       </div>
                     </div>
@@ -3668,7 +3716,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const mesesER = [...new Set([...meses, ...ventasMeses, mesActual])].sort().reverse();
               const mesSel = estadoMes || mesActual;
               const vMes = ventas.filter((v) => v.fecha.startsWith(mesSel) && !esComponente(v));
-              const porMetodoER = (m) => vMes.filter((v) => v.metodo_pago === m).reduce((acc, v) => acc + v.total, 0);
+              const porMetodoER = (m) => vMes.reduce((acc, v) => acc + montoMetodo(v, m), 0);
               const totalVentasER = vMes.reduce((acc, v) => acc + v.total, 0);
               const gMes = gastos.filter((g) => (g.mes_corresponde || g.fecha.slice(0, 7)) === mesSel);
               const nombresInsumos = insumosPrecio.map((i) => i.nombre);
@@ -3715,10 +3763,15 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
               const tasaPYER = tasaPY(mesSel);
               const comisionPYER = Math.round(porMetodoER("Pedidos Ya") * tasaPYER);
               // Comisión de tarjeta: real (de Mercado Pago, guardada al cobrar con Point) donde existe; estimada para el resto
-              const ventasTarjetaER = vMes.filter((v) => v.metodo_pago === "Tarjeta");
+              const ventasTarjetaER = vMes.filter((v) => v.metodo_pago === "Tarjeta" || v.metodo_pago === "Mixto");
               const feeRealER = ventasTarjetaER.reduce((acc, v) => acc + (Number(parseNota(v).point_fee) || 0), 0);
               const cubiertoER = ventasTarjetaER.reduce((acc, v) => { const n = parseNota(v); return acc + (n.point_fee !== undefined ? (Number(n.point_total) || 0) : 0); }, 0);
-              const comisionTarjetaER = Math.round(feeRealER + Math.max(porMetodoER("Tarjeta") - cubiertoER, 0) * COMISION_TARJETA);
+              const porTipoER = {};
+              ventasTarjetaER.forEach((v) => { const n = parseNota(v); if (n.point_fee === undefined) return; const t = n.point_tipo || "otro"; if (!porTipoER[t]) porTipoER[t] = { n: 0, monto: 0, fee: 0 }; porTipoER[t].n += 1; porTipoER[t].monto += Number(n.point_total) || 0; porTipoER[t].fee += Number(n.point_fee) || 0; });
+              const estimadoBaseER = Math.max(porMetodoER("Tarjeta") - cubiertoER, 0);
+              const comisionTarjetaER = Math.round(feeRealER + estimadoBaseER * COMISION_TARJETA);
+              const montoPointER = Object.values(porTipoER).reduce((acc, d) => acc + d.monto, 0);
+              const pctCreditoRealER = montoPointER > 0 ? Math.round(((porTipoER.credit_card ? porTipoER.credit_card.monto : 0) / montoPointER) * 100) : null;
               const resultadoER = margenBrutoER - operacionalER - fijosER - equipamientoER - cuotasER - sinClasER - comisionPYER - comisionTarjetaER - gustavoER;
               const sinClasNombres = [...new Set(gMes.filter((g) => categoriaGasto(g.insumo, nombresInsumos, g.tipo_gasto) === "sin_clasificar").map((g) => g.insumo))];
               const pctER = (n) => totalVentasER > 0 ? ` · ${Math.round((n / totalVentasER) * 100)}%` : "";
@@ -3823,8 +3876,23 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                   )}
                   {equipamientoER > 0 && filaERDesglose("equipamiento", `(−) Equipamiento y reparaciones${pctER(equipamientoER)}`, fmt(equipamientoER), { color: C.red }, detalleInsumos(gastosDe("equipamiento"), equipamientoER))}
-                  {filaER(`(−) Comisión tarjeta (${(porMetodoER("Tarjeta") > 0 ? (comisionTarjetaER / porMetodoER("Tarjeta")) * 100 : COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red })}
-                  {cubiertoER > 0 && <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>Comisión real de Mercado Pago en {fmt(cubiertoER)} de {fmt(porMetodoER("Tarjeta"))} cobrados con tarjeta; el resto se estima al {(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%.</div>}
+                  {filaERDesglose("tarjeta", `(−) Comisión tarjeta (${(porMetodoER("Tarjeta") > 0 ? (comisionTarjetaER / porMetodoER("Tarjeta")) * 100 : COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%)${pctER(comisionTarjetaER)}`, fmt(comisionTarjetaER), { color: C.red },
+                    <div>
+                      {Object.entries(porTipoER).sort((x, y) => y[1].monto - x[1].monto).map(([t, d]) => (
+                        <div key={t} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 }}>
+                          <span>{TIPO_TARJETA_TXT[t] || t} <span style={{ color: C.muted, fontSize: 10 }}>{d.n} {d.n === 1 ? "pago" : "pagos"} · {fmt(d.monto)}</span></span>
+                          <span style={{ whiteSpace: "nowrap" }}><span style={{ fontWeight: 700 }}>{fmt(d.fee)}</span> <span style={{ color: C.muted, fontSize: 10 }}>({d.monto > 0 ? ((d.fee / d.monto) * 100).toFixed(2).replace(".", ",") : "0,00"}%)</span></span>
+                        </div>
+                      ))}
+                      {estimadoBaseER > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 }}>
+                          <span>Sin dato de Point <span style={{ color: C.muted, fontSize: 10 }}>{fmt(estimadoBaseER)} · estimado al {(COMISION_TARJETA * 100).toFixed(2).replace(".", ",")}%</span></span>
+                          <span style={{ fontWeight: 700 }}>{fmt(Math.round(estimadoBaseER * COMISION_TARJETA))}</span>
+                        </div>
+                      )}
+                      {Object.keys(porTipoER).length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Aún no hay pagos cobrados con Point este mes: todo se estima.</div>}
+                      {pctCreditoRealER !== null && <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>Mezcla real con Point: {pctCreditoRealER}% crédito (la estimación usa {Math.round(PCT_CREDITO_ESTIMADO * 100)}%). Cuando haya varios pagos, conviene ajustar esa cifra en el código.</div>}
+                    </div>)}
                   {filaER(`(−) Pedidos Ya: comisión y cargos (${(tasaPYER * 100).toFixed(1).replace(".", ",")}%)${pctER(comisionPYER)}`, fmt(comisionPYER), { color: C.red })}
                   <div style={{ padding: "2px 0 6px 12px", fontSize: 11, color: C.muted, borderBottom: `1px solid ${C.border}` }}>Sobre ventas PY de {fmt(porMetodoER("Pedidos Ya"))}. Incluye comisión (28%) + IVA, costo plus, rechazos, demoras y reclamos, según las liquidaciones.</div>
                   {filaER(`(−) Gustavo${pctER(gustavoER)}`, fmt(gustavoER), { color: C.red })}
