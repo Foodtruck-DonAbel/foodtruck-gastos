@@ -26,7 +26,10 @@ const fmt = (n) => "$" + Number(n || 0).toLocaleString("es-CL");
 const notaDe = (v) => { try { return JSON.parse(v.nota || "{}"); } catch { return {}; } };
 const montoMetodo = (v, m) => { if (v.metodo_pago === "Mixto") { const n = notaDe(v); return n.pagos ? Number(n.pagos[m]) || 0 : 0; } return v.metodo_pago === m ? v.total : 0; };
 // Tipo de tarjeta que informa Mercado Pago (payment_type_id)
-const TIPO_TARJETA_TXT = { debit_card: "Débito", credit_card: "Crédito", prepaid_card: "Prepago", otro: "Otro" };
+const TIPO_TARJETA_TXT = { debit_card: "Débito", credit_card: "Crédito", prepaid_card: "Prepago", account_money: "QR / saldo MP", qr: "QR", otro: "Otro" };
+// Medios con los que realmente entra plata por Mercado Pago. Cualquier otro (por ejemplo efectivo marcado en la terminal) no cuenta como cobro.
+const TIPOS_POINT_CON_DINERO = ["debit_card", "credit_card", "prepaid_card", "account_money", "bank_transfer", "qr", "digital_wallet"];
+const medioPoint = (tipoPago, tipoOrden) => { const tipo = tipoPago || tipoOrden || null; return { tipo, verificado: !!tipo && TIPOS_POINT_CON_DINERO.includes(tipo) }; };
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 // Mayúscula inicial por palabra; reconoce ñ y tildes (con \b\w, "castaño" salía "CastañO")
 const normProv = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/(^|\s)(\p{L})/gu, (m, sep, c) => sep + c.toUpperCase());
@@ -1369,7 +1372,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   // Espera el cobro y, solo si quedó aprobado por el monto exacto, registra la venta.
-  const resolverCobroPoint = async (pend, { limpiarCarrito } = {}) => {
+  const resolverCobroPoint = async (pend, { limpiarCarrito, medio } = {}) => {
     puntoCancelar.current = false;
     setPuntoEstado({ fase: "esperando", monto: pend.monto, orderId: pend.orderId, efectivo: pend.efectivo || 0 });
     const res = await esperarCobroPoint(pend);
@@ -1389,8 +1392,19 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
           }
         } catch { /* la comisión real es opcional: si falla, se estima */ }
       }
-      const rows = construirFilasVenta(pend.items, { fecha: pend.fecha, quien: pend.quien, efectivo: pend.efectivo, extraNota: { point_order: pend.orderId, ...(pagoId ? { point_payment: String(pagoId) } : {}) } });
-      if ((fee !== null || tipoTarjeta) && rows.length > 0) {
+      // ¿Con qué se pagó de verdad? Si no fue tarjeta ni QR (por ejemplo "Efectivo" marcado en la terminal), no entró plata: no se registra sola
+      const pagoOrden = res.orden && res.orden.transactions && res.orden.transactions.payments ? res.orden.transactions.payments[0] : null;
+      const tipoOrden = pagoOrden && pagoOrden.payment_method ? (pagoOrden.payment_method.type || null) : null;
+      const { tipo: tipoDetectado, verificado: medioVerificado } = medioPoint(tipoTarjeta, tipoOrden);
+      if (!medioVerificado && !medio) {
+        try { if (navigator.vibrate) navigator.vibrate([300, 150, 300]); } catch {}
+        setPuntoEstado({ fase: "revisar_medio", monto: pend.monto, orderId: pend.orderId, efectivo: pend.efectivo || 0, tipo: tipoDetectado });
+        return;
+      }
+      const comoEfectivo = medio === "efectivo";
+      const rows = construirFilasVenta(pend.items, { fecha: pend.fecha, quien: pend.quien, efectivo: comoEfectivo ? 0 : pend.efectivo, extraNota: { point_order: pend.orderId, ...(pagoId ? { point_payment: String(pagoId) } : {}), ...(comoEfectivo ? { point_medio: tipoDetectado || "desconocido" } : {}), ...(medio === "tarjeta" && !medioVerificado ? { point_revisado: true } : {}) } });
+      if (comoEfectivo) rows.forEach((r) => { r.metodo_pago = "Efectivo"; });
+      else if ((fee !== null || tipoTarjeta) && rows.length > 0) {
         let n = {}; try { n = JSON.parse(rows[0].nota || "{}"); } catch { n = {}; }
         rows[0].nota = JSON.stringify({ ...n, point_total: pend.monto, ...(fee !== null ? { point_fee: fee } : {}), ...(tipoTarjeta ? { point_tipo: tipoTarjeta } : {}) });
       }
@@ -1402,9 +1416,8 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       }
       limpiarPuntoPendiente(); setPuntoEstado(null);
       if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); }
-      const tiposEsperados = ["debit_card", "credit_card", "prepaid_card", "account_money", "bank_transfer"];
-      if (tipoTarjeta && !tiposEsperados.includes(tipoTarjeta)) showToast(`⚠️ Se pagó con "${tipoTarjeta}" en la terminal: revisa que sea tarjeta o QR`);
-      else showToast(`✓ Cobrado con Point — ${fmt(pend.monto)}`);
+      const etiquetaTipo = TIPO_TARJETA_TXT[tipoDetectado] || null;
+      showToast(comoEfectivo ? `✓ Registrado como EFECTIVO — ${fmt(pend.monto)}` : `✓ Cobrado con Point — ${fmt(pend.monto)}${etiquetaTipo ? " · " + etiquetaTipo : ""}`);
       cargarVentas();
       return;
     }
@@ -1922,7 +1935,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       {puntoEstado && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ ...S.card, maxWidth: 360, width: "100%", textAlign: "center", display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ fontSize: 34 }}>{puntoEstado.fase === "esperando" || puntoEstado.fase === "creando" ? "💳" : puntoEstado.fase === "revisar" || puntoEstado.fase === "sin_registrar" ? "⚠️" : "✖️"}</div>
+            <div style={{ fontSize: 34 }}>{puntoEstado.fase === "esperando" || puntoEstado.fase === "creando" ? "💳" : puntoEstado.fase === "revisar" || puntoEstado.fase === "sin_registrar" || puntoEstado.fase === "revisar_medio" ? "⚠️" : "✖️"}</div>
             <div style={{ fontSize: 26, fontWeight: 800, color: C.mustard }}>{fmt(puntoEstado.monto)}</div>
             {puntoEstado.efectivo > 0 && <div style={{ color: C.muted, fontSize: 12 }}>+ {fmt(puntoEstado.efectivo)} en efectivo: recíbelo del cliente</div>}
             {puntoEstado.fase === "creando" && <div style={{ color: C.muted, fontSize: 13 }}>Enviando el cobro a la terminal…</div>}
@@ -1932,6 +1945,16 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <div style={{ color: C.muted, fontSize: 12 }}>Pídele al cliente que pague. <b>No entregues el pedido hasta ver el pago aprobado.</b></div>
                 {puntoEstado.estadoMP && <div style={{ color: C.muted, fontSize: 11 }}>Estado: {puntoEstado.estadoMP === "at_terminal" ? "en la terminal" : puntoEstado.estadoMP === "created" ? "enviado, esperando a la terminal" : puntoEstado.estadoMP}. Si no aparece, toca "Actualizar" en la terminal.</div>}
                 <button onClick={cancelarCobroPoint} style={{ background: "none", border: `1px solid ${C.red}`, color: C.red, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>Cancelar cobro</button>
+              </>
+            )}
+            {puntoEstado.fase === "revisar_medio" && (
+              <>
+                <div style={{ color: C.red, fontWeight: 800, fontSize: 16 }}>¡OJO! No quedó como pago con tarjeta</div>
+                <div style={{ fontSize: 13 }}>La terminal registró el pago como: <b>{puntoEstado.tipo ? (TIPO_TARJETA_TXT[puntoEstado.tipo] || puntoEstado.tipo) : "medio desconocido"}</b>. Si el cliente eligió <b>EFECTIVO</b> en la terminal, <b>no entró plata por tarjeta</b>.</div>
+                <div style={{ color: C.muted, fontSize: 12 }}>Mira el voucher y pregúntale al cliente cómo pagó antes de elegir.</div>
+                <button onClick={() => puntoPendiente && resolverCobroPoint(puntoPendiente, { limpiarCarrito: true, medio: "efectivo" })} style={{ background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "11px 0", cursor: "pointer", fontWeight: 700 }}>Me pagó en EFECTIVO (ya lo recibí)</button>
+                <button onClick={() => puntoPendiente && resolverCobroPoint(puntoPendiente, { limpiarCarrito: true, medio: "tarjeta" })} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontWeight: 600 }}>Fue tarjeta o QR (se cobró bien)</button>
+                <button onClick={() => { limpiarPuntoPendiente(); setPuntoEstado(null); setSavingVenta(false); showToast("No se registró la venta. Anula ese cobro en la app de Mercado Pago."); }} style={{ background: "none", border: `1px solid ${C.red}`, color: C.red, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>No pagó: no registrar la venta</button>
               </>
             )}
             {puntoEstado.mensaje && <div style={{ color: puntoEstado.fase === "revisar" || puntoEstado.fase === "sin_registrar" ? C.orange : C.muted, fontSize: 13 }}>{puntoEstado.mensaje}</div>}
