@@ -190,7 +190,7 @@ const COMISION_TARJETA = COMISION_TARJETA_DEBITO * (1 - PCT_CREDITO_ESTIMADO) + 
 // Resume los pagos con tarjeta cobrados con Point: por tipo (débito, crédito, prepago).
 // Si Mercado Pago informó la comisión se usa esa (real); si solo se sabe el tipo, se estima con la tasa de ese tipo.
 const resumenTarjeta = (ventasLista) => {
-  const porTipo = {}; let feeReal = 0, cubiertoReal = 0, feeEstTipo = 0, cubiertoTipo = 0, propinaTotal = 0, feePropinas = 0;
+  const porTipo = {}; let feeReal = 0, cubiertoReal = 0, feeEstTipo = 0, cubiertoTipo = 0, propinaTotal = 0, feePropinas = 0, nConPropina = 0;
   ventasLista.forEach((v) => {
     if (v.metodo_pago !== "Tarjeta" && v.metodo_pago !== "Mixto") return;
     const n = notaDe(v);
@@ -199,7 +199,7 @@ const resumenTarjeta = (ventasLista) => {
     const propina = Number(n.point_propina) || 0; // la propina también paga comisión: Mercado Pago cobra sobre el total pagado
     const t = n.point_tipo || "otro";
     if (!porTipo[t]) porTipo[t] = { n: 0, monto: 0, propina: 0, fee: 0, estimado: false };
-    porTipo[t].n += 1; porTipo[t].monto += monto; porTipo[t].propina += propina; propinaTotal += propina;
+    porTipo[t].n += 1; porTipo[t].monto += monto; porTipo[t].propina += propina; propinaTotal += propina; if (propina > 0) nConPropina += 1;
     if (n.point_fee !== undefined) {
       const f = Number(n.point_fee) || 0; porTipo[t].fee += f; feeReal += f; cubiertoReal += monto;
       if (monto + propina > 0) feePropinas += f * propina / (monto + propina);
@@ -209,7 +209,7 @@ const resumenTarjeta = (ventasLista) => {
       feePropinas += propina * tasa;
     }
   });
-  return { porTipo, feeReal, cubiertoReal, feeEstTipo, cubiertoTipo, propinaTotal, feePropinas };
+  return { porTipo, feeReal, cubiertoReal, feeEstTipo, cubiertoTipo, propinaTotal, feePropinas, nConPropina };
 };
 // Cruza los cobros aprobados de Mercado Pago de un día con las ventas con tarjeta registradas.
 // Una venta puede tener varias filas (una por producto): se agrupan por el momento en que se guardaron.
@@ -4190,6 +4190,29 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     </div>
                     {erAbierto.ventasTarjeta && <DesgloseTarjeta lista={vMes} conComision />}
                   </div>
+                  {resTarjetaER.propinaTotal > 0 && filaERDesglose("propinas", `Propinas cobradas con tarjeta · ${resTarjetaER.nConPropina} ${resTarjetaER.nConPropina === 1 ? "pago" : "pagos"}`, fmt(resTarjetaER.propinaTotal), { color: C.green },
+                    <div>
+                      {vMes.filter((v) => (Number(parseNota(v).point_propina) || 0) > 0).sort((a, b) => (a.fecha + (a.created_at || "") < b.fecha + (b.created_at || "") ? 1 : -1)).map((v) => {
+                        const n = parseNota(v);
+                        const comProp = Math.round(resumenTarjeta([v]).feePropinas);
+                        return (
+                          <div key={v.id} style={{ padding: "3px 0" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, gap: 8 }}>
+                              <span>{v.fecha.split("-").reverse().join("-")}{v.hora ? ` · ${v.hora}` : ""} <span style={{ color: C.muted, fontSize: 10 }}>{v.producto}{n.point_tipo ? ` · ${TIPO_TARJETA_TXT[n.point_tipo] || n.point_tipo}` : ""}</span></span>
+                              <span style={{ fontWeight: 700, color: C.green, whiteSpace: "nowrap" }}>{fmt(n.point_propina)}</span>
+                            </div>
+                            <div style={{ color: C.muted, fontSize: 10 }}>sobre una venta de {fmt(n.point_total || v.total)} · comisión de esta propina ≈ {fmt(comProp)}</div>
+                          </div>
+                        );
+                      })}
+                      <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 6, paddingTop: 6, fontSize: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><span>Propinas cobradas</span><span style={{ fontWeight: 700, color: C.green }}>{fmt(resTarjetaER.propinaTotal)}</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 2 }}><span>(−) Comisión que se paga por ellas</span><span style={{ fontWeight: 700, color: C.red }}>{fmt(Math.round(resTarjetaER.feePropinas))}</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 2 }}><span>= Propinas netas de comisión</span><span style={{ fontWeight: 800 }}>{fmt(resTarjetaER.propinaTotal - Math.round(resTarjetaER.feePropinas))}</span></div>
+                      </div>
+                      <div style={{ color: C.muted, fontSize: 10, marginTop: 6 }}>No suman a las ventas ni al resultado. Su comisión sí está dentro de "Comisión tarjeta", porque Mercado Pago cobra sobre el total pagado.</div>
+                    </div>
+                  )}
                   {filaERDesglose("costo", `(−) Costo de ventas${pctER(costoVentasTotalER)}`, fmt(costoVentasTotalER), { color: C.red },
                     detalleInsumos(gastosDe("costo_ventas"), costoVentasTotalER, costoBebidasER > 0 ? (
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 12, padding: "3px 0", gap: 8 }}>
