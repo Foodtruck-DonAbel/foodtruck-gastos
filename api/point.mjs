@@ -23,6 +23,13 @@ async function llamarMP(metodo, ruta, cuerpo, cabeceras = {}) {
 
 const uuid = () => globalThis.crypto.randomUUID();
 
+// Esta función no tiene login: de cada pago se devuelve solo lo que la app necesita (nada del pagador ni de la tarjeta).
+const soloPago = (x) => x && ({
+  id: x.id, status: x.status, status_detail: x.status_detail, transaction_amount: x.transaction_amount,
+  date_created: x.date_created, date_approved: x.date_approved, payment_type_id: x.payment_type_id,
+  external_reference: x.external_reference, fee_details: x.fee_details,
+});
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   const p = req.query || {};
@@ -70,8 +77,27 @@ export default async function handler(req, res) {
         }));
 
       // Datos del pago aprobado (comisión real, tipo de tarjeta, cuotas)
-      case "pago":
-        return res.status(200).json(await llamarMP("GET", `/v1/payments/${encodeURIComponent(p.id)}`));
+      case "pago": {
+        const r = await llamarMP("GET", `/v1/payments/${encodeURIComponent(p.id)}`);
+        if (r.ok && r.data) r.data = soloPago(r.data);
+        return res.status(200).json(r);
+      }
+
+      // Cobros del día en Mercado Pago (para conciliar con las ventas de la app). desde/hasta = AAAA-MM-DD.
+      // Opcional: variable MP_POS_ID para traer solo los cobros de la caja del Point (sin otros movimientos de la cuenta).
+      case "pagos": {
+        const fecha = /^\d{4}-\d{2}-\d{2}$/;
+        if (!fecha.test(p.desde || "") || !fecha.test(p.hasta || "")) return res.status(200).json({ ok: false, error: "fechas" });
+        const qs = new URLSearchParams({
+          sort: "date_created", criteria: "desc", limit: "100", range: "date_created",
+          // ventana algo más ancha que el día (el filtro fino se hace en la app, con la hora de Chile)
+          begin_date: `${p.desde}T00:00:00.000-03:00`, end_date: `${p.hasta}T23:59:59.999-04:00`,
+        });
+        if (process.env.MP_POS_ID) qs.set("pos_id", process.env.MP_POS_ID);
+        const r = await llamarMP("GET", `/v1/payments/search?${qs.toString()}`);
+        if (r.ok && r.data && Array.isArray(r.data.results)) r.data = { results: r.data.results.map(soloPago), paging: r.data.paging };
+        return res.status(200).json(r);
+      }
 
       // Cambia el modo de la terminal (PDV = recibe cobros de la app). Solo funciona mientras exista la
       // variable PERMITIR_CAMBIO_MODO=1 en Vercel: se activa para hacer el cambio y se borra después.
