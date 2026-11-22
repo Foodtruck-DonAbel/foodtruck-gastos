@@ -207,6 +207,38 @@ const resumenTarjeta = (ventasLista) => {
   });
   return { porTipo, feeReal, cubiertoReal, feeEstTipo, cubiertoTipo };
 };
+// Cruza los cobros aprobados de Mercado Pago de un día con las ventas con tarjeta registradas.
+// Una venta puede tener varias filas (una por producto): se agrupan por el momento en que se guardaron.
+const conciliarCobros = (pagos, ventasDia) => {
+  const t = (iso) => new Date(iso).getTime();
+  const grupos = {};
+  ventasDia.forEach((v) => { const k = String(v.created_at); if (!grupos[k]) grupos[k] = { clave: k, filas: [], total: 0, created_at: v.created_at }; grupos[k].filas.push(v); grupos[k].total += montoMetodo(v, "Tarjeta"); });
+  const lista = Object.values(grupos);
+  const usadas = new Set();
+  const aprobados = pagos.filter((p) => p.status === "approved").sort((a, b) => t(a.date_created) - t(b.date_created));
+  const res = new Map();
+  const porId = (p) => lista.find((g) => !usadas.has(g.clave) && g.filas.some((v) => { const n = notaDe(v); const id = String(p.id); return String(n.point_payment || "") === id || String(n.point_operacion || "") === id || (n.point_ref && p.external_reference && n.point_ref === p.external_reference); }));
+  aprobados.forEach((p) => { const g = porId(p); if (g) { usadas.add(g.clave); res.set(p.id, g); } });
+  // Sin identificador: por monto y cercanía de hora (primero exacto; luego permitiendo hasta 15% más por propina).
+  // Se emparejan primero los más cercanos en el tiempo, para que el cobro que queda sin venta sea el correcto.
+  const emparejar = (tol) => {
+    const cand = [];
+    aprobados.forEach((p) => {
+      if (res.has(p.id)) return;
+      lista.forEach((g) => {
+        if (usadas.has(g.clave)) return;
+        const m = Math.round(g.total); const pm = Math.round(p.transaction_amount);
+        const okMonto = tol ? (pm >= m && pm <= Math.round(m * 1.15)) : pm === m;
+        const dt = t(g.created_at) - t(p.date_created);
+        if (okMonto && dt >= -120000 && dt <= 25 * 60000) cand.push({ p, g, d: Math.abs(dt) });
+      });
+    });
+    cand.sort((x, y) => x.d - y.d);
+    cand.forEach(({ p, g }) => { if (res.has(p.id) || usadas.has(g.clave)) return; usadas.add(g.clave); res.set(p.id, g); });
+  };
+  emparejar(false); emparejar(true);
+  return { aprobados, res, sinCobro: lista.filter((g) => !usadas.has(g.clave)) };
+};
 // Texto corto con el reparto débito/crédito de una lista de ventas (para el correo de cierre de caja)
 const textoDesgloseTarjeta = (lista) => {
   const total = lista.reduce((a, v) => a + montoMetodo(v, "Tarjeta"), 0);
@@ -446,6 +478,12 @@ export default function App() {
   const cebollaSembrada = useRef(false);
   const puntoCancelar = useRef(false);
   const puntoCambio = useRef(null); // medio al que se quiere cambiar un cobro en curso
+  const cobroEnCurso = useRef(null); // id de la orden que se está esperando en este celular
+  const reconRef = useRef(null); // última versión de la función que revisa cobros pendientes
+  const recetasRef = useRef([]);
+  const puntoEstadoRef = useRef(null);
+  const precargaVenta = useRef(false); // true cuando el formulario de venta se precargó desde la conciliación
+  const reconciliando = useRef(false);
   const ventasRef = useRef([]);
   const [puntoDisponible, setPuntoDisponible] = useState(false); // el servidor de cobro está configurado
   const [puntoModo, setPuntoModo] = useState(true); // con tarjeta: cobrar con Point (true) o registrar a mano (false)
@@ -455,6 +493,13 @@ export default function App() {
   const [dashTarjetaAbierta, setDashTarjetaAbierta] = useState(false); // desglose débito/crédito en el dashboard
   const [cierreTarjetaAbierta, setCierreTarjetaAbierta] = useState(false); // ... en el cierre de caja
   const [cajaTarjetaAbierta, setCajaTarjetaAbierta] = useState(null); // ... en el historial de caja (id del turno)
+  const [verConciliacion, setVerConciliacion] = useState(false);
+  const [concFecha, setConcFecha] = useState(today());
+  const [concPagos, setConcPagos] = useState(null);
+  const [concCargando, setConcCargando] = useState(false);
+  const [concError, setConcError] = useState("");
+  const [horaVenta, setHoraVenta] = useState(""); // hora de la venta (opcional): sirve para registrar a mano un cobro que quedó sin guardar
+  const [operacionMP, setOperacionMP] = useState(""); // N° de operación del voucher de Mercado Pago (opcional)
   const [efectivoParcial, setEfectivoParcial] = useState(""); // parte del pedido que paga en efectivo (el resto va con tarjeta)
   // Destino de los retiros de caja
   const [retiroDestino, setRetiroDestino] = useState("sueldo"); // "sueldo" | "socio"
@@ -563,7 +608,7 @@ export default function App() {
   useEffect(() => {
     if (view === "home") { cargarGastos(); cargarVentas(); cargarRecetas(); }
     if (view === "gastos") { cargarGastos(); cargarVentas(); cargarInventarioInicial(); if (recetas.length === 0) cargarRecetas(); setForm((f) => ({ ...f, fecha: today() })); }
-    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); setFechaVenta(today()); setMetodoPago("Tarjeta"); if (persona === "Alejandro") cargarHistorialTurnos(); }
+    if (view === "ventas") { cargarVentas(); cargarGastos(); cargarRecetas(); cargarTurno(); if (!precargaVenta.current) { setFechaVenta(today()); setMetodoPago("Tarjeta"); } precargaVenta.current = false; if (persona === "Alejandro") cargarHistorialTurnos(); }
     if (view === "resumen") { cargarGastos(); cargarVentas(); cargarRecetas(); cargarInventarioInicial(); }
     if (view === "recetas") { cargarRecetas(); cargarConfig(); }
   }, [view]);
@@ -1296,17 +1341,17 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   const totalCarrito = carrito.reduce((s, c) => s + c.total, 0);
 
   // Arma las filas de la venta (combos con sus productos internos). `extraNota` se suma a la nota de cada fila.
-  const construirFilasVenta = (items, { fecha, quien, extraNota, efectivo }) => {
-    const hora = new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+  const construirFilasVenta = (items, { fecha, quien, extraNota, efectivo, hora: horaForzada }) => {
+    const hora = horaForzada || new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
     const rows = [];
     items.forEach((c) => {
       if (c.productos_combo && c.productos_combo.length > 0) {
         // Combo: registrar el combo como una línea + cada producto interno
         rows.push({ fecha, hora, producto: c.nombre, cantidad: c.cantidad, precio_unitario: c.precio_unitario, total: c.total, metodo_pago: c.metodo_pago, persona: quien || null, nota: JSON.stringify({ combo: c.combo, productos: c.productos_combo }) });
         // Registrar cada producto del combo con precio 0 para stock
-        const sumaNormal = c.productos_combo.reduce((s, p) => { const r = recetas.find((r) => r.nombre_producto === p); return s + (r ? r.precio_venta : 0); }, 0);
+        const sumaNormal = c.productos_combo.reduce((s, p) => { const r = recetasRef.current.find((r) => r.nombre_producto === p); return s + (r ? r.precio_venta : 0); }, 0);
         c.productos_combo.forEach((nombreProd) => {
-          const r = recetas.find((r) => r.nombre_producto === nombreProd);
+          const r = recetasRef.current.find((r) => r.nombre_producto === nombreProd);
           if (!r) return;
           const precioProp = sumaNormal > 0 ? Math.round((r.precio_venta / sumaNormal) * c.precio_unitario) : 0;
           rows.push({ fecha, hora, producto: nombreProd, cantidad: c.cantidad, precio_unitario: precioProp, total: precioProp * c.cantidad, metodo_pago: c.metodo_pago, persona: quien || null, nota: JSON.stringify({ combo: c.combo, es_componente: true }) });
@@ -1369,8 +1414,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         setPuntoEstado((e) => ({ ...(e || {}), fase: "esperando", monto: pend.monto, orderId: pend.orderId, estadoMP: st, desde: (e && e.desde) || Date.now() }));
         if (st === "processed") {
           const pago = r.data.transactions && r.data.transactions.payments ? r.data.transactions.payments[0] : null;
-          const montoOk = pago && Number(pago.amount) === pend.monto;
-          if (r.data.status_detail === "accredited" && montoOk) return { fase: "aprobado", orden: r.data };
+          // El cliente puede dejar propina en la terminal: se acepta un monto pagado de hasta 30% más que lo cobrado
+          const montosPagados = [pago && pago.amount, pago && pago.paid_amount, r.data.total_paid_amount].map((x) => Number(x) || 0);
+          const enRango = (x) => x >= pend.monto && x <= Math.round(pend.monto * 1.3);
+          const validos = montosPagados.filter(enRango);
+          const montoOk = !!pago && validos.length > 0;
+          const propina = montoOk ? Math.max(0, Math.round(Math.max(...validos) - pend.monto)) : 0;
+          if (r.data.status_detail === "accredited" && montoOk) return { fase: "aprobado", orden: r.data, propina };
           return { fase: "revisar", orden: r.data };
         }
         if (st === "failed" || st === "expired" || st === "canceled") return { fase: st, orden: r.data };
@@ -1381,26 +1431,31 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   // Espera el cobro y, solo si quedó aprobado por el monto exacto, registra la venta.
-  const resolverCobroPoint = async (pend, { limpiarCarrito, medio } = {}) => {
+  const resolverCobroPointInterno = async (pend, { limpiarCarrito, medio, silencioso } = {}) => {
     puntoCancelar.current = false;
-    setPuntoEstado({ fase: "esperando", monto: pend.monto, orderId: pend.orderId, efectivo: pend.efectivo || 0, tipo: pend.tipo });
+    if (!silencioso) setPuntoEstado({ fase: "esperando", monto: pend.monto, orderId: pend.orderId, efectivo: pend.efectivo || 0, tipo: pend.tipo });
     const res = await esperarCobroPoint(pend);
     if (res.fase === "aprobado") {
       if (ventasRef.current.some((v) => parseNota(v).point_order === pend.orderId)) {
-        limpiarPuntoPendiente(); setPuntoEstado(null); showToast("Ese cobro ya estaba registrado"); return;
+        marcarCobro(pend.orderId, "registrado"); limpiarPuntoPendiente(); setPuntoEstado(null); if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); setMetodoPago("Tarjeta"); } showToast("✓ Cobro registrado"); cargarVentas(); return;
       }
-      const pagoId = res.orden && res.orden.transactions && res.orden.transactions.payments ? res.orden.transactions.payments[0].id : null;
-      let fee = null; let tipoTarjeta = null;
+      const pagoOrd0 = res.orden && res.orden.transactions && res.orden.transactions.payments ? res.orden.transactions.payments[0] : null;
+      const pagoId = pagoOrd0 ? ((pagoOrd0.reference && pagoOrd0.reference.id) || pagoOrd0.reference_id || pagoOrd0.id) : null;
+      let fee = null; let tipoTarjeta = null; let aprobadoISO = null;
       if (pagoId) {
         try {
           const pg = await llamarPunto({ accion: "pago", id: pagoId });
           if (pg && pg.ok && pg.data) {
             tipoTarjeta = pg.data.payment_type_id || null;
+            aprobadoISO = pg.data.date_approved || null;
             const suma = (pg.data.fee_details || []).filter((f) => !f.fee_payer || f.fee_payer === "collector").reduce((acc, f) => acc + Number(f.amount || 0), 0);
             if (suma > 0) fee = Math.round(suma);
           }
         } catch { /* la comisión real es opcional: si falla, se estima */ }
       }
+      if (!aprobadoISO && res.orden && res.orden.last_updated_date) aprobadoISO = res.orden.last_updated_date;
+      const fechaAprob = aprobadoISO ? new Date(aprobadoISO) : null;
+      const horaPago = fechaAprob && !isNaN(fechaAprob.getTime()) ? fechaAprob.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : null;
       // ¿Con qué se pagó de verdad? Si no fue tarjeta ni QR (por ejemplo "Efectivo" marcado en la terminal), no entró plata: no se registra sola
       const pagoOrden = res.orden && res.orden.transactions && res.orden.transactions.payments ? res.orden.transactions.payments[0] : null;
       const tipoOrden = pagoOrden && pagoOrden.payment_method ? (pagoOrden.payment_method.type || null) : null;
@@ -1411,22 +1466,26 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         return;
       }
       const comoEfectivo = medio === "efectivo";
-      const rows = construirFilasVenta(pend.items, { fecha: pend.fecha, quien: pend.quien, efectivo: comoEfectivo ? 0 : pend.efectivo, extraNota: { point_order: pend.orderId, ...(pagoId ? { point_payment: String(pagoId) } : {}), ...(comoEfectivo ? { point_medio: tipoDetectado || "desconocido" } : {}), ...(medio === "tarjeta" && !medioVerificado ? { point_revisado: true } : {}) } });
+      const rows = construirFilasVenta(pend.items, { fecha: pend.fecha, quien: pend.quien, efectivo: comoEfectivo ? 0 : pend.efectivo, hora: horaPago, extraNota: { point_order: pend.orderId, ...(res.propina > 0 ? { point_propina: res.propina } : {}), ...(pend.ref ? { point_ref: pend.ref } : {}), ...(horaPago ? { point_aprobado: aprobadoISO } : {}), ...(pagoId ? { point_payment: String(pagoId) } : {}), ...(comoEfectivo ? { point_medio: tipoDetectado || "desconocido" } : {}), ...(medio === "tarjeta" && !medioVerificado ? { point_revisado: true } : {}) } });
       if (comoEfectivo) rows.forEach((r) => { r.metodo_pago = "Efectivo"; });
-      else if ((fee !== null || tipoTarjeta) && rows.length > 0) {
+      else if ((fee !== null || tipoDetectado) && rows.length > 0) {
         let n = {}; try { n = JSON.parse(rows[0].nota || "{}"); } catch { n = {}; }
-        rows[0].nota = JSON.stringify({ ...n, point_total: pend.monto, ...(fee !== null ? { point_fee: fee } : {}), ...(tipoTarjeta ? { point_tipo: tipoTarjeta } : {}) });
+        rows[0].nota = JSON.stringify({ ...n, point_total: pend.monto, ...(fee !== null ? { point_fee: fee } : {}), ...(tipoDetectado ? { point_tipo: tipoDetectado } : {}) });
       }
+      const reclamado = await reclamarCobro(pend.orderId);
+      if (!reclamado) { limpiarPuntoPendiente(); setPuntoEstado(null); if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); setMetodoPago("Tarjeta"); } showToast("✓ Cobro registrado"); cargarVentas(); return; }
       const { error } = await supabase.from("ventas").insert(rows);
       if (error) {
+        await marcarCobro(pend.orderId, "pendiente");
         console.error("Cobro aprobado pero no se pudo guardar:", error);
         setPuntoEstado({ fase: "sin_registrar", monto: pend.monto, orderId: pend.orderId, mensaje: "El cliente YA pagó, pero no se pudo guardar la venta. No cobres de nuevo: reintenta guardar." });
         return;
       }
+      marcarCobro(pend.orderId, "registrado");
       limpiarPuntoPendiente(); setPuntoEstado(null);
       if (limpiarCarrito) { setCarrito([]); setEfectivoParcial(""); setPuntoTipo(""); setMetodoPago("Tarjeta"); }
       const etiquetaTipo = TIPO_TARJETA_TXT[tipoDetectado] || null;
-      showToast(comoEfectivo ? `✓ Registrado como EFECTIVO — ${fmt(pend.monto)}` : `✓ Cobrado con Point — ${fmt(pend.monto)}${etiquetaTipo ? " · " + etiquetaTipo : ""}`);
+      showToast(comoEfectivo ? `✓ Registrado como EFECTIVO — ${fmt(pend.monto)}` : `✓ Cobrado con Point — ${fmt(pend.monto)}${etiquetaTipo ? " · " + etiquetaTipo : ""}${res.propina > 0 ? " · propina " + fmt(res.propina) : ""}`);
       cargarVentas();
       return;
     }
@@ -1443,19 +1502,85 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
         else await dormir(1000);
       }
       if (!cancelada) return resolverCobroPoint(pend, { limpiarCarrito, medio });
+      const refNuevo = `DA-${Date.now()}`;
       let crearNuevo = null;
-      try { crearNuevo = await llamarPunto({ accion: "crear", monto: String(pend.monto), ref: `DA-${Date.now()}`, idem: nuevoUuid(), tipo: nuevoTipo }); } catch { crearNuevo = null; }
+      try { crearNuevo = await llamarPunto({ accion: "crear", monto: String(pend.monto), ref: refNuevo, idem: nuevoUuid(), tipo: nuevoTipo }); } catch { crearNuevo = null; }
       if (!crearNuevo || !crearNuevo.ok || !crearNuevo.data || !crearNuevo.data.id) { limpiarPuntoPendiente(); setPuntoEstado({ fase: "error", monto: pend.monto, mensaje: "No se pudo cambiar el medio de pago. Cierra esta ventana y vuelve a cobrar." }); return; }
-      const nueva = { ...pend, orderId: crearNuevo.data.id, tipo: nuevoTipo, t: Date.now() };
+      const nueva = { ...pend, ref: refNuevo, orderId: crearNuevo.data.id, tipo: nuevoTipo, t: Date.now() };
       try { localStorage.setItem("puntoPendiente", JSON.stringify(nueva)); } catch {}
       setPuntoPendiente(nueva);
+      await guardarCobroPendiente(nueva); marcarCobro(pend.orderId, "cerrado"); cobroEnCurso.current = nueva.orderId;
       return resolverCobroPoint(nueva, { limpiarCarrito, medio });
     }
-    if (res.fase === "canceled") { limpiarPuntoPendiente(); setPuntoEstado({ fase: "canceled", monto: pend.monto, mensaje: "Cobro cancelado. No se registró ninguna venta." }); return; }
-    if (res.fase === "failed") { limpiarPuntoPendiente(); setPuntoEstado({ fase: "failed", monto: pend.monto, mensaje: "El pago no se completó (rechazado o falló). No se registró la venta." }); return; }
-    if (res.fase === "expired") { limpiarPuntoPendiente(); setPuntoEstado({ fase: "expired", monto: pend.monto, mensaje: "El cobro expiró sin pago. No se registró la venta." }); return; }
+    if (res.fase === "canceled") { marcarCobro(pend.orderId, "cerrado"); limpiarPuntoPendiente(); setPuntoEstado({ fase: "canceled", monto: pend.monto, mensaje: "Cobro cancelado. No se registró ninguna venta." }); return; }
+    if (res.fase === "failed") { marcarCobro(pend.orderId, "cerrado"); limpiarPuntoPendiente(); setPuntoEstado({ fase: "failed", monto: pend.monto, mensaje: "El pago no se completó (rechazado o falló). No se registró la venta." }); return; }
+    if (res.fase === "expired") { marcarCobro(pend.orderId, "cerrado"); limpiarPuntoPendiente(); setPuntoEstado({ fase: "expired", monto: pend.monto, mensaje: "El cobro expiró sin pago. No se registró la venta." }); return; }
     // processed pero con estado o monto distinto al esperado
+    marcarCobro(pend.orderId, "revisar");
     setPuntoEstado({ fase: "revisar", monto: pend.monto, orderId: pend.orderId, mensaje: "El pago quedó procesado pero no coincide con lo esperado (estado o monto). Revísalo en Mercado Pago antes de registrar la venta." });
+  };
+
+  // ===== Cobros pendientes en la base de datos (tabla cobros_point): no dependen de un celular ni de una pestaña =====
+  const guardarCobroPendiente = async (pend) => {
+    try { const { error } = await supabase.from("cobros_point").upsert({ order_id: pend.orderId, estado: "pendiente", datos: pend }); if (error) console.error("cobros_point:", error.message); } catch (e) { console.error(e); }
+  };
+  const marcarCobro = async (orderId, estado) => {
+    if (!orderId) return;
+    try { await supabase.from("cobros_point").update({ estado }).eq("order_id", orderId); } catch {}
+  };
+  // Quien primero lo reclama es quien registra la venta: evita duplicados si dos celulares lo intentan a la vez
+  const reclamarCobro = async (orderId) => {
+    try {
+      const { data, error } = await supabase.from("cobros_point").update({ estado: "registrando" }).eq("order_id", orderId).in("estado", ["pendiente", "revisar"]).select();
+      if (error) return true; // sin tabla u otro problema: se sigue como antes
+      if (data && data.length > 0) return true;
+      const { data: ex } = await supabase.from("cobros_point").select("estado").eq("order_id", orderId).maybeSingle();
+      return !ex; // si la fila no existe (cobro antiguo), se permite
+    } catch { return true; }
+  };
+  // Revisa los cobros que quedaron pendientes (cierre de la app, celular bloqueado, etc.) y registra los que sí se pagaron
+  const reconciliarCobros = async () => {
+    if (!puntoDisponible || reconciliando.current || cobroEnCurso.current || puntoEstadoRef.current) return;
+    reconciliando.current = true;
+    try {
+      const { data, error } = await supabase.from("cobros_point").select("*").eq("estado", "pendiente").order("created_at", { ascending: true }).limit(20);
+      if (error || !data) return;
+      for (const c of data) {
+        if (cobroEnCurso.current || puntoEstadoRef.current) break;
+        const pend = c.datos;
+        if (!pend || !pend.orderId) { await marcarCobro(c.order_id, "cerrado"); continue; }
+        let r = null;
+        try { r = await llamarPunto({ accion: "estado", id: c.order_id }); } catch { continue; }
+        const st = r && r.data ? r.data.status : null;
+        if (st === "processed") { cobroEnCurso.current = c.order_id; try { await resolverCobroPoint(pend, { limpiarCarrito: false, silencioso: true }); } finally { cobroEnCurso.current = null; } }
+        else if (st === "failed" || st === "expired" || st === "canceled") await marcarCobro(c.order_id, "cerrado");
+        else if (st && Date.now() - new Date(c.created_at).getTime() > 25 * 60 * 1000) await marcarCobro(c.order_id, "cerrado");
+      }
+    } catch (e) { console.error("reconciliarCobros:", e); }
+    finally { reconciliando.current = false; }
+  };
+  reconRef.current = reconciliarCobros;
+
+  // Mantiene la pantalla encendida mientras se espera el pago: con el celular bloqueado o la app en segundo plano,
+  // el navegador pausa la consulta y la venta se registra recién cuando se vuelve a abrir.
+  const buscarConciliacion = async () => {
+    setConcCargando(true); setConcError(""); setConcPagos(null);
+    try {
+      const r = await llamarPunto({ accion: "pagos", desde: concFecha, hasta: concFecha });
+      if (r && r.ok && r.data && Array.isArray(r.data.results)) setConcPagos(r.data.results);
+      else setConcError("No se pudieron traer los cobros de Mercado Pago" + (r && r.data && r.data.message ? `: ${r.data.message}` : "."));
+    } catch { setConcError("No se pudo consultar. Revisa la conexión a internet."); }
+    setConcCargando(false);
+  };
+
+  const resolverCobroPoint = async (pend, opts) => {
+    let lock = null; let activo = true;
+    const tomar = async () => { try { if (navigator.wakeLock) lock = await navigator.wakeLock.request("screen"); } catch { lock = null; } };
+    const alVolver = () => { if (activo && document.visibilityState === "visible") tomar(); };
+    await tomar();
+    document.addEventListener("visibilitychange", alVolver);
+    try { return await resolverCobroPointInterno(pend, opts); }
+    finally { activo = false; document.removeEventListener("visibilitychange", alVolver); try { if (lock) await lock.release(); } catch {} if (cobroEnCurso.current === pend.orderId) cobroEnCurso.current = null; }
   };
 
   const cobrarConPoint = async () => {
@@ -1465,8 +1590,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
     setSavingVenta(true);
     puntoCancelar.current = false;
     setPuntoEstado({ fase: "creando", monto, efectivo, tipo: puntoTipo });
+    const refOrden = `DA-${Date.now()}`;
     let crear = null;
-    try { crear = await llamarPunto({ accion: "crear", monto: String(monto), ref: `DA-${Date.now()}`, idem: nuevoUuid(), ...(puntoTipo ? { tipo: puntoTipo } : {}) }); }
+    try { crear = await llamarPunto({ accion: "crear", monto: String(monto), ref: refOrden, idem: nuevoUuid(), ...(puntoTipo ? { tipo: puntoTipo } : {}) }); }
     catch { crear = null; }
     if (!crear) { setPuntoEstado({ fase: "error", monto, mensaje: "No se pudo contactar el servicio de cobro. Revisa internet, o desactiva 'Cobrar con Point' para registrar a mano." }); setSavingVenta(false); return; }
     if (!crear.ok || !crear.data || !crear.data.id) {
@@ -1475,9 +1601,11 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       setPuntoEstado({ fase: "error", monto, mensaje: enCola ? "La terminal ya tiene un cobro en cola. Espera a que expire (unos 15 min) o cancélalo en la terminal." : crear.error === "clave" ? "La clave del script no coincide con la de la app." : "No se pudo enviar el cobro a la terminal. Revisa que esté encendida, con internet y en modo PDV." });
       setSavingVenta(false); return;
     }
-    const pend = { orderId: crear.data.id, monto, efectivo, tipo: puntoTipo, items: carrito, fecha: fechaVenta, quien: persona, t: Date.now() };
+    const pend = { orderId: crear.data.id, ref: refOrden, monto, efectivo, tipo: puntoTipo, items: carrito, fecha: fechaVenta, quien: persona, t: Date.now() };
     try { localStorage.setItem("puntoPendiente", JSON.stringify(pend)); } catch {}
     setPuntoPendiente(pend);
+    await guardarCobroPendiente(pend);
+    cobroEnCurso.current = pend.orderId;
     await resolverCobroPoint(pend, { limpiarCarrito: true });
     setSavingVenta(false);
   };
@@ -1499,7 +1627,18 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
   };
 
   ventasRef.current = ventas;
+  recetasRef.current = recetas;
+  puntoEstadoRef.current = puntoEstado;
   useEffect(() => { try { const raw = localStorage.getItem("puntoPendiente"); if (raw) setPuntoPendiente(JSON.parse(raw)); } catch {} }, []);
+  useEffect(() => {
+    if (!puntoDisponible) return;
+    const correr = () => { if (reconRef.current) reconRef.current(); };
+    correr();
+    const iv = setInterval(() => { if (!document.hidden) correr(); }, 60000);
+    const vis = () => { if (document.visibilityState === "visible") correr(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(iv); document.removeEventListener("visibilitychange", vis); };
+  }, [puntoDisponible]);
   useEffect(() => { fetch(PUNTO_URL + "?accion=ping", { cache: "no-store" }).then((r) => r.json()).then((j) => setPuntoDisponible(!!(j && j.configurado))).catch(() => setPuntoDisponible(false)); }, []);
 
   const registrarVenta = async () => {
@@ -1515,10 +1654,13 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
       if (Math.round(totalCarrito) > 0) { await cobrarConPoint(); return; }
     }
     setSavingVenta(true);
-    const rows = construirFilasVenta(carrito, { fecha: fechaVenta, quien: persona, efectivo });
+    const opMP = operacionMP.trim();
+    if (opMP && ventas.some((v) => String(notaDe(v).point_operacion || "") === opMP)) { showToast("Esa operación de Mercado Pago ya está registrada"); setSavingVenta(false); return; }
+    const horaElegida = horaVenta ? new Date(`2000-01-01T${horaVenta}:00`).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : undefined;
+    const rows = construirFilasVenta(carrito, { fecha: fechaVenta, quien: persona, efectivo, hora: horaElegida, extraNota: opMP ? { point_operacion: opMP } : undefined });
     const { error } = await supabase.from("ventas").insert(rows);
     if (error) showToast("Error al guardar");
-    else { showToast(`✓ Venta — ${fmt(totalCarrito)}`); setCarrito([]); setEfectivoParcial(""); setMetodoPago("Tarjeta"); cargarVentas(); }
+    else { showToast(`✓ Venta — ${fmt(totalCarrito)}`); setCarrito([]); setEfectivoParcial(""); setMetodoPago("Tarjeta"); setHoraVenta(""); setOperacionMP(""); setPuntoModo(true); cargarVentas(); }
     setSavingVenta(false);
   };
 
@@ -2008,7 +2150,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 <div style={{ color: C.muted, fontSize: 12 }}>Mira el voucher y pregúntale al cliente cómo pagó antes de elegir.</div>
                 <button onClick={() => puntoPendiente && resolverCobroPoint(puntoPendiente, { limpiarCarrito: true, medio: "efectivo" })} style={{ background: C.green, border: "none", color: "#fff", borderRadius: 8, padding: "11px 0", cursor: "pointer", fontWeight: 700 }}>Me pagó en EFECTIVO (ya lo recibí)</button>
                 <button onClick={() => puntoPendiente && resolverCobroPoint(puntoPendiente, { limpiarCarrito: true, medio: "tarjeta" })} style={{ background: C.tag, border: `1px solid ${C.border}`, color: C.text, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontWeight: 600 }}>Fue tarjeta o QR (se cobró bien)</button>
-                <button onClick={() => { limpiarPuntoPendiente(); setPuntoEstado(null); setSavingVenta(false); showToast("No se registró la venta. Anula ese cobro en la app de Mercado Pago."); }} style={{ background: "none", border: `1px solid ${C.red}`, color: C.red, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>No pagó: no registrar la venta</button>
+                <button onClick={() => { if (puntoPendiente) marcarCobro(puntoPendiente.orderId, "descartado"); limpiarPuntoPendiente(); setPuntoEstado(null); setSavingVenta(false); showToast("No se registró la venta. Anula ese cobro en la app de Mercado Pago."); }} style={{ background: "none", border: `1px solid ${C.red}`, color: C.red, borderRadius: 8, padding: "10px 0", cursor: "pointer", fontWeight: 700 }}>No pagó: no registrar la venta</button>
               </>
             )}
             {puntoEstado.mensaje && <div style={{ color: puntoEstado.fase === "revisar" || puntoEstado.fase === "sin_registrar" ? C.orange : C.muted, fontSize: 13 }}>{puntoEstado.mensaje}</div>}
@@ -2851,7 +2993,7 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                     <div style={{ color: C.muted }}>Iniciado hace {Math.max(1, Math.round((Date.now() - puntoPendiente.t) / 60000))} min. Revísalo antes de cobrar de nuevo.</div>
                   </div>
                   <button onClick={() => resolverCobroPoint(puntoPendiente)} style={{ background: C.mustard, color: C.bg, border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Revisar</button>
-                  <button onClick={() => { if (window.confirm("¿Descartar este cobro? Si el cliente ya pagó, deberás registrar la venta a mano.")) limpiarPuntoPendiente(); }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12 }}>Descartar</button>
+                  <button onClick={() => { if (window.confirm("¿Descartar este cobro? Si el cliente ya pagó, deberás registrar la venta a mano.")) { marcarCobro(puntoPendiente.orderId, "descartado"); limpiarPuntoPendiente(); } }} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12 }}>Descartar</button>
                 </div>
               )}
               {/* Banner caja */}
@@ -2875,6 +3017,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                       ))}
                     </div>
                   </Fld>
+                  <Fld label="Hora (opcional)"><input type="time" value={horaVenta} onChange={(e) => setHoraVenta(e.target.value)} style={S.inp} /></Fld>
+                  <Fld label="N° operación MP (opcional)"><input type="text" inputMode="numeric" placeholder="ej: 190442386584" value={operacionMP} onChange={(e) => setOperacionMP(e.target.value.replace(/[^0-9]/g, ""))} style={S.inp} /></Fld>
+                  {(horaVenta || operacionMP) && <div style={{ gridColumn: "1 / -1", color: C.muted, fontSize: 10 }}>Úsalos para registrar a mano un cobro que quedó sin guardar: la hora y el N° del voucher. Si lo registras a mano con tarjeta, desmarca "Cobrar con Point".</div>}
                 </div>
                 <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
                   {CATEGORIAS.map((cat) => (
@@ -3235,6 +3380,9 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                         {(() => { const n = notaDe(v); return (<>
                           {v.metodo_pago === "Mixto" && n.pagos && <Tag text={`Efectivo ${fmt(n.pagos.Efectivo)} · Tarjeta ${fmt(n.pagos.Tarjeta)}`} color={C.purple + "33"} textColor={C.purple} />}
                           {n.point_tipo && <Tag text={`${TIPO_TARJETA_TXT[n.point_tipo] || n.point_tipo}${n.point_fee ? ` · comisión ${fmt(n.point_fee)}` : ""}`} color={C.blue + "33"} textColor={C.blue} />}
+                          {n.point_operacion && <Tag text={`Op. MP ${n.point_operacion}`} color={C.tag} textColor={C.muted} />}
+                          {n.point_propina > 0 && <Tag text={`Propina ${fmt(n.point_propina)}`} color={C.green + "33"} textColor={C.green} />}
+                          {n.point_aprobado && (() => { const d = Math.round((new Date(v.created_at) - new Date(n.point_aprobado)) / 60000); return d >= 3 ? <Tag text={`⏱ registrada ${d} min después del pago`} color={C.orange + "33"} textColor={C.orange} /> : null; })()}
                         </>); })()}
                         {v.nota && (() => { try { const d = JSON.parse(v.nota); if (d.tipo === "cortesia") return <Tag text={`🎁 ${d.autorizado_por}`} color={C.green + "33"} textColor={C.green} />; if (d.tipo === "personal") return <Tag text={`${d.porcentaje}% off`} color={C.blue + "33"} textColor={C.blue} />; if (d.combo) return <Tag text={`🎁 ${d.combo}`} color={C.purple + "33"} textColor={C.purple} />; if (d.variante === "as") return <Tag text="AS (churrasco)" color={C.blue + "33"} textColor={C.blue} />; return null; } catch { return null; } })()}
                       </div>
@@ -3846,6 +3994,71 @@ Cortesías: ${resumen.cortesiasTurno.length}`;
                 </div>
                 <span style={{ color: C.mustard, fontSize: 18 }}>→</span>
               </button>
+            )}
+            {persona === "Alejandro" && puntoDisponible && (
+              <>
+                <button onClick={() => setVerConciliacion(!verConciliacion)} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", border: `1px solid ${C.green}`, background: C.green + "15", width: "100%", textAlign: "left" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 20 }}>🔎</span>
+                    <div>
+                      <div style={{ fontWeight: 700, color: C.green }}>Conciliar cobros Point</div>
+                      <div style={{ color: C.muted, fontSize: 11 }}>Cobros de Mercado Pago contra ventas registradas</div>
+                    </div>
+                  </div>
+                  <span style={{ color: C.green, fontSize: 14 }}>{verConciliacion ? "▲" : "▼"}</span>
+                </button>
+                {verConciliacion && (
+                  <div style={S.card}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 10 }}>
+                      <Fld label="Día"><input type="date" value={concFecha} onChange={(e) => { setConcFecha(e.target.value); setConcPagos(null); }} style={S.inp} /></Fld>
+                      <button onClick={buscarConciliacion} disabled={concCargando} style={{ background: C.green, border: "none", color: "#fff", borderRadius: 7, padding: "9px 18px", fontWeight: 700, cursor: "pointer" }}>{concCargando ? "Buscando…" : "Buscar"}</button>
+                    </div>
+                    {concError && <div style={{ color: C.red, fontSize: 12, marginBottom: 8 }}>{concError}</div>}
+                    {!concPagos && !concError && <div style={{ color: C.muted, fontSize: 12 }}>Elige el día y toca Buscar. Verás cada cobro de Mercado Pago y si tiene su venta registrada.</div>}
+                    {concPagos && (() => {
+                      const pad = (n) => String(n).padStart(2, "0");
+                      const fechaLocal = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+                      const horaLocal = (iso) => { const d = new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+                      const pagosDia = concPagos.filter((x) => fechaLocal(x.date_created) === concFecha).sort((a, b) => new Date(a.date_created) - new Date(b.date_created));
+                      const ventasDia = ventas.filter((v) => !esComponente(v) && v.fecha === concFecha && montoMetodo(v, "Tarjeta") > 0);
+                      const r = conciliarCobros(pagosDia, ventasDia);
+                      const totalAprob = r.aprobados.reduce((a, x) => a + Number(x.transaction_amount || 0), 0);
+                      const totalReg = ventasDia.reduce((a, v) => a + montoMetodo(v, "Tarjeta"), 0);
+                      const sinVenta = r.aprobados.filter((x) => !r.res.has(x.id));
+                      const precargar = (x) => { precargaVenta.current = true; setFechaVenta(concFecha); setHoraVenta(horaLocal(x.date_created)); setOperacionMP(String(x.id)); setMetodoPago("Tarjeta"); setPuntoModo(false); setVerEstadoResultados(false); setView("ventas"); setVentaView("registrar"); };
+                      return (
+                        <div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                            <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px" }}><div style={{ color: C.muted, fontSize: 10 }}>Cobrado en Mercado Pago</div><div style={{ fontWeight: 800, color: C.blue, fontSize: 15 }}>{fmt(totalAprob)}</div><div style={{ color: C.muted, fontSize: 10 }}>{r.aprobados.length} cobros aprobados</div></div>
+                            <div style={{ background: C.bg, borderRadius: 8, padding: "8px 10px" }}><div style={{ color: C.muted, fontSize: 10 }}>Registrado en la app (tarjeta)</div><div style={{ fontWeight: 800, color: C.green, fontSize: 15 }}>{fmt(totalReg)}</div><div style={{ color: C.muted, fontSize: 10 }}>{r.res.size} cruzados</div></div>
+                          </div>
+                          {sinVenta.length > 0 ? <div style={{ color: C.orange, fontWeight: 700, fontSize: 13, marginBottom: 8 }}>⚠️ {sinVenta.length} {sinVenta.length === 1 ? "cobro sin venta registrada" : "cobros sin venta registrada"}</div> : <div style={{ color: C.green, fontWeight: 700, fontSize: 13, marginBottom: 8 }}>✓ Todos los cobros aprobados tienen su venta</div>}
+                          {pagosDia.length === 0 && <div style={{ color: C.muted, fontSize: 12 }}>Mercado Pago no devolvió cobros para ese día.</div>}
+                          {pagosDia.map((x) => {
+                            const g = r.res.get(x.id);
+                            const aprobado = x.status === "approved";
+                            return (
+                              <div key={x.id} style={{ padding: "7px 0", borderTop: `1px solid ${C.border}`, opacity: aprobado ? 1 : 0.6 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                                  <span style={{ fontSize: 13 }}>{horaLocal(x.date_created)} · <span style={{ fontWeight: 700 }}>{fmt(x.transaction_amount)}</span> <span style={{ color: C.muted, fontSize: 10 }}>{TIPO_TARJETA_TXT[x.payment_type_id] || x.payment_type_id || ""}</span></span>
+                                  {!aprobado ? <span style={{ color: C.muted, fontSize: 11 }}>{x.status === "rejected" ? "Rechazado" : x.status}</span> : g ? <span style={{ color: C.green, fontSize: 11, fontWeight: 700 }}>✓ {g.filas.map((v) => v.producto).join(", ").slice(0, 28)}</span> : <button onClick={() => precargar(x)} style={{ background: C.orange, border: "none", color: "#fff", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>SIN VENTA · registrar</button>}
+                                </div>
+                                <div style={{ color: C.muted, fontSize: 10 }}>Op. {x.id}</div>
+                              </div>
+                            );
+                          })}
+                          {r.sinCobro.length > 0 && (
+                            <div style={{ marginTop: 10, background: C.bg, borderRadius: 8, padding: "8px 10px" }}>
+                              <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>Ventas con tarjeta que no se cruzaron con ningún cobro ({r.sinCobro.length}): pueden ser registros a mano o con tarjeta fuera de Point.</div>
+                              {r.sinCobro.map((g) => <div key={g.clave} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "2px 0", gap: 8 }}><span>{g.filas[0].hora || ""} · {g.filas.map((v) => v.producto).join(", ").slice(0, 30)}</span><span style={{ fontWeight: 700 }}>{fmt(g.total)}</span></div>)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </>
             )}
             {persona === "Alejandro" && (
               <button onClick={() => setVerEstadoResultados(!verEstadoResultados)} style={{ ...S.card, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", border: `1px solid ${C.blue}`, background: C.blue + "15", width: "100%", textAlign: "left" }}>
