@@ -32,9 +32,12 @@ async function mpGet(ruta) {
 }
 
 async function sb(metodo, ruta, cuerpo) {
-  const r = await fetch(`${process.env.SUPABASE_URL}/rest/v1/${ruta}`, {
+  const clave = String(process.env.SUPABASE_KEY || "").trim();
+  const cabeceras = { apikey: clave, "Content-Type": "application/json", Prefer: "return=representation" };
+  if (clave.startsWith("eyJ")) cabeceras.Authorization = `Bearer ${clave}`; // clave antigua (JWT); las nuevas "sb_publishable_..." van solo en apikey
+  const r = await fetch(`${String(process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "")}/rest/v1/${ruta}`, {
     method: metodo,
-    headers: { apikey: process.env.SUPABASE_KEY, Authorization: `Bearer ${process.env.SUPABASE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
+    headers: cabeceras,
     body: cuerpo ? JSON.stringify(cuerpo) : undefined,
   });
   const txt = await r.text();
@@ -160,7 +163,15 @@ export async function procesarOrden(orderId, deps = {}) {
 
 // ---- Receptor del aviso de Mercado Pago ----
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).json({ ok: true, info: "webhook de Don Abel" });
+  if (req.method !== "POST") {
+    if (req.query && req.query.diagnostico) {
+      const out = { ok: true, variables: { MP_ACCESS_TOKEN: !!process.env.MP_ACCESS_TOKEN, SUPABASE_URL: !!process.env.SUPABASE_URL, SUPABASE_KEY: !!process.env.SUPABASE_KEY } };
+      try { const r = await sb("GET", "cobros_point?select=order_id&limit=1"); out.supabase = r.ok ? "ok" : `error ${r.status}${r.data && r.data.message ? ": " + r.data.message : ""}`; } catch (e) { out.supabase = "error: " + String(e.message || e).slice(0, 80); }
+      try { const r = await mpGet("/users/me"); out.mercadopago = r.ok ? "ok" : `error ${r.httpStatus}`; } catch (e) { out.mercadopago = "error"; }
+      return res.status(200).json(out);
+    }
+    return res.status(200).json({ ok: true, info: "webhook de Don Abel" });
+  }
   try {
     const body = typeof req.body === "string" ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
     const dataId = (req.query && (req.query["data.id"] || req.query.data_id)) || (body.data && body.data.id);
