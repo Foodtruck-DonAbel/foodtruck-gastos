@@ -184,7 +184,8 @@ export default async function handler(req, res) {
       if (!partes.v1 || partes.v1 !== esperada) return res.status(401).json({ ok: false, error: "firma" });
     }
 
-    if (!dataId || !/^ORD/i.test(String(dataId))) return res.status(200).json({ ok: true, ignorado: true });
+    // No se asume cómo empieza el identificador: se busca en la tabla de cobros de la app y, si no está, se ignora
+    if (!dataId || !/^[A-Za-z0-9_-]{1,64}$/.test(String(dataId))) return res.status(200).json({ ok: true, ignorado: true });
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_KEY || !process.env.MP_ACCESS_TOKEN) {
       console.error("webhook: faltan variables de entorno");
       return res.status(500).json({ ok: false, error: "configuracion" });
